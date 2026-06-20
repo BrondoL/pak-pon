@@ -6,7 +6,16 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className = '', ...rest }, ref) => (
     <input
       ref={ref}
-      className={`w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 ${className}`}
+      className={[
+        'w-full rounded-md bg-paper-soft px-3 py-2.5 text-sm text-coal',
+        'border border-clay-soft',
+        'placeholder:text-clay',
+        'transition-colors duration-[var(--duration-fast)]',
+        'hover:border-clay',
+        'focus:outline-none focus:border-brick focus:ring-2 focus:ring-brick/20',
+        'disabled:opacity-50 disabled:bg-cream',
+        className,
+      ].join(' ')}
       {...rest}
     />
   )

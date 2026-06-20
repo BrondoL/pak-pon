@@ -5,7 +5,10 @@ export type LabelProps = React.LabelHTMLAttributes<HTMLLabelElement>;
 export function Label({ className = '', ...rest }: LabelProps) {
   return (
     <label
-      className={`block text-sm font-medium text-zinc-700 dark:text-zinc-300 ${className}`}
+      className={[
+        'block text-[11px] font-semibold uppercase tracking-[0.08em] text-coal-soft',
+        className,
+      ].join(' ')}
       {...rest}
     />
   );
