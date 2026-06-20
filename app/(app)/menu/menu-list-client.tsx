@@ -25,6 +25,7 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
   const router = useRouter();
   const [editing, setEditing] = useState<Partial<MenuFormValues> | null>(null);
   const [pending, startTransition] = useTransition();
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   const grouped = (['makanan', 'nasi', 'minuman'] as const).map((cat) => ({
     cat,
@@ -33,22 +34,35 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
 
   function refresh() {
     setEditing(null);
+    setMutationError(null);
     startTransition(() => router.refresh());
   }
 
   async function handleDeactivate(id: string) {
     if (!confirm('Nonaktifkan menu ini? (Transaksi historis tetap aman)')) return;
-    await fetch(`/api/menus/${id}`, { method: 'DELETE' });
-    refresh();
+    setMutationError(null);
+    try {
+      const res = await fetch(`/api/menus/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('delete-failed');
+      refresh();
+    } catch {
+      setMutationError('Gagal menonaktifkan menu. Coba lagi.');
+    }
   }
 
   async function handleReactivate(id: string) {
-    await fetch(`/api/menus/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_active: true }),
-    });
-    refresh();
+    setMutationError(null);
+    try {
+      const res = await fetch(`/api/menus/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: true }),
+      });
+      if (!res.ok) throw new Error('reactivate-failed');
+      refresh();
+    } catch {
+      setMutationError('Gagal mengaktifkan menu. Coba lagi.');
+    }
   }
 
   return (
@@ -64,6 +78,12 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
           onSaved={refresh}
           onCancel={() => setEditing(null)}
         />
+      )}
+
+      {mutationError && (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300" role="alert">
+          {mutationError}
+        </p>
       )}
 
       {grouped.map(({ cat, items }) => (

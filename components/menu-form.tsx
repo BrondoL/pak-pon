@@ -40,12 +40,18 @@ export function MenuForm({
         ? await fetch(`/api/menus/${initial.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
         : await fetch('/api/menus',           { method: 'POST',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? 'Gagal menyimpan.');
+        const data: { error?: string } = await res.json().catch(() => ({}));
+        if (data.error === 'invalid_body') {
+          throw new Error('Data tidak valid. Periksa nama, harga, dan kategori.');
+        }
+        if (data.error === 'unauthorized') {
+          throw new Error('Sesi habis. Silakan login ulang.');
+        }
+        throw new Error('Gagal menyimpan. Coba lagi.');
       }
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal menyimpan.');
+      setError(err instanceof Error ? err.message : 'Gagal menyimpan. Coba lagi.');
     } finally {
       setPending(false);
     }
