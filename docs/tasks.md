@@ -1,15 +1,15 @@
 # Pak Pon — Implementation Progress
 
 ## Plan 1 — Foundation, Auth, Menu Master
-- [ ] T1 Project bootstrap
-- [ ] T2 Supabase project + migrations
-- [ ] T3 Currency util + tests
-- [ ] T4 Supabase clients
-- [ ] T5 Auth: middleware + login
-- [ ] T6 (app) layout + Home
-- [ ] T7 Menu API routes
-- [ ] T8 Menu master UI
-- [ ] T9 vercel.ts + deploy verify
+- [x] T1 Project bootstrap
+- [x] T2 Supabase project + migrations
+- [x] T3 Currency util + tests
+- [x] T4 Supabase clients
+- [x] T5 Auth: middleware + login
+- [x] T6 (app) layout + Home
+- [x] T7 Menu API routes
+- [x] T8 Menu master UI
+- [x] T9 vercel.ts + deploy verify
 
 ## Plan 2 — Scan + OCR + Review + Save
 TBD setelah Plan 1 selesai
