@@ -13,7 +13,14 @@ export default async function MenuPage() {
     .order('name');
 
   if (error) {
-    return <p className="text-red-600">Gagal memuat menu: {error.message}</p>;
+    return (
+      <p
+        className="rounded-md border border-brick/30 bg-brick-faint px-3 py-2 text-sm text-brick-dark"
+        role="alert"
+      >
+        Gagal memuat menu. Coba refresh halaman.
+      </p>
+    );
   }
   return <MenuListClient initialMenus={data ?? []} />;
 }

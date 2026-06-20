@@ -32,4 +32,10 @@ describe('parseRp', () => {
   it('returns NaN for invalid', () => {
     expect(parseRp('abc')).toBeNaN();
   });
+  it('parses lowercase "rp 7.000" → 7000 (OCR tolerance)', () => {
+    expect(parseRp('rp 7.000')).toBe(7000);
+  });
+  it('parses uppercase "RP 222.000" → 222000 (OCR tolerance)', () => {
+    expect(parseRp('RP 222.000')).toBe(222000);
+  });
 });

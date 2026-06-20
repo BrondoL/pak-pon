@@ -7,7 +7,8 @@ export function formatRp(amount: number): string {
 }
 
 export function parseRp(input: string): number {
-  const cleaned = input.replace(/Rp\s?/, '').replace(/\./g, '');
+  // Case-insensitive prefix: tolerate "Rp", "rp", "RP" — defensive for OCR output in Plan 2.
+  const cleaned = input.replace(/[Rr][Pp]\s?/, '').replace(/\./g, '');
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : NaN;
 }
