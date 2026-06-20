@@ -4,18 +4,22 @@ import * as React from 'react';
  * Button — paper-stamp aesthetic.
  * Variants reference design tokens dari globals.css.
  */
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'night';
 type Size = 'sm' | 'md' | 'lg';
 
 const variantStyles: Record<Variant, string> = {
+  // Primary = brand gold. Bold attention-grabbing action.
   primary:
-    'bg-brick text-paper hover:bg-brick-soft active:bg-brick-dark shadow-[var(--shadow-stamp)] active:shadow-[var(--shadow-paper)] active:translate-y-px',
+    'bg-gold text-night-deep font-semibold hover:bg-gold-soft active:bg-gold-dark shadow-[var(--shadow-stamp)] active:shadow-[var(--shadow-paper)] active:translate-y-px',
   secondary:
     'bg-paper-soft text-coal border border-clay-soft hover:bg-cream active:bg-clay-mist',
   ghost:
     'bg-transparent text-coal-soft hover:bg-cream hover:text-coal',
   danger:
-    'bg-paprika text-paper hover:bg-paprika/90 active:translate-y-px',
+    'bg-brick text-paper hover:bg-brick-soft active:bg-brick-dark active:translate-y-px',
+  // Night = navy chrome action, used on dark backgrounds
+  night:
+    'bg-night text-ink hover:bg-night-soft active:bg-night-deep',
 };
 
 const sizeStyles: Record<Size, string> = {

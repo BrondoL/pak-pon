@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 
 const links = [
@@ -9,17 +10,31 @@ const links = [
 
 export function Nav() {
   return (
-    <header className="border-b border-clay-soft/70 bg-paper-soft/80 backdrop-blur-sm">
+    <header className="surface-night border-b-2 border-gold/30">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-        {/* Brand mark — Fraunces display, brick underline-stamp accent */}
+        {/* Brand mark — logo + Pak Pon wordmark in gold */}
         <Link
           href="/"
-          className="group flex items-baseline gap-1.5 font-display text-[19px] leading-none tracking-tight text-coal"
+          className="group flex items-center gap-2.5 leading-none"
           aria-label="Pak Pon — beranda"
         >
-          <span className="underline-stamp italic">Pak Pon</span>
-          <span className="hidden font-body text-[11px] font-medium uppercase tracking-[0.18em] text-clay sm:inline">
-            warung
+          <span className="relative h-9 w-9 overflow-hidden rounded-full ring-2 ring-gold/40 transition-transform duration-[var(--duration-base)] group-hover:scale-105">
+            <Image
+              src="/pakpon-logo.jpg"
+              alt=""
+              fill
+              sizes="36px"
+              className="object-cover"
+              priority
+            />
+          </span>
+          <span className="flex flex-col leading-tight">
+            <span className="font-display text-lg italic font-semibold text-gold">
+              Pak Pon
+            </span>
+            <span className="font-body text-[9px] uppercase tracking-[0.22em] text-ink-mist">
+              Pecel Lele
+            </span>
           </span>
         </Link>
 
@@ -28,7 +43,7 @@ export function Nav() {
             <Link
               key={l.href}
               href={l.href}
-              className="rounded-md px-3 py-1.5 font-medium text-coal-soft transition-colors duration-[var(--duration-fast)] hover:bg-cream hover:text-coal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brick focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+              className="rounded-md px-3 py-1.5 font-medium text-ink-soft transition-colors duration-[var(--duration-fast)] hover:bg-night-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-night"
             >
               {l.label}
             </Link>
@@ -37,7 +52,7 @@ export function Nav() {
           <form action="/api/auth/signout" method="post" className="ml-1">
             <button
               type="submit"
-              className="rounded-md px-3 py-1.5 text-sm font-medium text-clay transition-colors duration-[var(--duration-fast)] hover:bg-cream hover:text-paprika focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brick focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+              className="rounded-md px-3 py-1.5 text-sm font-medium text-ink-mist transition-colors duration-[var(--duration-fast)] hover:bg-night-soft hover:text-brick-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-night"
             >
               Keluar
             </button>

@@ -1,4 +1,16 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(GIT_AUTHOR_NAME=\"BrondoL\" GIT_AUTHOR_EMAIL=\"nabilunited2@gmail.com\" GIT_COMMITTER_NAME=\"BrondoL\" GIT_COMMITTER_EMAIL=\"nabilunited2@gmail.com\" git -C /home/brondol/Downloads/pak-pon add .gitignore CLAUDE.md package.json package-lock.json .env.example docs/brief.md docs/spec.md docs/tasks.md vitest.config.ts vitest.setup.ts)",
+      "Bash(GIT_AUTHOR_NAME=\"BrondoL\" GIT_AUTHOR_EMAIL=\"nabilunited2@gmail.com\" GIT_COMMITTER_NAME=\"BrondoL\" GIT_COMMITTER_EMAIL=\"nabilunited2@gmail.com\" git -C /home/brondol/Downloads/pak-pon commit -m \"chore: bootstrap deps, env template, vitest config, docs scaffolding\")",
+      "Bash(npm run *)",
+      "Bash(node *)",
+      "mcp__plugin_supabase_supabase__execute_sql",
+      "Bash(npx tsc *)",
+      "Bash(npm install *)"
+    ]
+  },
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
     "context7@claude-plugins-official": true,

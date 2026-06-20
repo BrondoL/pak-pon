@@ -1,11 +1,11 @@
 'use client';
 
 import { useActionState } from 'react';
+import Image from 'next/image';
 import { loginAction, type LoginState } from './actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card } from '@/components/ui/card';
 
 const initialState: LoginState = {};
 
@@ -13,25 +13,39 @@ export default function LoginPage() {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
 
   return (
-    <main className="flex flex-1 items-center justify-center px-4 py-12">
+    <main className="surface-night flex flex-1 items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
-        {/* Brand mark — sets warm warung tone */}
+        {/* Logo brand mark */}
+        <div className="mb-6 flex justify-center">
+          <div className="relative h-32 w-32 overflow-hidden rounded-full ring-4 ring-gold/30 shadow-2xl">
+            <Image
+              src="/pakpon-logo.jpg"
+              alt="Pecel Lele Pak Pon"
+              fill
+              sizes="128px"
+              className="object-cover"
+              priority
+            />
+          </div>
+        </div>
+
         <div className="mb-8 text-center">
-          <p className="font-body text-[11px] font-medium uppercase tracking-[0.22em] text-clay">
+          <p className="font-body text-[11px] font-medium uppercase tracking-[0.22em] text-ink-mist">
             Sistem Internal
           </p>
-          <h1 className="mt-3 font-display text-4xl italic leading-none tracking-tight text-coal">
-            Pecel Lele
-            <span className="block not-italic">
-              <span className="underline-stamp font-semibold">Pak Pon</span>
-            </span>
+          <h1 className="mt-2 font-display text-3xl italic font-semibold text-gold leading-tight">
+            Pak Pon
           </h1>
-          <p className="mt-4 font-display text-sm italic text-coal-soft">
+          <p className="font-body text-[11px] uppercase tracking-[0.32em] text-ink-soft mt-1">
+            Pecel Lele
+          </p>
+          <p className="mt-4 font-display text-sm italic text-ink-soft">
             Selamat datang. Silakan masuk.
           </p>
         </div>
 
-        <Card variant="paper" className="p-6 sm:p-8">
+        {/* Form card — cream surface on navy background for contrast */}
+        <div className="rounded-2xl bg-paper-soft p-6 shadow-2xl sm:p-7">
           <form action={formAction} className="space-y-4">
             <div>
               <Label htmlFor="email">Email</Label>
@@ -78,10 +92,10 @@ export default function LoginPage() {
               {pending ? 'Membuka pintu…' : 'Masuk'}
             </Button>
           </form>
-        </Card>
+        </div>
 
-        <p className="mt-6 text-center text-[11px] uppercase tracking-[0.16em] text-clay">
-          Bandar Lampung · Sejak 2009
+        <p className="mt-6 text-center text-[11px] uppercase tracking-[0.18em] text-ink-mist">
+          <span className="text-gold">★</span> Bandar Lampung <span className="text-gold">★</span>
         </p>
       </div>
     </main>

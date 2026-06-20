@@ -9,23 +9,43 @@
    ============================================================ */
 
 @theme {
-  /* ----- Palette: paper, ink, brand ----- */
-  --color-paper: #faf7f0;        /* warm cream — primary background */
-  --color-paper-soft: #fefdf8;   /* card surface — slightly lighter */
-  --color-cream: #f5efe0;        /* subtle elevation / hover */
-  --color-coal: #1a1411;         /* deep ink — primary text */
+  /* ----- Palette: drawn from Pak Pon's actual logo ----- */
+  /* Content surface — warm cream paper, easy on the eyes for long shifts */
+  --color-paper: #faf7f0;        /* warm cream — content background */
+  --color-paper-soft: #fefdf8;   /* card surface */
+  --color-cream: #f5efe0;        /* subtle elevation */
+  --color-coal: #1a1411;         /* deep ink — primary text on cream */
   --color-coal-soft: #4a3f35;    /* secondary text */
   --color-clay: #8a7e6e;         /* tertiary text / muted */
   --color-clay-soft: #c9beb0;    /* borders / dividers */
   --color-clay-mist: #ebe4d6;    /* subtle backgrounds */
 
-  --color-brick: #c5322b;        /* brand red — primary action */
-  --color-brick-soft: #e6433c;   /* hover state */
-  --color-brick-dark: #9b281f;   /* pressed state */
-  --color-brick-faint: #fbe6e3;  /* tinted background */
+  /* Brand chrome — deep night navy (from logo background) */
+  --color-night: #1b3954;        /* primary navy — nav, footer, login hero */
+  --color-night-soft: #284b6a;   /* hover / elevation on navy */
+  --color-night-deep: #122a40;   /* deeper variant */
+  --color-night-ink: #0a1a28;    /* nearly black navy */
 
-  --color-mustard: #e5a82e;      /* accent — highlights, warnings */
-  --color-mustard-soft: #f3c055; /* hover */
+  /* Text on navy — warm cream tones */
+  --color-ink: #faf7f0;          /* primary text on navy */
+  --color-ink-soft: #c8d4df;     /* secondary text on navy */
+  --color-ink-mist: #8aa0b5;     /* tertiary text on navy */
+
+  /* Brand red — from logo halo, used for accents & danger */
+  --color-brick: #d02d1f;
+  --color-brick-soft: #e64336;
+  --color-brick-dark: #9b281f;
+  --color-brick-faint: #fbe6e3;
+
+  /* Brand gold — from logo "Pak Pon" wordmark, primary action color */
+  --color-gold: #f5a623;
+  --color-gold-soft: #f8b94a;
+  --color-gold-dark: #c28115;
+  --color-gold-faint: #fbf0d6;
+
+  /* Aliases for back-compat with components that referenced "mustard" */
+  --color-mustard: #f5a623;
+  --color-mustard-soft: #f8b94a;
   --color-mustard-faint: #fbf0d6;
 
   --color-leaf: #5c7f3e;         /* success / active */
@@ -105,6 +125,16 @@ h1, h2, h3 {
   background-color: var(--color-paper-soft);
   border: 1px solid var(--color-clay-soft);
   box-shadow: var(--shadow-paper);
+}
+
+/* Navy chrome surface — for nav, footer, login hero.
+   Background: deep navy + subtle geometric star pattern (inspired by logo bg). */
+.surface-night {
+  background-color: var(--color-night);
+  color: var(--color-ink);
+  background-image:
+    url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 80'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.045' stroke-width='1'%3E%3Cpath d='M40 8 L52 20 L40 32 L28 20 Z'/%3E%3Cpath d='M40 48 L52 60 L40 72 L28 60 Z'/%3E%3Cpath d='M0 28 L12 40 L0 52'/%3E%3Cpath d='M80 28 L68 40 L80 52'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 80px 80px;
 }
 
 /* Staggered reveal animation — apply to a parent, children animate */
