@@ -26,10 +26,10 @@
   --color-night-deep: #122a40;   /* deeper variant */
   --color-night-ink: #0a1a28;    /* nearly black navy */
 
-  /* Text on navy — warm cream tones */
+  /* Text on navy — warm cream tones. Brightness tuned for WCAG AA contrast on --color-night. */
   --color-ink: #faf7f0;          /* primary text on navy */
-  --color-ink-soft: #c8d4df;     /* secondary text on navy */
-  --color-ink-mist: #8aa0b5;     /* tertiary text on navy */
+  --color-ink-soft: #e3ebf2;     /* secondary text on navy — bright enough to read */
+  --color-ink-mist: #b8c8d8;     /* tertiary / eyebrow text on navy */
 
   /* Brand red — from logo halo, used for accents & danger */
   --color-brick: #d02d1f;

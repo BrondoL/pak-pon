@@ -30,16 +30,16 @@ export default function LoginPage() {
         </div>
 
         <div className="mb-8 text-center">
-          <p className="font-body text-[11px] font-medium uppercase tracking-[0.22em] text-ink-mist">
+          <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-mist">
             Sistem Internal
           </p>
           <h1 className="mt-2 font-display text-3xl italic font-semibold text-gold leading-tight">
             Pak Pon
           </h1>
-          <p className="font-body text-[11px] uppercase tracking-[0.32em] text-ink-soft mt-1">
+          <p className="mt-1 font-body text-xs uppercase tracking-[0.32em] text-ink font-semibold">
             Pecel Lele
           </p>
-          <p className="mt-4 font-display text-sm italic text-ink-soft">
+          <p className="mt-5 font-display text-base italic text-ink">
             Selamat datang. Silakan masuk.
           </p>
         </div>
@@ -94,7 +94,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="mt-6 text-center text-[11px] uppercase tracking-[0.18em] text-ink-mist">
+        <p className="mt-6 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-soft">
           <span className="text-gold">★</span> Bandar Lampung <span className="text-gold">★</span>
         </p>
       </div>

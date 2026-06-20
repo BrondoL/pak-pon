@@ -32,7 +32,7 @@ export function Nav() {
             <span className="font-display text-lg italic font-semibold text-gold">
               Pak Pon
             </span>
-            <span className="font-body text-[9px] uppercase tracking-[0.22em] text-ink-mist">
+            <span className="font-body text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-soft">
               Pecel Lele
             </span>
           </span>
@@ -43,7 +43,7 @@ export function Nav() {
             <Link
               key={l.href}
               href={l.href}
-              className="rounded-md px-3 py-1.5 font-medium text-ink-soft transition-colors duration-[var(--duration-fast)] hover:bg-night-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-night"
+              className="rounded-md px-3 py-1.5 font-medium text-ink transition-colors duration-[var(--duration-fast)] hover:bg-night-soft hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-night"
             >
               {l.label}
             </Link>
@@ -52,7 +52,7 @@ export function Nav() {
           <form action="/api/auth/signout" method="post" className="ml-1">
             <button
               type="submit"
-              className="rounded-md px-3 py-1.5 text-sm font-medium text-ink-mist transition-colors duration-[var(--duration-fast)] hover:bg-night-soft hover:text-brick-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-night"
+              className="rounded-md px-3 py-1.5 text-sm font-medium text-ink-soft transition-colors duration-[var(--duration-fast)] hover:bg-night-soft hover:text-brick-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-night"
             >
               Keluar
             </button>

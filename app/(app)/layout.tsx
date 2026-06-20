@@ -12,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Nav />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 md:py-10">{children}</main>
       <footer className="surface-night mt-12">
-        <div className="mx-auto max-w-5xl px-4 py-5 text-center text-[11px] uppercase tracking-[0.18em] text-ink-mist">
+        <div className="mx-auto max-w-5xl px-4 py-5 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-soft">
           <span className="text-gold">★</span> Pecel Lele Pak Pon · Bandar Lampung <span className="text-gold">★</span>
         </div>
       </footer>
