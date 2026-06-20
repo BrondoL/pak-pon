@@ -75,6 +75,7 @@ html, body {
   color: var(--color-coal);
   font-family: var(--font-body);
   font-feature-settings: "ss01", "cv11"; /* stylistic alt for Plus Jakarta Sans */
+  overflow-x: hidden; /* prevent horizontal scroll on small viewports */
 }
 
 body {
