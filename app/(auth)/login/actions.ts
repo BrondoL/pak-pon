@@ -22,7 +22,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   const supabase = await getSupabaseServer();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) {
-    return { error: 'Login gagal: ' + error.message };
+    return { error: 'Email atau password salah.' };
   }
   redirect('/');
 }

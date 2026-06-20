@@ -17,8 +17,9 @@ export default function LoginPage() {
         <h1 className="text-xl font-semibold tracking-tight">Pecel Lele Pak Pon</h1>
         <p className="mt-1 text-sm text-zinc-500">Masuk untuk lanjut.</p>
 
-        <label className="mt-6 block text-sm font-medium">Email</label>
+        <label htmlFor="email" className="mt-6 block text-sm font-medium">Email</label>
         <input
+          id="email"
           name="email"
           type="email"
           required
@@ -26,8 +27,9 @@ export default function LoginPage() {
           className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-800"
         />
 
-        <label className="mt-4 block text-sm font-medium">Password</label>
+        <label htmlFor="password" className="mt-4 block text-sm font-medium">Password</label>
         <input
+          id="password"
           name="password"
           type="password"
           required

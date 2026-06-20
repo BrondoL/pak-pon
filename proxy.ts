@@ -34,9 +34,13 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
   const pathname = request.nextUrl.pathname;
+  const isApi = pathname.startsWith('/api/');
   const isPublic = pathname === '/login' || pathname.startsWith('/_next') || pathname.startsWith('/api/auth');
 
   if (!user && !isPublic) {
+    if (isApi) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
