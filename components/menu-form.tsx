@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
 
 export type MenuFormValues = {
   id?: string;
@@ -13,6 +14,12 @@ export type MenuFormValues = {
   sort_order: number;
   is_active?: boolean;
 };
+
+const categoryOptions: { value: MenuFormValues['category']; label: string }[] = [
+  { value: 'makanan', label: 'Makanan' },
+  { value: 'nasi',    label: 'Nasi & side' },
+  { value: 'minuman', label: 'Minuman' },
+];
 
 export function MenuForm({
   initial,
@@ -58,44 +65,108 @@ export function MenuForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <h3 className="font-semibold">{initial?.id ? 'Edit menu' : 'Menu baru'}</h3>
+    <Card variant="receipt" className="p-5 md:p-6">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="flex items-baseline justify-between">
+          <h3 className="font-display text-xl italic text-coal">
+            {initial?.id ? 'Edit menu' : 'Menu baru'}
+          </h3>
+          <span className="text-[10px] uppercase tracking-[0.18em] text-clay">
+            {initial?.id ? 'ubah' : 'tambah'}
+          </span>
+        </div>
 
-      <div>
-        <Label htmlFor="name">Nama</Label>
-        <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} />
-      </div>
+        {/* Name */}
+        <div>
+          <Label htmlFor="name">Nama menu</Label>
+          <Input
+            id="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            maxLength={80}
+            placeholder="cth: Ayam Bakar"
+            className="mt-2"
+          />
+        </div>
 
-      <div>
-        <Label htmlFor="category">Kategori</Label>
-        <select
-          id="category"
-          value={category}
-          onChange={(e) => setCategory(e.target.value as MenuFormValues['category'])}
-          className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-        >
-          <option value="makanan">Makanan</option>
-          <option value="nasi">Nasi & side</option>
-          <option value="minuman">Minuman</option>
-        </select>
-      </div>
+        {/* Category — segmented toggle, bukan native select */}
+        <div>
+          <Label>Kategori</Label>
+          <div
+            role="radiogroup"
+            aria-label="Kategori menu"
+            className="mt-2 inline-flex rounded-lg bg-cream p-1"
+          >
+            {categoryOptions.map((opt) => {
+              const active = category === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setCategory(opt.value)}
+                  className={[
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-[var(--duration-fast)]',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brick focus-visible:ring-offset-1 focus-visible:ring-offset-cream',
+                    active
+                      ? 'bg-paper-soft text-coal shadow-[var(--shadow-paper)]'
+                      : 'text-coal-soft hover:text-coal',
+                  ].join(' ')}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-      <div>
-        <Label htmlFor="price">Harga (Rp)</Label>
-        <Input id="price" type="number" min={0} step={1000} value={price} onChange={(e) => setPrice(Number(e.target.value))} required />
-      </div>
+        {/* Price + sort_order on one row pada wider screens */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="price">Harga (Rp)</Label>
+            <Input
+              id="price"
+              type="number"
+              min={0}
+              step={1000}
+              value={price}
+              onChange={(e) => setPrice(Number(e.target.value))}
+              required
+              className="mt-2 font-display tracking-tight"
+            />
+          </div>
+          <div>
+            <Label htmlFor="sort_order">Urutan tampil</Label>
+            <Input
+              id="sort_order"
+              type="number"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(Number(e.target.value))}
+              className="mt-2"
+            />
+          </div>
+        </div>
 
-      <div>
-        <Label htmlFor="sort_order">Urutan tampil</Label>
-        <Input id="sort_order" type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} />
-      </div>
+        {error && (
+          <p
+            className="rounded-md bg-brick-faint px-3 py-2 text-sm text-brick-dark"
+            role="alert"
+          >
+            {error}
+          </p>
+        )}
 
-      {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
-
-      <div className="flex gap-2">
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>Batal</Button>
-        <Button type="submit" disabled={pending || name.length === 0}>{pending ? 'Menyimpan…' : 'Simpan'}</Button>
-      </div>
-    </form>
+        <div className="flex gap-2 pt-1">
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>
+            Batal
+          </Button>
+          <Button type="submit" disabled={pending || name.length === 0}>
+            {pending ? 'Menyimpan…' : initial?.id ? 'Simpan perubahan' : 'Tambah menu'}
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }
