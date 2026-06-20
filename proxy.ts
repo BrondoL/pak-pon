@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import type { CookieOptions } from '@supabase/ssr';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next();
 
   const supabase = createServerClient(
@@ -15,7 +15,7 @@ export async function middleware(request: NextRequest) {
         },
         setAll(
           cookiesToSet: { name: string; value: string; options: CookieOptions }[],
-          _headers: Record<string, string>
+          headers: Record<string, string>
         ) {
           for (const { name, value } of cookiesToSet) {
             request.cookies.set(name, value);
@@ -24,9 +24,9 @@ export async function middleware(request: NextRequest) {
           for (const { name, value, options } of cookiesToSet) {
             response.cookies.set(name, value, options);
           }
-          Object.entries(_headers).forEach(([key, val]) =>
-            response.headers.set(key, val)
-          );
+          for (const [key, val] of Object.entries(headers)) {
+            response.headers.set(key, val);
+          }
         },
       },
     }
