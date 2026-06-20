@@ -1,26 +1,137 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================
+   Pak Pon — "Warm Warung" Design System
+   ============================================================
+   Single source of truth untuk semua design tokens.
+   Komponen reference token, jangan hardcode.
+   Ubah palette / typography? Cukup di sini.
+   ============================================================ */
+
+@theme {
+  /* ----- Palette: paper, ink, brand ----- */
+  --color-paper: #faf7f0;        /* warm cream — primary background */
+  --color-paper-soft: #fefdf8;   /* card surface — slightly lighter */
+  --color-cream: #f5efe0;        /* subtle elevation / hover */
+  --color-coal: #1a1411;         /* deep ink — primary text */
+  --color-coal-soft: #4a3f35;    /* secondary text */
+  --color-clay: #8a7e6e;         /* tertiary text / muted */
+  --color-clay-soft: #c9beb0;    /* borders / dividers */
+  --color-clay-mist: #ebe4d6;    /* subtle backgrounds */
+
+  --color-brick: #c5322b;        /* brand red — primary action */
+  --color-brick-soft: #e6433c;   /* hover state */
+  --color-brick-dark: #9b281f;   /* pressed state */
+  --color-brick-faint: #fbe6e3;  /* tinted background */
+
+  --color-mustard: #e5a82e;      /* accent — highlights, warnings */
+  --color-mustard-soft: #f3c055; /* hover */
+  --color-mustard-faint: #fbf0d6;
+
+  --color-leaf: #5c7f3e;         /* success / active */
+  --color-paprika: #b73e2a;      /* danger / destructive */
+
+  /* ----- Typography ----- */
+  --font-display: var(--font-fraunces), ui-serif, Georgia, "Times New Roman", serif;
+  --font-body: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+
+  /* ----- Motion ----- */
+  --ease-warm: cubic-bezier(0.34, 1.56, 0.64, 1);   /* gentle spring */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);   /* slow ease */
+  --duration-fast: 150ms;
+  --duration-base: 240ms;
+  --duration-slow: 420ms;
+
+  /* ----- Shadows ----- */
+  --shadow-paper: 0 1px 2px rgb(26 20 17 / 0.04), 0 1px 1px rgb(26 20 17 / 0.06);
+  --shadow-stamp: 0 2px 6px rgb(26 20 17 / 0.08), 0 1px 2px rgb(26 20 17 / 0.06);
+  --shadow-press: 0 8px 24px rgb(197 50 43 / 0.18), 0 2px 4px rgb(26 20 17 / 0.10);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ----- Base ----- */
+html, body {
+  background-color: var(--color-paper);
+  color: var(--color-coal);
+  font-family: var(--font-body);
+  font-feature-settings: "ss01", "cv11"; /* stylistic alt for Plus Jakarta Sans */
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-image:
+    url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.55 0 0 0 0 0.45 0 0 0 0 0.35 0 0 0 0.08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 240px 240px;
+  background-attachment: fixed;
+}
+
+::selection {
+  background-color: var(--color-mustard-faint);
+  color: var(--color-coal);
+}
+
+/* ----- Headings default to display font ----- */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-feature-settings: "ss01"; /* fraunces stylistic set */
+  letter-spacing: -0.01em;
+}
+
+/* ----- Reusable utilities (used by multiple components) ----- */
+
+/* Receipt-style dashed border */
+.border-receipt {
+  border: 1.5px dashed var(--color-clay-soft);
+}
+
+/* Stamped underline — brand mark accent */
+.underline-stamp {
+  position: relative;
+  display: inline-block;
+}
+.underline-stamp::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.18em;
+  height: 3px;
+  background: var(--color-brick);
+  border-radius: 2px;
+  transform: skew(-2deg);
+}
+
+/* Paper card surface */
+.surface-paper {
+  background-color: var(--color-paper-soft);
+  border: 1px solid var(--color-clay-soft);
+  box-shadow: var(--shadow-paper);
+}
+
+/* Staggered reveal animation — apply to a parent, children animate */
+.reveal-children > * {
+  opacity: 0;
+  animation: reveal-up 540ms var(--ease-out-soft) forwards;
+}
+.reveal-children > *:nth-child(1) { animation-delay: 60ms; }
+.reveal-children > *:nth-child(2) { animation-delay: 140ms; }
+.reveal-children > *:nth-child(3) { animation-delay: 220ms; }
+.reveal-children > *:nth-child(4) { animation-delay: 300ms; }
+.reveal-children > *:nth-child(5) { animation-delay: 380ms; }
+.reveal-children > *:nth-child(6) { animation-delay: 460ms; }
+
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Focus ring — used by all interactive elements */
+.ring-focus {
+  outline: 2px solid var(--color-brick);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-children > * { animation: none; opacity: 1; }
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
