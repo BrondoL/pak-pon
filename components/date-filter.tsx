@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { currentBusinessDate } from '@/lib/date';
 
 export function DateFilter() {
@@ -73,16 +74,16 @@ export function DateFilter() {
         </div>
         <div>
           <Label htmlFor="status">Status</Label>
-          <select
-            id="status"
-            value={status}
-            onChange={(e) => update('status', e.target.value)}
-            className="mt-2 block w-full rounded-md border border-clay-soft bg-paper-soft px-3 py-2 text-sm text-coal"
-          >
-            <option value="">Semua</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="pending_review">Pending Review</option>
-          </select>
+          <Select value={status || 'all'} onValueChange={(v) => update('status', v === 'all' ? '' : String(v))}>
+            <SelectTrigger id="status" className="mt-2 w-full">
+              <SelectValue placeholder="Semua" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua</SelectItem>
+              <SelectItem value="confirmed">Confirmed</SelectItem>
+              <SelectItem value="pending_review">Pending Review</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
