@@ -556,6 +556,7 @@ pak-pon/
 - **Soft delete (menus)**: gunakan `is_active=false` (permanent, tidak ada cleanup) — preserve FK ke transaksi historis
 - **Currency display**: `formatRp(120000)` → `"Rp 120.000"` (dengan space + titik separator ribuan)
 - **Business day**: pakai `currentBusinessDate()` / `businessDayRange()` dari `lib/date.ts`; jangan inline `created_at::date`
+- **UI components**: prioritaskan komponen shadcn dulu sebelum nulis custom. Lihat `2026-06-21-shadcn-migration-design.md` Section 4 untuk policy lengkap.
 
 ## 15. Out of scope (MVP)
 
@@ -577,7 +578,7 @@ Hal-hal berikut **sengaja tidak masuk MVP**, di-defer ke fase berikutnya kalau m
 ## 16. Open implementation details (decided saat coding)
 
 - Library chart bulanan: candidate `recharts` (default), `@tremor/react`, atau `chart.js`. Finalkan saat implement reports.
-- UI primitives: tulis sendiri (button, input, modal) vs Shadcn vs Radix. Default: minimal manual primitives di `components/ui/` mengikuti Tailwind v4.
+- ~~UI primitives: tulis sendiri vs Shadcn vs Radix.~~ **Decided** — sekarang shadcn first; lihat `2026-06-21-shadcn-migration-design.md`.
 - Toast notifications: Sonner atau bikin sendiri.
 - Date picker: `react-day-picker` atau native `<input type="date">`.
 - Form library: react-hook-form vs native FormData + Zod. Default: native + Zod untuk minimalisme.
