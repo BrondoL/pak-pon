@@ -196,7 +196,9 @@ export function DailySummary({
         <p className="mt-2 text-[10px] text-clay/70">
           Catatan: closingan 1 hari = transaksi sejak jam{' '}
           {String(BUSINESS_DAY_CUTOFF_HOURS).padStart(2, '0')}:00 WIB tanggal pilihan
-          sampai 11:59 siang besoknya.
+          sampai{' '}
+          {String((BUSINESS_DAY_CUTOFF_HOURS - 1 + 24) % 24).padStart(2, '0')}:59 WIB
+          besoknya.
         </p>
       </Card>
 
