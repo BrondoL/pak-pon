@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatRp } from '@/lib/currency';
@@ -51,6 +52,7 @@ export function DailySummary({
   const isToday = date === currentBusinessDate();
   const avgPerTx = count > 0 ? Math.round(total / count) : 0;
   const totalQty = allItems.reduce((acc, it) => acc + it.qty, 0);
+  const isEmpty = count === 0 && pendingCount === 0;
 
   return (
     <div className="space-y-6">
@@ -170,37 +172,65 @@ export function DailySummary({
         </div>
       )}
 
-      <Card variant="paper" className="px-6 py-10">
-        <div className="text-center">
+      {isEmpty ? (
+        <Card variant="paper" className="px-6 py-12 text-center">
           <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
             Total Pemasukan
           </p>
-          <p className="mt-3 font-display text-5xl tracking-tight text-coal md:text-6xl">
-            {formatRp(total)}
+          <p className="mt-3 font-display text-3xl italic leading-snug text-coal md:text-4xl">
+            Belum ada transaksi pada tanggal ini.
           </p>
-        </div>
-        <div className="mt-8 grid grid-cols-3 divide-x divide-clay-soft/60 border-t border-clay-soft/60 pt-6 text-center">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Transaksi</div>
-            <div className="mt-1 font-display text-2xl text-coal">{count}</div>
+          <p className="mx-auto mt-3 max-w-md text-sm text-coal-soft">
+            Geser ke tanggal lain di atas, atau scan nota baru kalau hari ini
+            sedang jalan.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <Link href="/scan">
+              <Button>📷 Scan nota</Button>
+            </Link>
+            {!isToday && (
+              <Button
+                variant="secondary"
+                onClick={() => setDate(currentBusinessDate())}
+              >
+                Lompat ke hari ini
+              </Button>
+            )}
           </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Porsi terjual</div>
-            <div className="mt-1 font-display text-2xl text-coal">{totalQty}</div>
+        </Card>
+      ) : (
+        <Card variant="paper" className="px-6 py-10">
+          <div className="text-center">
+            <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
+              Total Pemasukan
+            </p>
+            <p className="mt-3 font-display text-5xl tracking-tight text-coal md:text-6xl">
+              {formatRp(total)}
+            </p>
           </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Rata-rata/tx</div>
-            <div className="mt-1 font-display text-2xl text-coal">{formatRp(avgPerTx)}</div>
+          <div className="mt-8 grid grid-cols-3 divide-x divide-clay-soft/60 border-t border-clay-soft/60 pt-6 text-center">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Transaksi</div>
+              <div className="mt-1 font-display text-2xl text-coal">{count}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Porsi terjual</div>
+              <div className="mt-1 font-display text-2xl text-coal">{totalQty}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Rata-rata/tx</div>
+              <div className="mt-1 font-display text-2xl text-coal">{formatRp(avgPerTx)}</div>
+            </div>
           </div>
-        </div>
-        <p className="mt-2 text-[10px] text-clay/70">
-          Catatan: closingan 1 hari = transaksi sejak jam{' '}
-          {String(BUSINESS_DAY_CUTOFF_HOURS).padStart(2, '0')}:00 WIB tanggal pilihan
-          sampai{' '}
-          {String((BUSINESS_DAY_CUTOFF_HOURS - 1 + 24) % 24).padStart(2, '0')}:59 WIB
-          besoknya.
-        </p>
-      </Card>
+          <p className="mt-2 text-[10px] text-clay/70">
+            Catatan: closingan 1 hari = transaksi sejak jam{' '}
+            {String(BUSINESS_DAY_CUTOFF_HOURS).padStart(2, '0')}:00 WIB tanggal pilihan
+            sampai{' '}
+            {String((BUSINESS_DAY_CUTOFF_HOURS - 1 + 24) % 24).padStart(2, '0')}:59 WIB
+            besoknya.
+          </p>
+        </Card>
+      )}
 
       {allItems.length > 0 ? (
         <Card variant="paper">
@@ -252,9 +282,11 @@ export function DailySummary({
           </table>
         </Card>
       ) : (
-        <Card variant="paper" className="px-5 py-10 text-center text-sm text-clay">
-          Belum ada transaksi tersimpan untuk tanggal ini.
-        </Card>
+        !isEmpty && (
+          <Card variant="paper" className="px-5 py-10 text-center text-sm text-clay">
+            Draft pending belum dikonfirmasi — belum ada menu yang terhitung.
+          </Card>
+        )
       )}
     </div>
   );

@@ -37,6 +37,7 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
     cat,
     items: initialMenus.filter((m) => m.category === cat),
   }));
+  const isFullyEmpty = initialMenus.length === 0;
 
   function refresh() {
     setEditing(null);
@@ -110,6 +111,23 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
         >
           {mutationError}
         </p>
+      )}
+
+      {isFullyEmpty && !editing && (
+        <Card variant="paper" className="px-6 py-12 text-center">
+          <p className="font-display text-2xl italic leading-snug text-coal">
+            Belum ada menu sama sekali.
+          </p>
+          <p className="mx-auto mt-3 max-w-md text-sm text-coal-soft">
+            Tambah menu pertama biar OCR bisa mencocokkan item nota — mulai
+            dari yang paling sering dijual.
+          </p>
+          <div className="mt-6">
+            <Button onClick={() => setEditing({ category: 'makanan', sort_order: 0 })}>
+              + Tambah menu pertama
+            </Button>
+          </div>
+        </Card>
       )}
 
       <div className="space-y-8">

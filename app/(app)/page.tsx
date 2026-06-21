@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { HomeTiles } from '@/components/home-tiles';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { currentBusinessDate, businessDayRange } from '@/lib/date';
@@ -66,36 +67,53 @@ export default async function HomePage() {
             Buka closingan →
           </Link>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Pemasukan</div>
-            <div className="mt-1 font-display text-2xl tracking-tight text-coal md:text-3xl">
-              {formatRp(todayTotal)}
+        {confirmedCount === 0 && pendingCount === 0 ? (
+          <div className="mt-4 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-display text-xl italic leading-snug text-coal">
+                Belum ada transaksi hari ini.
+              </p>
+              <p className="mt-1 text-sm text-coal-soft">
+                Mulai shift dengan foto nota pertama — tinggal scan, sistem
+                yang baca.
+              </p>
+            </div>
+            <Link href="/scan">
+              <Button>📷 Scan nota pertama</Button>
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Pemasukan</div>
+              <div className="mt-1 font-display text-2xl tracking-tight text-coal md:text-3xl">
+                {formatRp(todayTotal)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Transaksi</div>
+              <div className="mt-1 font-display text-2xl text-coal md:text-3xl">
+                {confirmedCount}
+              </div>
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Draft pending</div>
+              {pendingCount > 0 ? (
+                <Link
+                  href={`/transactions?date_from=${date}&date_to=${date}&status=pending_review`}
+                  className="mt-1 inline-flex items-baseline gap-2 font-display text-2xl text-mustard md:text-3xl hover:text-mustard/80"
+                >
+                  {pendingCount}
+                  <span className="text-xs uppercase tracking-wide text-coal-soft">
+                    perlu konfirmasi →
+                  </span>
+                </Link>
+              ) : (
+                <div className="mt-1 font-display text-2xl text-coal/40 md:text-3xl">0</div>
+              )}
             </div>
           </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Transaksi</div>
-            <div className="mt-1 font-display text-2xl text-coal md:text-3xl">
-              {confirmedCount}
-            </div>
-          </div>
-          <div className="col-span-2 sm:col-span-1">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Draft pending</div>
-            {pendingCount > 0 ? (
-              <Link
-                href={`/transactions?date_from=${date}&date_to=${date}&status=pending_review`}
-                className="mt-1 inline-flex items-baseline gap-2 font-display text-2xl text-mustard md:text-3xl hover:text-mustard/80"
-              >
-                {pendingCount}
-                <span className="text-xs uppercase tracking-wide text-coal-soft">
-                  perlu konfirmasi →
-                </span>
-              </Link>
-            ) : (
-              <div className="mt-1 font-display text-2xl text-coal/40 md:text-3xl">0</div>
-            )}
-          </div>
-        </div>
+        )}
       </Card>
 
       <HomeTiles />

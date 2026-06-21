@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { formatRp } from '@/lib/currency';
 import { currentBusinessDate } from '@/lib/date';
 
@@ -59,6 +61,8 @@ export function MonthlyChart({
   const avgPerDay = activeDays.length > 0 ? Math.round(total / activeDays.length) : 0;
   const bestDay = daily.reduce<DayBar | null>((b, d) => (d.total > (b?.total ?? 0) ? d : b), null);
   const todayYmd = currentBusinessDate();
+  const isEmpty = count === 0;
+  const isCurrentMonth = month === todayYmd.slice(0, 7);
 
   function setMonth(ym: string) {
     const next = new URLSearchParams(sp.toString());
@@ -96,31 +100,59 @@ export function MonthlyChart({
         </button>
       </div>
 
-      <Card variant="paper" className="px-6 py-8">
-        <div className="text-center">
+      {isEmpty ? (
+        <Card variant="paper" className="px-6 py-12 text-center">
           <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
             Total Pemasukan
           </p>
-          <p className="mt-3 font-display text-4xl tracking-tight text-coal md:text-5xl">
-            {formatRp(total)}
+          <p className="mt-3 font-display text-3xl italic leading-snug text-coal md:text-4xl">
+            Belum ada transaksi di {ymLabel(month)}.
           </p>
-        </div>
-        <div className="mt-8 grid grid-cols-3 divide-x divide-clay-soft/60 border-t border-clay-soft/60 pt-6 text-center">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Transaksi</div>
-            <div className="mt-1 font-display text-2xl text-coal">{count}</div>
+          <p className="mx-auto mt-3 max-w-md text-sm text-coal-soft">
+            {isCurrentMonth
+              ? 'Bulan ini masih kosong — mulai dengan scan nota pertama.'
+              : 'Pindah ke bulan lain di navigasi atas, atau cek history.'}
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            {isCurrentMonth ? (
+              <Link href="/scan">
+                <Button>📷 Scan nota</Button>
+              </Link>
+            ) : (
+              <Link href="/transactions">
+                <Button variant="secondary">Lihat history</Button>
+              </Link>
+            )}
           </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Hari aktif</div>
-            <div className="mt-1 font-display text-2xl text-coal">{activeDays.length}<span className="text-sm text-clay">/{daily.length}</span></div>
+        </Card>
+      ) : (
+        <Card variant="paper" className="px-6 py-8">
+          <div className="text-center">
+            <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
+              Total Pemasukan
+            </p>
+            <p className="mt-3 font-display text-4xl tracking-tight text-coal md:text-5xl">
+              {formatRp(total)}
+            </p>
           </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Rata-rata/hari</div>
-            <div className="mt-1 font-display text-2xl text-coal">{formatRp(avgPerDay)}</div>
+          <div className="mt-8 grid grid-cols-3 divide-x divide-clay-soft/60 border-t border-clay-soft/60 pt-6 text-center">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Transaksi</div>
+              <div className="mt-1 font-display text-2xl text-coal">{count}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Hari aktif</div>
+              <div className="mt-1 font-display text-2xl text-coal">{activeDays.length}<span className="text-sm text-clay">/{daily.length}</span></div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Rata-rata/hari</div>
+              <div className="mt-1 font-display text-2xl text-coal">{formatRp(avgPerDay)}</div>
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
 
+      {!isEmpty && (
       <Card variant="paper" className="px-5 py-5">
         <div className="flex items-baseline justify-between">
           <p className="text-xs uppercase tracking-wider text-clay">Pemasukan per hari</p>
@@ -213,6 +245,7 @@ export function MonthlyChart({
           </div>
         </div>
       </Card>
+      )}
 
       {topItems.length > 0 && (
         <Card variant="paper">
