@@ -1,15 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * Service-role client untuk operasi yang bypass RLS (mis. cron cleanup di Plan 3).
- * HANYA dipakai di server-side route handlers yang diauthorisasi (mis. cron secret).
+ * Service-role Supabase client. BYPASSES Row-Level Security.
+ * USE ONLY in cron jobs and admin scripts. NEVER import from user-facing API routes.
  */
 export function getSupabaseAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SECRET_KEY!,
-    {
-      auth: { persistSession: false, autoRefreshToken: false },
-    }
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !serviceKey) {
+    throw new Error('Supabase admin client requires NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SECRET_KEY');
+  }
+  return createClient(url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
