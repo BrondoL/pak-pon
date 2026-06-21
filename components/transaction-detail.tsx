@@ -5,6 +5,17 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { formatRp } from '@/lib/currency';
 
 type Item = {
@@ -54,7 +65,6 @@ export function TransactionDetail({
   scanUrl: string | null;
 }) {
   const router = useRouter();
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -209,41 +219,41 @@ export function TransactionDetail({
             </p>
           )}
 
-          {!confirmDelete ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href={`/transactions/${transaction.id}/review`} className="flex-1 sm:flex-none">
-                <Button disabled={pending} className="w-full sm:w-auto">
-                  ✏️ {isDraft ? 'Lanjutkan edit' : 'Edit transaksi'}
-                </Button>
-              </Link>
-              <Button
-                variant="ghost"
-                onClick={() => setConfirmDelete(true)}
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/transactions/${transaction.id}/review`} className="flex-1 sm:flex-none">
+              <Button disabled={pending} className="w-full sm:w-auto">
+                ✏️ {isDraft ? 'Lanjutkan edit' : 'Edit transaksi'}
+              </Button>
+            </Link>
+
+            <AlertDialog>
+              <AlertDialogTrigger
                 disabled={pending}
                 className="ml-auto text-brick-dark hover:bg-brick-faint"
+                render={<Button variant="ghost" />}
               >
                 🗑️ Hapus
-              </Button>
-            </div>
-          ) : (
-            <Card variant="paper" className="border-brick/30 bg-brick-faint/40 p-4">
-              <div className="flex items-baseline gap-2">
-                <span aria-hidden>🗑️</span>
-                <p className="font-semibold text-coal">Hapus transaksi ini?</p>
-              </div>
-              <p className="mt-2 text-xs text-coal-soft">
-                Transaksi disimpan sebagai soft-delete selama 7 hari. Setelah itu cron menghapus permanen (termasuk foto nota).
-              </p>
-              <div className="mt-4 flex gap-2">
-                <Button variant="secondary" onClick={() => setConfirmDelete(false)} disabled={pending} className="ml-auto">
-                  Batal
-                </Button>
-                <Button variant="destructive" onClick={handleDelete} disabled={pending}>
-                  {pending ? 'Menghapus…' : 'Ya, hapus'}
-                </Button>
-              </div>
-            </Card>
-          )}
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Hapus transaksi ini?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Transaksi disimpan sebagai soft-delete selama 7 hari. Setelah itu cron menghapus permanen (termasuk foto nota).
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={pending}>Batal</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    disabled={pending}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {pending ? 'Menghapus…' : 'Ya, hapus'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       </div>
     </div>
