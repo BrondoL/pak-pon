@@ -172,7 +172,7 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
                           </Button>
                           <Button
                             size="sm"
-                            variant="danger"
+                            variant="destructive"
                             onClick={() => performDeactivate(m.id)}
                           >
                             Ya, nonaktifkan

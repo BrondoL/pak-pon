@@ -238,7 +238,7 @@ export function TransactionDetail({
                 <Button variant="secondary" onClick={() => setConfirmDelete(false)} disabled={pending} className="ml-auto">
                   Batal
                 </Button>
-                <Button variant="danger" onClick={handleDelete} disabled={pending}>
+                <Button variant="destructive" onClick={handleDelete} disabled={pending}>
                   {pending ? 'Menghapus…' : 'Ya, hapus'}
                 </Button>
               </div>

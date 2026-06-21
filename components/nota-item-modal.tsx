@@ -160,7 +160,7 @@ export function NotaItemModal({
 
           <div className="flex gap-2 pt-2">
             {onDelete && initial?.id && (
-              <Button type="button" variant="danger" onClick={onDelete}>
+              <Button type="button" variant="destructive" onClick={onDelete}>
                 🗑️ Hapus
               </Button>
             )}
