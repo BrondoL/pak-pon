@@ -5,6 +5,13 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { formatRp } from '@/lib/currency';
 import { MenuForm, type MenuFormValues } from '@/components/menu-form';
 
@@ -96,13 +103,28 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
         </Button>
       </div>
 
-      {editing && (
-        <MenuForm
-          initial={editing}
-          onSaved={refresh}
-          onCancel={() => setEditing(null)}
-        />
-      )}
+      <Dialog
+        open={editing !== null}
+        onOpenChange={(open) => { if (!open) setEditing(null); }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editing?.id ? 'Edit menu' : 'Menu baru'}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Form untuk {editing?.id ? 'mengubah' : 'menambah'} menu master.
+            </DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <MenuForm
+              initial={editing}
+              onSaved={refresh}
+              onCancel={() => setEditing(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {mutationError && (
         <p

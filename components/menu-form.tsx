@@ -5,7 +5,6 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 export type MenuFormValues = {
@@ -70,17 +69,7 @@ export function MenuForm({
   }
 
   return (
-    <Card variant="receipt" className="p-5 md:p-6">
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="flex items-baseline justify-between">
-          <h3 className="font-display text-xl italic text-coal">
-            {initial?.id ? 'Edit menu' : 'Menu baru'}
-          </h3>
-          <span className="text-[10px] uppercase tracking-[0.18em] text-clay">
-            {initial?.id ? 'ubah' : 'tambah'}
-          </span>
-        </div>
-
+    <form onSubmit={handleSubmit} className="space-y-5">
         {/* Name */}
         <div>
           <Label htmlFor="name">Nama menu</Label>
@@ -170,6 +159,5 @@ export function MenuForm({
           </Button>
         </div>
       </form>
-    </Card>
   );
 }
