@@ -170,12 +170,18 @@ async function applyHeaderUpdate(
   if (patch.status !== undefined) {
     headerUpdate.status = patch.status;
     if (patch.status === 'confirmed') {
-      // Only set confirmed_at on transition (preserve original timestamp on re-edit)
-      const { data: existing } = await supabase
+      // Only set confirmed_at on transition. If the read fails (network blip, RLS), don't
+      // touch confirmed_at — better to leave it stale than risk overwriting the original.
+      const { data: existing, error: readErr } = await supabase
         .from('transactions')
         .select('confirmed_at')
         .eq('id', id)
         .single();
+      if (readErr) {
+        tagStatus(evt, 500);
+        evt.error(readErr);
+        return { kind: 'error', response: NextResponse.json({ error: readErr.message }, { status: 500 }) };
+      }
       if (!existing?.confirmed_at) {
         headerUpdate.confirmed_at = new Date().toISOString();
       }

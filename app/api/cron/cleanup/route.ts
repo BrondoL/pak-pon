@@ -5,8 +5,8 @@ import { newEvent, tagStatus } from '@/lib/logger';
 const STORAGE_BUCKET = 'notas';
 const RETENTION_DAYS = 7;
 
-export async function POST(request: NextRequest) {
-  const evt = newEvent('POST /api/cron/cleanup');
+export async function GET(request: NextRequest) {
+  const evt = newEvent('GET /api/cron/cleanup');
   try {
     const authHeader = request.headers.get('authorization') ?? '';
     const expected = `Bearer ${process.env.CRON_SECRET ?? ''}`;

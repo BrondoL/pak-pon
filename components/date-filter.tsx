@@ -29,9 +29,8 @@ export function DateFilter() {
 
   function quickRange(days: number) {
     const to = today();
-    const fromDate = new Date(`${to}T00:00:00+07:00`);
-    fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1));
-    const from = fromDate.toISOString().slice(0, 10);
+    const [y, m, d] = to.split('-').map(Number);
+    const from = new Date(Date.UTC(y, m - 1, d - (days - 1))).toISOString().slice(0, 10);
     const next = new URLSearchParams(sp.toString());
     next.set('date_from', from);
     next.set('date_to', to);

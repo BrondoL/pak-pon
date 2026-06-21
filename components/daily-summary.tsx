@@ -33,9 +33,9 @@ export function DailySummary({
   }
 
   function shiftDay(days: number) {
-    const d = new Date(`${date}T00:00:00+07:00`);
-    d.setUTCDate(d.getUTCDate() + days);
-    setDate(d.toISOString().slice(0, 10));
+    const [y, m, d] = date.split('-').map(Number);
+    const shifted = new Date(Date.UTC(y, m - 1, d + days));
+    setDate(shifted.toISOString().slice(0, 10));
   }
 
   return (
