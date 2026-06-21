@@ -4,6 +4,13 @@ import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { formatRp } from '@/lib/currency';
 import type { NotaItem } from './nota-item-row';
 
@@ -55,29 +62,16 @@ export function NotaItemModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-night-deep/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <div
-        className="w-full max-w-md rounded-t-2xl bg-paper-soft p-5 shadow-2xl sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-baseline justify-between">
-          <h3 className="font-display text-xl italic text-coal">
-            {initial?.id ? 'Edit item' : 'Tambah item'}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Tutup"
-            className="text-clay hover:text-coal"
-          >
-            ✕
-          </button>
-        </div>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{initial?.id ? 'Edit item' : 'Tambah item'}</DialogTitle>
+        </DialogHeader>
 
         <div className="space-y-4">
           <div>
@@ -157,22 +151,22 @@ export function NotaItemModal({
               className="mt-2"
             />
           </div>
-
-          <div className="flex gap-2 pt-2">
-            {onDelete && initial?.id && (
-              <Button type="button" variant="destructive" onClick={onDelete}>
-                🗑️ Hapus
-              </Button>
-            )}
-            <Button type="button" variant="secondary" onClick={onClose} className="ml-auto">
-              Batal
-            </Button>
-            <Button type="button" onClick={handleSave} disabled={!selectedMenu || qty < 1}>
-              Simpan
-            </Button>
-          </div>
         </div>
-      </div>
-    </div>
+
+        <DialogFooter className="flex gap-2 pt-2">
+          {onDelete && initial?.id && (
+            <Button type="button" variant="destructive" onClick={onDelete}>
+              🗑️ Hapus
+            </Button>
+          )}
+          <Button type="button" variant="secondary" onClick={onClose} className="ml-auto">
+            Batal
+          </Button>
+          <Button type="button" onClick={handleSave} disabled={!selectedMenu || qty < 1}>
+            Simpan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
