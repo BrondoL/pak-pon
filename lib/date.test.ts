@@ -28,6 +28,10 @@ describe('parseYmd', () => {
     expect(parseYmd('not-a-date')).toBeNull();
     expect(parseYmd('2026-13-01')).toBeNull();
   });
+  it('rejects auto-corrected dates (e.g. 2026-02-30 → would silently become 2026-03-02)', () => {
+    expect(parseYmd('2026-02-30')).toBeNull();
+    expect(parseYmd('2026-04-31')).toBeNull();
+  });
 });
 
 describe('parseYm', () => {

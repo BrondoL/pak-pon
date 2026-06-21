@@ -35,15 +35,17 @@ export function endOfDayWIB(ymd: string): string {
 /**
  * Validate YYYY-MM-DD. Returns the same string if valid, null otherwise.
  * Rejects '2026-6-15' (no zero padding), '2026-13-01' (invalid month),
- * '2026-02-30' (auto-corrected by JS Date).
+ * '2026-02-30' (JS Date silently auto-corrects this to 2026-03-02).
  */
 export function parseYmd(s: string): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const d = new Date(`${s}T00:00:00+07:00`);
   if (isNaN(d.getTime())) return null;
-  const wibMs = d.getTime() + WIB_OFFSET_HOURS * 3600 * 1000;
-  const wibDate = new Date(wibMs).toISOString().slice(0, 10);
-  return wibDate === s ? s : null;
+  // d is at 17:00 UTC the prior day (since midnight WIB = 17:00 UTC previous day).
+  // Shift forward by 7h to land on midnight UTC of the WIB date, then read the YMD.
+  // If the input was auto-corrected (e.g. '2026-02-30' → 2026-03-02), this comparison fails.
+  const utcMidnightOfWibDate = new Date(d.getTime() + WIB_OFFSET_HOURS * 3600 * 1000);
+  return utcMidnightOfWibDate.toISOString().slice(0, 10) === s ? s : null;
 }
 
 /**
