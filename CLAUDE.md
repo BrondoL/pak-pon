@@ -12,6 +12,7 @@ See:
 - `docs/brief.md` — product brief & user stories
 - `docs/spec.md` — pointer ke spec lengkap
 - `docs/tasks.md` — progress tracker
+- `docs/logging.md` — wide-event logging pattern (loggingsucks.com style)
 - `docs/superpowers/specs/2026-06-20-pak-pon-design.md` — design spec lengkap (sumber kebenaran)
 
 ## Commands
@@ -28,6 +29,7 @@ See:
 - Money: simpan `bigint` rupiah (tanpa sen). Format dengan `formatRp()` dari `lib/currency.ts` → "Rp 120.000".
 - Timezone: Asia/Jakarta (WIB) untuk semua date display & cut-off harian.
 - Validation: Zod di semua API route boundaries.
+- Logging: wide-event pattern di semua route handler — `try/catch/finally`, `newEvent()` di awal, `evt.emit()` di finally. Lihat `docs/logging.md`.
 - Schema source of truth: `supabase/migrations/*.sql`.
 - Image: client compress dulu (`lib/compress.ts`) sebelum upload — diterapkan di Plan 2.
 - Auth: pages dalam `app/(app)/` harus auth; `app/(auth)/` public.
