@@ -118,10 +118,20 @@ export function PhotoUploader() {
       )}
 
       {busy && (
-        <div className="rounded-md bg-clay-mist px-4 py-3 text-sm text-coal-soft">
-          {stage === 'compressing' && '📐 Mengompres foto…'}
-          {stage === 'uploading' && '⬆️ Mengunggah ke server…'}
-          {stage === 'ocr' && '✨ OCR sedang membaca nota… (5-15 detik)'}
+        <div
+          className="flex items-center gap-3 rounded-md bg-clay-mist px-4 py-3 text-sm text-coal-soft"
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            className="inline-block size-4 animate-spin rounded-full border-2 border-coal-soft/30 border-t-coal-soft"
+            aria-hidden
+          />
+          <span className="flex-1">
+            {stage === 'compressing' && 'Mengompres foto…'}
+            {stage === 'uploading' && 'Mengunggah ke server…'}
+            {stage === 'ocr' && 'OCR sedang membaca nota… (biasanya 5–15 detik)'}
+          </span>
         </div>
       )}
 
