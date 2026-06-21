@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
-import { today, parseYmd, startOfDayWIB, endOfDayWIB } from '@/lib/date';
+import { currentBusinessDate, parseYmd, businessDayRange } from '@/lib/date';
 
 const PAGE_SIZE = 50;
 
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'invalid_query', details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const defaultDay = today();
+    const defaultDay = currentBusinessDate();
     const dateFrom = (parsed.data.date_from && parseYmd(parsed.data.date_from)) ?? defaultDay;
     const dateTo = (parsed.data.date_to && parseYmd(parsed.data.date_to)) ?? dateFrom;
     const page = parsed.data.page;
@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
         { count: 'exact' }
       )
       .is('deleted_at', null)
-      .gte('created_at', startOfDayWIB(dateFrom))
-      .lt('created_at', endOfDayWIB(dateTo))
+      .gte('created_at', businessDayRange(dateFrom).start)
+      .lt('created_at', businessDayRange(dateTo).end)
       .order('created_at', { ascending: false });
 
     if (parsed.data.q && parsed.data.q.trim() !== '') {
