@@ -29,5 +29,18 @@
 
 End-to-end: foto nota → OCR Gemini → review editable → simpan ke DB + storage.
 
-## Plan 3 — History + Reports + Cron
-TBD setelah Plan 2 selesai
+## Plan 3 — History + Reports + Cron ✅ COMPLETE
+- [x] T1 lib/date.ts WIB helpers (TDD)
+- [x] T2 GET /api/transactions list with filters + pagination
+- [x] T3 DELETE /api/transactions/[id] + preserve confirmed_at
+- [x] T4 components/date-filter + transaction-list
+- [x] T5 /transactions history list page
+- [x] T6 /transactions/[id] detail (read-only) + delete confirm
+- [x] T7 GET /api/reports/daily
+- [x] T8 GET /api/reports/monthly
+- [x] T9 /reports/daily closingan page
+- [x] T10 /reports/monthly CSS bar chart page
+- [x] T11 /reports landing
+- [x] T12 lib/supabase/admin + /api/cron/cleanup + vercel.json cron
+
+End-to-end: history searchable + filtered + editable + soft-deletable, reports harian & bulanan dengan top-5, cron 02:00 WIB auto-clean.
