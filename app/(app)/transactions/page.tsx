@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { getSupabaseServer } from '@/lib/supabase/server';
-import { today, parseYmd, startOfDayWIB, endOfDayWIB } from '@/lib/date';
+import { currentBusinessDate, parseYmd, businessDayRange } from '@/lib/date';
 import { Card } from '@/components/ui/card';
 import { DateFilter } from '@/components/date-filter';
 import { TransactionList, type TxRow } from '@/components/transaction-list';
@@ -40,7 +40,7 @@ export default async function TransactionsPage({
   const sp = await searchParams;
   const supabase = await getSupabaseServer();
 
-  const defaultDay = today();
+  const defaultDay = currentBusinessDate();
   const dateFrom = (sp.date_from && parseYmd(sp.date_from)) ?? defaultDay;
   const dateTo = (sp.date_to && parseYmd(sp.date_to)) ?? dateFrom;
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
@@ -48,8 +48,8 @@ export default async function TransactionsPage({
   const statusFilter =
     sp.status === 'pending_review' || sp.status === 'confirmed' ? sp.status : null;
 
-  const fromIso = startOfDayWIB(dateFrom);
-  const toIso = endOfDayWIB(dateTo);
+  const fromIso = businessDayRange(dateFrom).start;
+  const toIso = businessDayRange(dateTo).end;
 
   // Summary aggregation (all matching, not paginated) — small volume per warung day
   let summaryQuery = supabase

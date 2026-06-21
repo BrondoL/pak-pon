@@ -5,14 +5,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { today } from '@/lib/date';
+import { currentBusinessDate } from '@/lib/date';
 
 export function DateFilter() {
   const router = useRouter();
   const sp = useSearchParams();
   const [pending, startTransition] = useTransition();
 
-  const dateFrom = sp.get('date_from') ?? today();
+  const dateFrom = sp.get('date_from') ?? currentBusinessDate();
   const dateTo = sp.get('date_to') ?? dateFrom;
   const q = sp.get('q') ?? '';
   const status = sp.get('status') ?? '';
@@ -28,7 +28,7 @@ export function DateFilter() {
   }
 
   function quickRange(days: number) {
-    const to = today();
+    const to = currentBusinessDate();
     const [y, m, d] = to.split('-').map(Number);
     const from = new Date(Date.UTC(y, m - 1, d - (days - 1))).toISOString().slice(0, 10);
     const next = new URLSearchParams(sp.toString());
