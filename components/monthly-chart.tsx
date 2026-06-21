@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { formatRp } from '@/lib/currency';
-import { today } from '@/lib/date';
+import { currentBusinessDate } from '@/lib/date';
 
 type DayBar = { date: string; total: number; count: number };
 type TopItem = { menu_name: string; qty: number; revenue: number };
@@ -58,7 +58,7 @@ export function MonthlyChart({
   const activeDays = daily.filter((d) => d.total > 0);
   const avgPerDay = activeDays.length > 0 ? Math.round(total / activeDays.length) : 0;
   const bestDay = daily.reduce<DayBar | null>((b, d) => (d.total > (b?.total ?? 0) ? d : b), null);
-  const todayYmd = today();
+  const todayYmd = currentBusinessDate();
 
   function setMonth(ym: string) {
     const next = new URLSearchParams(sp.toString());
