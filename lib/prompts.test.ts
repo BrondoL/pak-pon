@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildScanSchema, buildMenuRefText, OCR_SYSTEM_PROMPT } from './prompts';
+import { buildScanSchema, buildMenuRefText, OCR_SYSTEM_PROMPT, type MenuRef } from './prompts';
 
-const sampleMenus = [
+const sampleMenus: MenuRef[] = [
   { id: 'a', name: 'Pecel Lele', category: 'makanan', price: 16000 },
   { id: 'b', name: 'Es Teh',     category: 'minuman', price: 6000 },
 ];
