@@ -26,11 +26,21 @@ type Transaction = {
 
 const WIB = 'Asia/Jakarta';
 
-function formatWIB(iso: string): string {
-  return new Date(iso).toLocaleString('id-ID', {
+function formatDateLongWIB(iso: string): string {
+  return new Date(iso).toLocaleDateString('id-ID', {
     timeZone: WIB,
-    day: '2-digit', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+function formatTimeWIB(iso: string): string {
+  return new Date(iso).toLocaleTimeString('id-ID', {
+    timeZone: WIB,
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
@@ -49,8 +59,11 @@ export function TransactionDetail({
   const [error, setError] = useState<string | null>(null);
 
   const total = items.reduce((acc, it) => acc + it.qty * it.unit_price_snapshot, 0);
+  const totalQty = items.reduce((acc, it) => acc + it.qty, 0);
   const mismatch =
     !!transaction.handwritten_total && transaction.handwritten_total !== total;
+  const diff = mismatch ? transaction.handwritten_total! - total : 0;
+  const isDraft = transaction.status === 'pending_review';
 
   async function handleDelete() {
     setError(null);
@@ -68,22 +81,41 @@ export function TransactionDetail({
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
-          Detail Transaksi
-        </p>
-        <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight text-coal md:text-4xl">
-          {transaction.customer_name || <span className="italic">tanpa nama</span>}
-        </h1>
-        <p className="mt-2 text-sm text-coal-soft">
-          {formatWIB(transaction.created_at)}
-          {transaction.table_no && <> · Meja {transaction.table_no}</>}
-          {transaction.status === 'pending_review' && (
-            <span className="ml-2 rounded-full bg-mustard-faint px-2 py-0.5 text-[10px] uppercase tracking-wide text-coal">
-              Draft
-            </span>
-          )}
-        </p>
+      <div className="flex items-center gap-2 text-xs text-clay">
+        <Link href="/transactions" className="hover:text-coal transition-colors">
+          ‹ Kembali ke history
+        </Link>
+      </div>
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
+            Detail Transaksi
+          </p>
+          <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight text-coal md:text-4xl">
+            {transaction.customer_name || <span className="italic text-coal-soft">Tanpa nama</span>}
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-coal-soft">
+            <span>{formatDateLongWIB(transaction.created_at)}</span>
+            <span className="text-clay-soft">·</span>
+            <span>{formatTimeWIB(transaction.created_at)} WIB</span>
+            {transaction.table_no && (
+              <>
+                <span className="text-clay-soft">·</span>
+                <span>Meja {transaction.table_no}</span>
+              </>
+            )}
+          </div>
+        </div>
+        {isDraft ? (
+          <span className="rounded-full bg-mustard-faint px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-coal">
+            Draft — belum dikonfirmasi
+          </span>
+        ) : (
+          <span className="rounded-full bg-leaf/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-leaf">
+            ✓ Confirmed
+          </span>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
@@ -106,38 +138,62 @@ export function TransactionDetail({
               className="rounded-md border border-mustard/40 bg-mustard-faint px-4 py-3 text-sm text-coal"
               role="alert"
             >
-              ⚠️ Total tulisan tangan {formatRp(transaction.handwritten_total!)} ≠ perhitungan sistem {formatRp(total)}.
+              <div className="flex items-baseline gap-2">
+                <span aria-hidden>⚠️</span>
+                <span className="font-semibold">Total tidak cocok</span>
+              </div>
+              <div className="mt-1.5 grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <div className="text-clay">Tulis tangan</div>
+                  <div className="font-display text-base text-coal">{formatRp(transaction.handwritten_total!)}</div>
+                </div>
+                <div>
+                  <div className="text-clay">Sistem</div>
+                  <div className="font-display text-base text-coal">{formatRp(total)}</div>
+                </div>
+                <div>
+                  <div className="text-clay">Selisih</div>
+                  <div className={`font-display text-base ${diff > 0 ? 'text-leaf' : 'text-brick'}`}>
+                    {diff > 0 ? '+' : ''}{formatRp(diff)}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
           <Card variant="paper">
+            <div className="border-b border-clay-soft/60 px-5 py-3">
+              <p className="text-xs uppercase tracking-wider text-clay">
+                Pesanan ({items.length} {items.length === 1 ? 'jenis' : 'jenis'} · {totalQty} porsi)
+              </p>
+            </div>
             <ul className="divide-y divide-clay-soft/60">
               {items.length === 0 ? (
                 <li className="px-5 py-8 text-center text-sm text-clay">Tidak ada item.</li>
               ) : (
                 items.map((it) => (
                   <li key={it.id} className="flex items-center justify-between gap-4 px-5 py-3.5">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-baseline gap-2">
-                        <span className="font-medium text-coal">{it.menu_name_snapshot}</span>
-                        <span className="text-xs text-clay">× {it.qty}</span>
+                        <span className="truncate font-medium text-coal">{it.menu_name_snapshot}</span>
+                        <span className="text-xs text-clay shrink-0">× {it.qty}</span>
                       </div>
                       <div className="mt-0.5 text-xs text-clay">
                         {formatRp(it.unit_price_snapshot)} ea
                         {it.notes && <> · <span className="italic">{it.notes}</span></>}
                       </div>
                     </div>
-                    <div className="font-display text-base text-coal">
+                    <div className="font-display text-base text-coal tabular-nums">
                       {formatRp(it.unit_price_snapshot * it.qty)}
                     </div>
                   </li>
                 ))
               )}
             </ul>
-            <div className="border-t border-clay-soft/60 px-5 py-4">
+            <div className="border-t-2 border-clay-soft/80 bg-cream/30 px-5 py-4">
               <div className="flex items-baseline justify-between">
-                <span className="text-sm uppercase tracking-wide text-clay">Total sistem</span>
-                <span className="font-display text-2xl tracking-tight text-coal">
+                <span className="text-sm uppercase tracking-[0.18em] text-clay">Total sistem</span>
+                <span className="font-display text-3xl tracking-tight text-coal">
                   {formatRp(total)}
                 </span>
               </div>
@@ -154,24 +210,32 @@ export function TransactionDetail({
           )}
 
           {!confirmDelete ? (
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => router.push('/transactions')} disabled={pending}>
-                ‹ Kembali
-              </Button>
-              <Link href={`/transactions/${transaction.id}/review`} className="ml-auto">
-                <Button variant="secondary" disabled={pending}>✏️ Edit</Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={`/transactions/${transaction.id}/review`} className="flex-1 sm:flex-none">
+                <Button disabled={pending} className="w-full sm:w-auto">
+                  ✏️ {isDraft ? 'Lanjutkan edit' : 'Edit transaksi'}
+                </Button>
               </Link>
-              <Button variant="danger" onClick={() => setConfirmDelete(true)} disabled={pending}>
+              <Button
+                variant="ghost"
+                onClick={() => setConfirmDelete(true)}
+                disabled={pending}
+                className="ml-auto text-brick-dark hover:bg-brick-faint"
+              >
                 🗑️ Hapus
               </Button>
             </div>
           ) : (
-            <Card variant="paper" className="space-y-3 p-4">
-              <p className="text-sm text-coal">
-                Yakin hapus transaksi ini? Bisa di-restore dalam 7 hari (cron auto-cleanup setelah itu).
+            <Card variant="paper" className="border-brick/30 bg-brick-faint/40 p-4">
+              <div className="flex items-baseline gap-2">
+                <span aria-hidden>🗑️</span>
+                <p className="font-semibold text-coal">Hapus transaksi ini?</p>
+              </div>
+              <p className="mt-2 text-xs text-coal-soft">
+                Transaksi disimpan sebagai soft-delete selama 7 hari. Setelah itu cron menghapus permanen (termasuk foto nota).
               </p>
-              <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => setConfirmDelete(false)} disabled={pending}>
+              <div className="mt-4 flex gap-2">
+                <Button variant="secondary" onClick={() => setConfirmDelete(false)} disabled={pending} className="ml-auto">
                   Batal
                 </Button>
                 <Button variant="danger" onClick={handleDelete} disabled={pending}>

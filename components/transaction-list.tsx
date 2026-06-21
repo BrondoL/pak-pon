@@ -19,12 +19,19 @@ export type TxRow = {
 
 const WIB = 'Asia/Jakarta';
 
-function formatWIB(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString('id-ID', {
+function formatTimeWIB(iso: string): string {
+  return new Date(iso).toLocaleTimeString('id-ID', {
     timeZone: WIB,
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatDateWIB(iso: string): string {
+  return new Date(iso).toLocaleDateString('id-ID', {
+    timeZone: WIB,
+    day: '2-digit',
+    month: 'short',
   });
 }
 
@@ -33,11 +40,13 @@ export function TransactionList({
   page,
   pageSize,
   totalCount,
+  hasActiveFilter,
 }: {
   items: TxRow[];
   page: number;
   pageSize: number;
   totalCount: number;
+  hasActiveFilter?: boolean;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -49,47 +58,100 @@ export function TransactionList({
     router.replace(`?${next.toString()}`);
   }
 
+  function clearFilters() {
+    router.replace('/transactions');
+  }
+
   return (
     <div className="space-y-4">
       {items.length === 0 ? (
-        <Card variant="paper" className="px-5 py-10 text-center text-sm text-clay">
-          Tidak ada transaksi dalam rentang ini.
+        <Card variant="paper" className="px-6 py-14 text-center">
+          <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-full bg-clay-mist text-clay">
+            <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
+              <path d="M7 5h14l3 3v19a1 1 0 01-1.5 0L21 25l-2.5 2-2.5-2-2.5 2L11 25l-2.5 2L7 27V5z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              <path d="M11 11h10M11 15h10M11 19h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </div>
+          <p className="font-display text-xl italic text-coal">Belum ada transaksi</p>
+          <p className="mt-2 text-sm text-coal-soft">
+            {hasActiveFilter
+              ? 'Coba longgarkan filter atau ubah rentang tanggal.'
+              : 'Mulai dengan scan nota pertama hari ini.'}
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {hasActiveFilter && (
+              <Button variant="secondary" size="sm" onClick={clearFilters}>
+                Reset filter
+              </Button>
+            )}
+            <Link href="/scan">
+              <Button size="sm">📷 Scan nota</Button>
+            </Link>
+          </div>
         </Card>
       ) : (
         <Card variant="paper">
           <ul className="divide-y divide-clay-soft/60">
-            {items.map((tx) => (
-              <li key={tx.id}>
-                <Link
-                  href={`/transactions/${tx.id}`}
-                  className="flex items-center justify-between gap-4 px-5 py-4 hover:bg-cream/50 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-medium text-coal">
-                        {tx.customer_name || <span className="text-clay italic">— tanpa nama</span>}
+            {items.map((tx) => {
+              const mismatch =
+                tx.status === 'confirmed' &&
+                tx.handwritten_total != null &&
+                tx.handwritten_total !== tx.total;
+              return (
+                <li key={tx.id}>
+                  <Link
+                    href={`/transactions/${tx.id}`}
+                    className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-cream/50"
+                  >
+                    <div className="flex w-14 shrink-0 flex-col items-center rounded-md bg-clay-mist/60 py-1.5 font-display text-coal">
+                      <span className="text-base leading-none">{formatTimeWIB(tx.created_at)}</span>
+                      <span className="mt-0.5 text-[10px] uppercase tracking-wide text-clay">
+                        {formatDateWIB(tx.created_at)}
                       </span>
-                      {tx.table_no && (
-                        <span className="text-xs text-clay">Meja {tx.table_no}</span>
-                      )}
-                      {tx.status === 'pending_review' && (
-                        <span className="rounded-full bg-mustard-faint px-2 py-0.5 text-[10px] uppercase tracking-wide text-coal">
-                          Draft
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate font-medium text-coal">
+                          {tx.customer_name || <span className="italic text-clay">tanpa nama</span>}
                         </span>
-                      )}
+                        {tx.table_no && (
+                          <span className="rounded bg-clay-mist/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-coal-soft">
+                            Meja {tx.table_no}
+                          </span>
+                        )}
+                        {tx.status === 'pending_review' && (
+                          <span className="rounded-full bg-mustard-faint px-2 py-0.5 text-[10px] uppercase tracking-wide text-coal">
+                            Draft
+                          </span>
+                        )}
+                        {mismatch && (
+                          <span
+                            title={`Tulis ${formatRp(tx.handwritten_total!)} ≠ Sistem ${formatRp(tx.total)}`}
+                            className="rounded-full bg-brick-faint px-2 py-0.5 text-[10px] uppercase tracking-wide text-brick-dark"
+                          >
+                            ⚠ tidak cocok
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 text-xs text-clay">
+                        {tx.item_count} {tx.item_count === 1 ? 'item' : 'item'}
+                      </div>
                     </div>
-                    <div className="mt-0.5 text-xs text-clay">
-                      {formatWIB(tx.created_at)} · {tx.item_count} item
+                    <div className="text-right">
+                      <div className="font-display text-lg tracking-tight text-coal">
+                        {formatRp(tx.total)}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-display text-lg tracking-tight text-coal">
-                      {formatRp(tx.total)}
-                    </div>
-                  </div>
-                </Link>
-              </li>
-            ))}
+                    <span
+                      aria-hidden
+                      className="text-clay-soft transition-transform group-hover:translate-x-0.5 group-hover:text-coal-soft"
+                    >
+                      →
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </Card>
       )}
