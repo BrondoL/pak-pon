@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
+import { Toaster } from '@/components/ui/sonner';
 import { getSupabaseServer } from '@/lib/supabase/server';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -16,6 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="text-gold">★</span> Pecel Lele Pak Pon · Bandar Lampung <span className="text-gold">★</span>
         </div>
       </footer>
+      <Toaster richColors position="top-center" />
     </div>
   );
 }
