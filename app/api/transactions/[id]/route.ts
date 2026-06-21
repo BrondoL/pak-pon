@@ -29,6 +29,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  console.log(`[tx] GET /api/transactions/${id}`);
   const supabase = await getSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -41,8 +42,10 @@ export async function GET(
     .single();
   if (txError) {
     if (txError.code === NOT_FOUND_CODE) {
+      console.warn(`[tx] GET ${id} → not_found`);
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
     }
+    console.error(`[tx] GET ${id} → tx fetch error:`, txError);
     return NextResponse.json({ error: txError.message }, { status: 500 });
   }
 
@@ -52,6 +55,7 @@ export async function GET(
     .eq('transaction_id', id)
     .order('sort_order');
   if (itemsError) {
+    console.error(`[tx] GET ${id} → items fetch error:`, itemsError);
     return NextResponse.json({ error: itemsError.message }, { status: 500 });
   }
 
@@ -62,6 +66,7 @@ export async function GET(
       .createSignedUrl(tx.scan_image_path, SIGNED_URL_TTL_SECONDS);
     scan_url = signed?.signedUrl ?? null;
   }
+  console.log(`[tx] GET ${id} → tx.status=${tx.status}, items=${items?.length ?? 0}, scan_url=${scan_url ? 'yes' : 'no'}`);
 
   return NextResponse.json({
     transaction: tx,
@@ -75,6 +80,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  console.log(`[tx] PATCH /api/transactions/${id}`);
   const supabase = await getSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -82,8 +88,10 @@ export async function PATCH(
   const body = await request.json();
   const parsed = PatchSchema.safeParse(body);
   if (!parsed.success) {
+    console.warn(`[tx] PATCH ${id} → invalid_body:`, JSON.stringify(parsed.error.flatten()));
     return NextResponse.json({ error: 'invalid_body', details: parsed.error.flatten() }, { status: 400 });
   }
+  console.log(`[tx] PATCH ${id} body: status=${parsed.data.status}, items=${parsed.data.items?.length ?? 'none'}`);
 
   const headerUpdate: Record<string, unknown> = {};
   if (parsed.data.status !== undefined) {
@@ -105,10 +113,13 @@ export async function PATCH(
       .single();
     if (updateError) {
       if (updateError.code === NOT_FOUND_CODE) {
+        console.warn(`[tx] PATCH ${id} → not_found on header update`);
         return NextResponse.json({ error: 'not_found' }, { status: 404 });
       }
+      console.error(`[tx] PATCH ${id} → header update error:`, updateError);
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
+    console.log(`[tx] PATCH ${id} → header updated`);
   }
 
   if (parsed.data.items !== undefined) {
@@ -135,17 +146,20 @@ export async function PATCH(
         menus: menusData as MenuRef[],
       });
     } catch (err) {
+      console.warn(`[tx] PATCH ${id} → invalid_items:`, err instanceof Error ? err.message : err);
       return NextResponse.json(
         { error: 'invalid_items', details: err instanceof Error ? err.message : 'unknown' },
         { status: 400 }
       );
     }
+    console.log(`[tx] PATCH ${id} → computed ${computed.rows.length} rows (from ${existingItems?.length ?? 0} existing)`);
 
     const { error: deleteError } = await supabase
       .from('transaction_items')
       .delete()
       .eq('transaction_id', id);
     if (deleteError) {
+      console.error(`[tx] PATCH ${id} → delete existing items error:`, deleteError);
       return NextResponse.json({ error: deleteError.message }, { status: 500 });
     }
 
@@ -155,9 +169,11 @@ export async function PATCH(
         .from('transaction_items')
         .insert(insertRows);
       if (insertError) {
+        console.error(`[tx] PATCH ${id} → insert new items error:`, insertError);
         return NextResponse.json({ error: insertError.message }, { status: 500 });
       }
     }
+    console.log(`[tx] PATCH ${id} → items replaced (${computed.rows.length} new)`);
   }
 
   const { data: finalTx } = await supabase

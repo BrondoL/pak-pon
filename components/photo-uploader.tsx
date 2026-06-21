@@ -16,6 +16,7 @@ export function PhotoUploader() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(file: File) {
+    console.log(`[scan-ui] handleFile: name="${file.name}", type=${file.type}, size=${file.size}B`);
     if (!file.type.startsWith('image/')) {
       setError('File harus berupa gambar (JPG/PNG).');
       setStage('error');
@@ -27,21 +28,30 @@ export function PhotoUploader() {
 
     try {
       setStage('compressing');
+      const t0 = performance.now();
       const compressed = await compressNotaImage(file);
+      console.log(`[scan-ui] compressed: ${file.size}B → ${compressed.size}B in ${(performance.now() - t0).toFixed(0)}ms`);
 
       setStage('uploading');
       const formData = new FormData();
       formData.append('image', compressed);
 
       setStage('ocr');
+      const t1 = performance.now();
       const res = await fetch('/api/scan', { method: 'POST', body: formData });
+      console.log(`[scan-ui] /api/scan responded ${res.status} in ${(performance.now() - t1).toFixed(0)}ms`);
+      const data = await res.json().catch(() => ({}));
+      console.log(`[scan-ui] response body:`, data);
       if (!res.ok) {
-        const data: { error?: string } = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'scan-failed');
       }
-      const json: { transaction_id: string } = await res.json();
+      const json = data as { transaction_id: string; item_count?: number; ocr_error?: string | null };
+      if (json.ocr_error) {
+        console.warn(`[scan-ui] OCR returned but with error: ${json.ocr_error} — draft created empty, kasir bisa input manual`);
+      }
       router.push(`/transactions/${json.transaction_id}/review`);
     } catch (err) {
+      console.error(`[scan-ui] ✗ handleFile failed:`, err);
       setError(
         err instanceof Error
           ? `Gagal memproses foto: ${err.message}. Coba lagi.`
