@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import Link from 'next/link';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { currentBusinessDate, parseYmd, businessDayRange } from '@/lib/date';
 import { Card } from '@/components/ui/card';
@@ -117,14 +118,22 @@ export default async function TransactionsPage({
 
   return (
     <div className="space-y-8">
-      <div>
-        <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
-          History
-        </p>
-        <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight text-coal md:text-4xl">
-          Transaksi <span className="italic">tersimpan</span>
-        </h1>
-        <p className="mt-2 text-sm text-coal-soft">{rangeLabel}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
+            History
+          </p>
+          <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight text-coal md:text-4xl">
+            Transaksi <span className="italic">tersimpan</span>
+          </h1>
+          <p className="mt-2 text-sm text-coal-soft">{rangeLabel}</p>
+        </div>
+        <Link
+          href="/transactions/trash"
+          className="text-xs text-clay underline-offset-4 hover:text-coal hover:underline"
+        >
+          🗑️ Yang baru dihapus →
+        </Link>
       </div>
 
       <Card variant="paper" className="grid grid-cols-2 divide-x divide-clay-soft/60 px-6 py-5 sm:grid-cols-4">
