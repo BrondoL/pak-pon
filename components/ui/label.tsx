@@ -11,7 +11,7 @@ const labelVariants = cva(
     variants: {
       variant: {
         eyebrow:
-          "block text-[11px] font-semibold uppercase tracking-[0.22em] text-clay",
+          "block text-[11px] font-semibold uppercase tracking-[0.08em] text-coal-soft",
         default:
           "flex items-center gap-2 text-sm leading-none font-medium",
       },
