@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
-import { today, parseYmd, startOfDayWIB, endOfDayWIB } from '@/lib/date';
+import { currentBusinessDate, parseYmd, businessDayRange } from '@/lib/date';
 
 const QuerySchema = z.object({
   date: z.string().optional(),
@@ -24,16 +24,18 @@ export async function GET(request: NextRequest) {
       tagStatus(evt, 400);
       return NextResponse.json({ error: 'invalid_query' }, { status: 400 });
     }
-    const date = (parsed.data.date && parseYmd(parsed.data.date)) ?? today();
+    const date = (parsed.data.date && parseYmd(parsed.data.date)) ?? currentBusinessDate();
     evt.set('date', date);
+
+    const { start, end } = businessDayRange(date);
 
     const { data, error } = await supabase
       .from('transactions')
       .select('id, transaction_items(qty, unit_price_snapshot, menu_name_snapshot)')
       .eq('status', 'confirmed')
       .is('deleted_at', null)
-      .gte('created_at', startOfDayWIB(date))
-      .lt('created_at', endOfDayWIB(date));
+      .gte('created_at', start)
+      .lt('created_at', end);
 
     if (error) {
       tagStatus(evt, 500);
