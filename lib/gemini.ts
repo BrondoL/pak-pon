@@ -1,8 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
 import { buildScanSchema, buildMenuRefText, OCR_SYSTEM_PROMPT, type MenuRef, type ScanResult } from './prompts';
 
-const PRIMARY_MODEL = 'gemini-3.5-flash';
-const FALLBACK_MODEL = 'gemini-3.1-pro-preview';
+// Free-tier compatible model IDs. Pro tier blocked on free billing → 429 limit:0.
+// Primary: latest Flash for quality. Fallback: older Flash, often succeeds when 2.5 schema-mismatches.
+const PRIMARY_MODEL = 'gemini-2.5-flash';
+const FALLBACK_MODEL = 'gemini-2.0-flash';
 
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
