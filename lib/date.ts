@@ -47,9 +47,9 @@ export function currentBusinessDate(): string {
 /**
  * [start, end) UTC ISO range of `created_at` that belongs to the given business_date.
  */
-export function businessDayRange(businessDate: string): { start: string; end: string } {
+export function businessDayRange(ymd: string): { start: string; end: string } {
   const cutoffHH = String(BUSINESS_DAY_CUTOFF_HOURS).padStart(2, '0');
-  const startWibIso = `${businessDate}T${cutoffHH}:00:00+07:00`;
+  const startWibIso = `${ymd}T${cutoffHH}:00:00+07:00`;
   const start = new Date(startWibIso);
   const end = new Date(start.getTime() + 24 * 3600 * 1000);
   return { start: start.toISOString(), end: end.toISOString() };
@@ -87,6 +87,9 @@ export function parseYmd(s: string): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const d = new Date(`${s}T00:00:00+07:00`);
   if (isNaN(d.getTime())) return null;
+  // d is at 17:00 UTC the prior day (since midnight WIB = 17:00 UTC previous day).
+  // Shift forward by 7h to land on midnight UTC of the WIB date, then read the YMD.
+  // If the input was auto-corrected (e.g. '2026-02-30' → 2026-03-02), this comparison fails.
   const utcMidnightOfWibDate = new Date(d.getTime() + WIB_OFFSET_HOURS * 3600 * 1000);
   return utcMidnightOfWibDate.toISOString().slice(0, 10) === s ? s : null;
 }
