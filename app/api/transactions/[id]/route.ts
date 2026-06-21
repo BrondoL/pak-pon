@@ -170,7 +170,15 @@ async function applyHeaderUpdate(
   if (patch.status !== undefined) {
     headerUpdate.status = patch.status;
     if (patch.status === 'confirmed') {
-      headerUpdate.confirmed_at = new Date().toISOString();
+      // Only set confirmed_at on transition (preserve original timestamp on re-edit)
+      const { data: existing } = await supabase
+        .from('transactions')
+        .select('confirmed_at')
+        .eq('id', id)
+        .single();
+      if (!existing?.confirmed_at) {
+        headerUpdate.confirmed_at = new Date().toISOString();
+      }
     }
   }
   if (patch.customer_name !== undefined) headerUpdate.customer_name = patch.customer_name;
@@ -269,4 +277,47 @@ async function replaceItems(
     }
   }
   return { kind: 'ok' };
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const evt = newEvent('DELETE /api/transactions/[id]', { tx_id: id });
+  try {
+    const supabase = await getSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      tagStatus(evt, 401);
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
+    evt.set('user_id', user.id);
+
+    const { error } = await supabase
+      .from('transactions')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .is('deleted_at', null)
+      .select('id')
+      .single();
+
+    if (error) {
+      if (error.code === NOT_FOUND_CODE) {
+        tagStatus(evt, 404);
+        return NextResponse.json({ error: 'not_found' }, { status: 404 });
+      }
+      tagStatus(evt, 500);
+      evt.error(error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    tagStatus(evt, 200);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    tagStatus(evt, 500);
+    evt.error(err);
+    throw err;
+  } finally {
+    evt.emit();
+  }
 }
