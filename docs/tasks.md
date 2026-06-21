@@ -61,7 +61,10 @@ End-to-end: history searchable + filtered + editable + soft-deletable, reports h
 
 ### 🍽️ POS / Order entry
 - [ ] **POS direct order** — input order langsung dari menu picker, tanpa foto nota. Komplemen dari /scan untuk dine-in cepat atau saat nota fisik habis.
-- [ ] **Mark menu "habis hari ini"** — toggle harian per menu yang reset tengah malam (atau di awal shift). Kasir tau lele/ayam stok abis tanpa nelpon dapur. Tidak muncul di menu picker / di-flag di OCR.
+  - **Notes per item** — sudah ada `transaction_items.notes` (text nullable, dipakai OCR untuk "DP", "Dada"). POS pakai field yang sama untuk input bebas: "jangan terlalu garing", "tanpa sambel", "extra pedas"
+  - **Quick-pick chips untuk notes** — di modal pick item, kasih chip suggestion umum (Dada, Paha, DP, No sambel, Extra pedas) supaya kasir tap-tap aja tanpa ngetik
+  - **Harga tetap (notes = kitchen instruction, BUKAN variant)** — kalau dada vs paha beda harga, daftarin sebagai menu terpisah di master ("Ayam Goreng Dada" Rp 19k, "Ayam Goreng Paha" Rp 22k). Notes cuma instruksi dapur, tidak ubah harga. Konsisten dengan keputusan Q3 spec utama.
+- [ ] **Mark menu "habis hari ini"** — toggle harian per menu yang reset jam 12 siang (mengikuti business-day cutoff). Kasir tau lele/ayam stok abis tanpa nelpon dapur. Tidak muncul di POS menu picker, di-flag di OCR scan ("⚠️ menu ini sudah ditandai habis hari ini, masih mau tetap simpan?")
 
 ### 📊 Reporting / Export
 - [ ] **Export CSV closingan** — owner mau audit ke Excel/Google Sheets. Per hari + per bulan. Format kolom: tanggal, total, jumlah tx, top items.
@@ -72,12 +75,20 @@ End-to-end: history searchable + filtered + editable + soft-deletable, reports h
 - [ ] **Print struk digital** — generate PDF struk yang bisa dibagi via WhatsApp ke pelanggan. Tidak perlu printer fisik kalau owner tidak punya.
 - [ ] *(opsional)* **Bluetooth thermal printer integration** — kalau owner invest printer 80mm.
 
-### 💾 Data retention (klarifikasi #4)
-**Mispersepsi:** cron jam 02:00 WIB *tidak* menghapus semua data >7 hari. Hanya menghapus transaksi yang sudah di-**soft-delete** (`deleted_at IS NOT NULL`) lebih dari 7 hari + foto nota terkait. Transaksi normal **tetap selamanya** — data bulanan & historis aman.
+### 💾 Data retention (Supabase free tier)
 
-Concern valid yang related:
-- [ ] **Storage retention policy untuk foto nota** — kalau ratusan nota per bulan, Supabase Storage cost akan naik. Pilihan kebijakan: hapus foto nota >X bulan (data transaksi tetap, foto-nya saja yang dihapus), atau archive ke cold storage.
-- [ ] **Backup harian otomatis ke owner** — export CSV/PDF closingan + kirim via email/WA jam 23:59 WIB. Owner punya offline copy kalau-kalau project down.
+**Quota free tier**: 500 MB database + 1 GB storage. Bottleneck = **storage** (foto nota ~300 KB × 24 nota/hari = penuh dalam ~4,5 bulan). Database transaksi sendiri kecil (~2 KB/tx → 28 tahun kapasitas).
+
+**Keputusan**: pakai **Opsi A — hapus foto saja, data transaksi tetap selamanya.**
+
+- [ ] **Extend cron `/api/cron/cleanup`**:
+  1. Soft-deleted transaksi >7 hari → hard-delete (sudah ada, jangan diubah)
+  2. **Foto nota >7 hari → hapus dari Storage + set `scan_image_path = NULL`** (BARU). Transaksi row tetap, cuma scan_image_path-nya di-null-kan
+  3. SQL: `UPDATE transactions SET scan_image_path = NULL WHERE scan_image_path IS NOT NULL AND created_at < now() - interval '7 days'` (lalu batch delete Storage object dari path lama)
+- [ ] **UI handle foto hilang**:
+  - `/transactions/[id]` detail: kalau `scan_image_path IS NULL`, tampilkan placeholder "Foto sudah dihapus sesuai retensi 7 hari" sebagai ganti thumbnail
+  - `/transactions/[id]/review`: route ini cuma buat draft (pending_review status, masih dalam 7 hari), foto pasti masih ada
+- [ ] **Backup harian otomatis ke owner** — export CSV/PDF closingan + kirim via email/WA jam 23:59 WIB. Owner punya offline copy + kalau Supabase down.
 
 ### 💰 Kas / cash management
 - [ ] **Kas drawer reconciliation** — input modal awal kas, kas keluar (belanja bahan siang hari), kas akhir → reconcile dengan total sistem. Owner sering bingung "kok uang di laci kurang dari catatan?".
@@ -97,4 +108,30 @@ Concern valid yang related:
 
 ### 🪵 Observability
 - [ ] **Remote log sink** — `lib/logger.ts` sudah wide-event tapi cuma console.log. Ke Axiom/Logflare/Datadog supaya bisa debug saat issue di production.
+
+### 📦 Stock management (lightweight, bukan full inventory)
+
+Goal: owner autopilot, tidak perlu nanya kasir tiap hari "lele sisa berapa". Bukan full inventory system (overkill untuk warung scale).
+
+- [ ] **Stock harian terintegrasi** (kombinasi 3 layer):
+  - Pagi: kasir input "datang lele 30 ekor, ayam 15 potong"
+  - Sistem otomatis kurangi tiap order yang match menu terkait (need: per-menu stock mapping)
+  - Real-time: dashboard tampil "lele sisa 5, ayam 0"
+  - Sore: auto-mark "habis" kalau stok ≤ 0, sync ke #mark-menu-habis
+  - Estimasi: "rata-rata habis lele jam 21:00 → besok kira-kira perlu 35 ekor"
+- [ ] **Belanja prediction** — sistem belajar dari data 30 hari terakhir: "Sabtu rata-rata 35 porsi lele". Jumat sore push WA owner "Besok belanja: lele 40 ekor, ayam 20 potong"
+
+### 🤖 Autopilot — owner minimum touch
+
+Owner tidak mau buka app setiap hari. Sistem proaktif kirim info & alert.
+
+- [ ] **WhatsApp daily digest** — jam 22:00 / setelah closingan, WA owner: "Hari ini Rp 1.245.000 dari 24 nota. Top: Pecel Lele (8), Ayam Goreng (6). Kas drawer cocok." Sekali baca selesai. Implementasi: Vercel cron + WhatsApp Business API atau Twilio/Fonnte/WANotif Indonesia.
+- [ ] **Anomaly alerts** — push WA owner sekali kalau terdeteksi:
+  - Revenue hari ini < (rata-rata 30 hari × 70%) → "Pemasukan turun 40%, hari sepi atau ada transaksi belum dicatat?"
+  - Kas drawer selisih > Rp 20k → "Kas selisih, cek kasir"
+  - OCR fail rate > 20% hari ini → "Foto nota banyak gagal, mungkin kamera buram"
+  - Menu habis sejak pagi (jam <17:00) → "Lele habis jam 15:00, stok kurang"
+- [ ] **Monthly digest auto-generate** — awal bulan, owner dapet "Juni vs Mei: revenue +12%, AOV +4%, top menu shift dari Ayam ke Lele, anomali: 3 hari pemasukan di bawah threshold."
+- [ ] **Belanja prediction → WA owner** (link ke stock management section)
+- [ ] **Foto nota belanja → auto-categorize expense** — owner foto nota belanja di pasar → OCR Gemini extract → masuk kas keluar dengan kategori (bahan baku / gaji / utilities / lainnya). Mirror flow `/scan` income tapi sebaliknya. Output: monthly P&L auto-generate.
 
