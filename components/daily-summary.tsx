@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatRp } from '@/lib/currency';
-import { today } from '@/lib/date';
+import { currentBusinessDate, BUSINESS_DAY_CUTOFF_HOURS } from '@/lib/date';
 
 type MenuTotal = { menu_name: string; qty: number; revenue: number };
 type Mismatch = {
@@ -48,7 +48,7 @@ export function DailySummary({
     setDate(shifted.toISOString().slice(0, 10));
   }
 
-  const isToday = date === today();
+  const isToday = date === currentBusinessDate();
   const avgPerTx = count > 0 ? Math.round(total / count) : 0;
   const totalQty = allItems.reduce((acc, it) => acc + it.qty, 0);
 
@@ -79,7 +79,7 @@ export function DailySummary({
           </button>
           <button
             type="button"
-            onClick={() => setDate(today())}
+            onClick={() => setDate(currentBusinessDate())}
             disabled={pending || isToday}
             className={[
               'border-x border-clay-soft px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50',
@@ -193,6 +193,11 @@ export function DailySummary({
             <div className="mt-1 font-display text-2xl text-coal">{formatRp(avgPerTx)}</div>
           </div>
         </div>
+        <p className="mt-2 text-[10px] text-clay/70">
+          Catatan: closingan 1 hari = transaksi sejak jam{' '}
+          {String(BUSINESS_DAY_CUTOFF_HOURS).padStart(2, '0')}:00 WIB tanggal pilihan
+          sampai 11:59 siang besoknya.
+        </p>
       </Card>
 
       {allItems.length > 0 ? (
