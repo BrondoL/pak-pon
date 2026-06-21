@@ -2,21 +2,22 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { HomeTiles } from '@/components/home-tiles';
 import { getSupabaseServer } from '@/lib/supabase/server';
-import { today, startOfDayWIB, endOfDayWIB } from '@/lib/date';
+import { currentBusinessDate, businessDayRange } from '@/lib/date';
 import { formatRp } from '@/lib/currency';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
   const supabase = await getSupabaseServer();
-  const date = today();
+  const date = currentBusinessDate();
+  const { start, end } = businessDayRange(date);
 
   const { data } = await supabase
     .from('transactions')
     .select('id, status, transaction_items(qty, unit_price_snapshot)')
     .is('deleted_at', null)
-    .gte('created_at', startOfDayWIB(date))
-    .lt('created_at', endOfDayWIB(date));
+    .gte('created_at', start)
+    .lt('created_at', end);
 
   let todayTotal = 0;
   let confirmedCount = 0;
@@ -42,7 +43,7 @@ export default async function HomePage() {
     <div className="space-y-8 md:space-y-10">
       <div className="max-w-2xl">
         <p className="font-body text-[11px] font-medium uppercase tracking-[0.22em] text-clay">
-          Beranda · {dateLabel}
+          Shift · {dateLabel}
         </p>
         <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight text-coal md:text-4xl">
           Selamat datang, <span className="italic">Pak.</span>
