@@ -36,10 +36,10 @@ export default async function DailyReportPage({
       byMenu.set(l.menu_name_snapshot, { qty: prev.qty + l.qty, revenue: prev.revenue + lt });
     }
   }
-  const topItems = [...byMenu.entries()]
+  const allItems = [...byMenu.entries()]
     .map(([menu_name, v]) => ({ menu_name, ...v }))
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 5);
+    .sort((a, b) => b.qty - a.qty);
+  const topItems = allItems.slice(0, 5);
 
   return (
     <div className="space-y-8">
@@ -56,7 +56,13 @@ export default async function DailyReportPage({
       </div>
 
       <Suspense>
-        <DailySummary date={date} total={total} count={txs.length} topItems={topItems} />
+        <DailySummary
+          date={date}
+          total={total}
+          count={txs.length}
+          topItems={topItems}
+          allItems={allItems}
+        />
       </Suspense>
     </div>
   );
