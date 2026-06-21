@@ -1,4 +1,9 @@
 {
   "framework": "nextjs",
-  "regions": ["sin1"]
+  "regions": ["sin1"],
+  "functions": {
+    "app/api/scan/route.ts": {
+      "maxDuration": 60
+    }
+  }
 }
