@@ -2,29 +2,18 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
-import { parseYm, monthBoundsWIB } from '@/lib/date';
+import {
+  parseYm,
+  businessMonthRange,
+  businessDatesInMonth,
+  businessDate,
+  currentBusinessDate,
+} from '@/lib/date';
 
 const QuerySchema = z.object({ ym: z.string().optional() });
 
 function currentYmWIB(): string {
-  const now = new Date(Date.now() + 7 * 3600 * 1000);
-  return now.toISOString().slice(0, 7);
-}
-
-function daysInMonthWIB(ym: string): string[] {
-  const [yStr, mStr] = ym.split('-');
-  const y = parseInt(yStr, 10);
-  const m = parseInt(mStr, 10);
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return Array.from({ length: lastDay }, (_, i) =>
-    `${ym}-${String(i + 1).padStart(2, '0')}`
-  );
-}
-
-function ymdInWIB(iso: string): string {
-  const d = new Date(iso);
-  const wib = new Date(d.getTime() + 7 * 3600 * 1000);
-  return wib.toISOString().slice(0, 10);
+  return currentBusinessDate().slice(0, 7);
 }
 
 export async function GET(request: NextRequest) {
@@ -46,14 +35,14 @@ export async function GET(request: NextRequest) {
     const ym = (parsed.data.ym && parseYm(parsed.data.ym)) ?? currentYmWIB();
     evt.set('ym', ym);
 
-    const { from, to } = monthBoundsWIB(ym);
+    const { start, end } = businessMonthRange(ym);
     const { data, error } = await supabase
       .from('transactions')
       .select('id, created_at, transaction_items(qty, unit_price_snapshot, menu_name_snapshot)')
       .eq('status', 'confirmed')
       .is('deleted_at', null)
-      .gte('created_at', from)
-      .lt('created_at', to);
+      .gte('created_at', start)
+      .lt('created_at', end);
 
     if (error) {
       tagStatus(evt, 500);
@@ -67,7 +56,7 @@ export async function GET(request: NextRequest) {
     let grandTotal = 0;
 
     for (const tx of txs) {
-      const day = ymdInWIB(tx.created_at);
+      const day = businessDate(new Date(tx.created_at));
       const lines = (tx.transaction_items ?? []) as Array<{
         qty: number; unit_price_snapshot: number; menu_name_snapshot: string;
       }>;
@@ -85,7 +74,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const allDays = daysInMonthWIB(ym);
+    const allDays = businessDatesInMonth(ym);
     const daily = allDays.map((date) => {
       const v = byDay.get(date) ?? { total: 0, count: 0 };
       return { date, total: v.total, count: v.count };
