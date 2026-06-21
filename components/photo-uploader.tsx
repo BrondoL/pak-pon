@@ -16,8 +16,16 @@ export function PhotoUploader() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(file: File) {
-    console.log(`[scan-ui] handleFile: name="${file.name}", type=${file.type}, size=${file.size}B`);
+    const t0 = performance.now();
+    const evt: Record<string, unknown> = {
+      route: 'PhotoUploader.handleFile',
+      file_name: file.name,
+      file_type: file.type,
+      file_bytes: file.size,
+    };
+
     if (!file.type.startsWith('image/')) {
+      console.log(JSON.stringify({ ...evt, outcome: 'rejected_not_image', duration_ms: Math.round(performance.now() - t0) }));
       setError('File harus berupa gambar (JPG/PNG).');
       setStage('error');
       return;
@@ -28,30 +36,32 @@ export function PhotoUploader() {
 
     try {
       setStage('compressing');
-      const t0 = performance.now();
       const compressed = await compressNotaImage(file);
-      console.log(`[scan-ui] compressed: ${file.size}B → ${compressed.size}B in ${(performance.now() - t0).toFixed(0)}ms`);
+      evt.compressed_bytes = compressed.size;
 
       setStage('uploading');
       const formData = new FormData();
       formData.append('image', compressed);
 
       setStage('ocr');
-      const t1 = performance.now();
       const res = await fetch('/api/scan', { method: 'POST', body: formData });
-      console.log(`[scan-ui] /api/scan responded ${res.status} in ${(performance.now() - t1).toFixed(0)}ms`);
       const data = await res.json().catch(() => ({}));
-      console.log(`[scan-ui] response body:`, data);
+      evt.scan_status = res.status;
+      evt.scan_response = data;
+
       if (!res.ok) {
         throw new Error(data.error ?? 'scan-failed');
       }
-      const json = data as { transaction_id: string; item_count?: number; ocr_error?: string | null };
-      if (json.ocr_error) {
-        console.warn(`[scan-ui] OCR returned but with error: ${json.ocr_error} — draft created empty, kasir bisa input manual`);
-      }
+      const json = data as { transaction_id: string };
+      evt.outcome = 'ok';
+      evt.duration_ms = Math.round(performance.now() - t0);
+      console.log(JSON.stringify(evt));
       router.push(`/transactions/${json.transaction_id}/review`);
     } catch (err) {
-      console.error(`[scan-ui] ✗ handleFile failed:`, err);
+      evt.outcome = 'error';
+      evt.error_message = err instanceof Error ? err.message : String(err);
+      evt.duration_ms = Math.round(performance.now() - t0);
+      console.error(JSON.stringify(evt));
       setError(
         err instanceof Error
           ? `Gagal memproses foto: ${err.message}. Coba lagi.`

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { computeReplaceItems, type ExistingItem, type MenuRef } from '@/lib/transactions';
+import { newEvent, tagStatus, type RequestEvent } from '@/lib/logger';
 
 const STORAGE_BUCKET = 'notas';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -29,50 +30,65 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  console.log(`[tx] GET /api/transactions/${id}`);
-  const supabase = await getSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-
-  const { data: tx, error: txError } = await supabase
-    .from('transactions')
-    .select('*')
-    .eq('id', id)
-    .is('deleted_at', null)
-    .single();
-  if (txError) {
-    if (txError.code === NOT_FOUND_CODE) {
-      console.warn(`[tx] GET ${id} → not_found`);
-      return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  const evt = newEvent('GET /api/transactions/[id]', { tx_id: id });
+  try {
+    const supabase = await getSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      tagStatus(evt, 401);
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
-    console.error(`[tx] GET ${id} → tx fetch error:`, txError);
-    return NextResponse.json({ error: txError.message }, { status: 500 });
-  }
+    evt.set('user_id', user.id);
 
-  const { data: items, error: itemsError } = await supabase
-    .from('transaction_items')
-    .select('*')
-    .eq('transaction_id', id)
-    .order('sort_order');
-  if (itemsError) {
-    console.error(`[tx] GET ${id} → items fetch error:`, itemsError);
-    return NextResponse.json({ error: itemsError.message }, { status: 500 });
-  }
+    const { data: tx, error: txError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .single();
+    if (txError) {
+      if (txError.code === NOT_FOUND_CODE) {
+        tagStatus(evt, 404);
+        return NextResponse.json({ error: 'not_found' }, { status: 404 });
+      }
+      tagStatus(evt, 500);
+      evt.error(txError);
+      return NextResponse.json({ error: txError.message }, { status: 500 });
+    }
 
-  let scan_url: string | null = null;
-  if (tx.scan_image_path) {
-    const { data: signed } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .createSignedUrl(tx.scan_image_path, SIGNED_URL_TTL_SECONDS);
-    scan_url = signed?.signedUrl ?? null;
-  }
-  console.log(`[tx] GET ${id} → tx.status=${tx.status}, items=${items?.length ?? 0}, scan_url=${scan_url ? 'yes' : 'no'}`);
+    const { data: items, error: itemsError } = await supabase
+      .from('transaction_items')
+      .select('*')
+      .eq('transaction_id', id)
+      .order('sort_order');
+    if (itemsError) {
+      tagStatus(evt, 500);
+      evt.error(itemsError);
+      return NextResponse.json({ error: itemsError.message }, { status: 500 });
+    }
 
-  return NextResponse.json({
-    transaction: tx,
-    items: items ?? [],
-    scan_url,
-  });
+    let scan_url: string | null = null;
+    if (tx.scan_image_path) {
+      const { data: signed } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .createSignedUrl(tx.scan_image_path, SIGNED_URL_TTL_SECONDS);
+      scan_url = signed?.signedUrl ?? null;
+    }
+
+    evt.merge({
+      tx_status: tx.status,
+      items_count: items?.length ?? 0,
+      has_scan_url: !!scan_url,
+    });
+    tagStatus(evt, 200);
+    return NextResponse.json({ transaction: tx, items: items ?? [], scan_url });
+  } catch (err) {
+    tagStatus(evt, 500);
+    evt.error(err);
+    throw err;
+  } finally {
+    evt.emit();
+  }
 }
 
 export async function PATCH(
@@ -80,112 +96,177 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  console.log(`[tx] PATCH /api/transactions/${id}`);
-  const supabase = await getSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const evt = newEvent('PATCH /api/transactions/[id]', { tx_id: id });
+  try {
+    const supabase = await getSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      tagStatus(evt, 401);
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
+    evt.set('user_id', user.id);
 
-  const body = await request.json();
-  const parsed = PatchSchema.safeParse(body);
-  if (!parsed.success) {
-    console.warn(`[tx] PATCH ${id} → invalid_body:`, JSON.stringify(parsed.error.flatten()));
-    return NextResponse.json({ error: 'invalid_body', details: parsed.error.flatten() }, { status: 400 });
+    const body = await request.json();
+    const parsed = PatchSchema.safeParse(body);
+    if (!parsed.success) {
+      tagStatus(evt, 400);
+      evt.merge({ reject_reason: 'invalid_body', zod_issues: parsed.error.issues });
+      return NextResponse.json({ error: 'invalid_body', details: parsed.error.flatten() }, { status: 400 });
+    }
+    evt.merge({
+      patch_status: parsed.data.status ?? null,
+      patch_items_count: parsed.data.items?.length ?? null,
+      patch_set_customer_name: parsed.data.customer_name !== undefined,
+      patch_set_table_no: parsed.data.table_no !== undefined,
+    });
+
+    const headerStatus = await applyHeaderUpdate(supabase, id, parsed.data, evt);
+    if (headerStatus.kind === 'error') return headerStatus.response;
+
+    if (parsed.data.items !== undefined) {
+      const itemsStatus = await replaceItems(supabase, id, parsed.data.items, evt);
+      if (itemsStatus.kind === 'error') return itemsStatus.response;
+    }
+
+    const { data: finalTx } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', id)
+      .single();
+    const { data: finalItems } = await supabase
+      .from('transaction_items')
+      .select('*')
+      .eq('transaction_id', id)
+      .order('sort_order');
+
+    evt.merge({
+      final_status: finalTx?.status,
+      final_items_count: finalItems?.length ?? 0,
+    });
+    tagStatus(evt, 200);
+    return NextResponse.json({ transaction: finalTx, items: finalItems ?? [] });
+  } catch (err) {
+    tagStatus(evt, 500);
+    evt.error(err);
+    throw err;
+  } finally {
+    evt.emit();
   }
-  console.log(`[tx] PATCH ${id} body: status=${parsed.data.status}, items=${parsed.data.items?.length ?? 'none'}`);
+}
 
+type StepResult =
+  | { kind: 'ok' }
+  | { kind: 'error'; response: NextResponse };
+
+type SupabaseLike = Awaited<ReturnType<typeof getSupabaseServer>>;
+
+async function applyHeaderUpdate(
+  supabase: SupabaseLike,
+  id: string,
+  patch: z.infer<typeof PatchSchema>,
+  evt: RequestEvent
+): Promise<StepResult> {
   const headerUpdate: Record<string, unknown> = {};
-  if (parsed.data.status !== undefined) {
-    headerUpdate.status = parsed.data.status;
-    if (parsed.data.status === 'confirmed') {
+  if (patch.status !== undefined) {
+    headerUpdate.status = patch.status;
+    if (patch.status === 'confirmed') {
       headerUpdate.confirmed_at = new Date().toISOString();
     }
   }
-  if (parsed.data.customer_name !== undefined) headerUpdate.customer_name = parsed.data.customer_name;
-  if (parsed.data.table_no !== undefined) headerUpdate.table_no = parsed.data.table_no;
+  if (patch.customer_name !== undefined) headerUpdate.customer_name = patch.customer_name;
+  if (patch.table_no !== undefined) headerUpdate.table_no = patch.table_no;
 
-  if (Object.keys(headerUpdate).length > 0) {
-    const { error: updateError } = await supabase
-      .from('transactions')
-      .update(headerUpdate)
-      .eq('id', id)
-      .is('deleted_at', null)
-      .select('id')
-      .single();
-    if (updateError) {
-      if (updateError.code === NOT_FOUND_CODE) {
-        console.warn(`[tx] PATCH ${id} → not_found on header update`);
-        return NextResponse.json({ error: 'not_found' }, { status: 404 });
-      }
-      console.error(`[tx] PATCH ${id} → header update error:`, updateError);
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
+  if (Object.keys(headerUpdate).length === 0) return { kind: 'ok' };
+
+  const { error: updateError } = await supabase
+    .from('transactions')
+    .update(headerUpdate)
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id')
+    .single();
+
+  if (updateError) {
+    if (updateError.code === NOT_FOUND_CODE) {
+      tagStatus(evt, 404);
+      return { kind: 'error', response: NextResponse.json({ error: 'not_found' }, { status: 404 }) };
     }
-    console.log(`[tx] PATCH ${id} → header updated`);
+    tagStatus(evt, 500);
+    evt.error(updateError);
+    return { kind: 'error', response: NextResponse.json({ error: updateError.message }, { status: 500 }) };
+  }
+  return { kind: 'ok' };
+}
+
+async function replaceItems(
+  supabase: SupabaseLike,
+  id: string,
+  requestedItems: NonNullable<z.infer<typeof PatchSchema>['items']>,
+  evt: RequestEvent
+): Promise<StepResult> {
+  const { data: existingItems, error: existingError } = await supabase
+    .from('transaction_items')
+    .select('id, menu_id, unit_price_snapshot, qty, notes, sort_order')
+    .eq('transaction_id', id);
+  if (existingError) {
+    tagStatus(evt, 500);
+    evt.error(existingError);
+    return { kind: 'error', response: NextResponse.json({ error: existingError.message }, { status: 500 }) };
   }
 
-  if (parsed.data.items !== undefined) {
-    const { data: existingItems, error: existingError } = await supabase
-      .from('transaction_items')
-      .select('id, menu_id, unit_price_snapshot, qty, notes, sort_order')
-      .eq('transaction_id', id);
-    if (existingError) {
-      return NextResponse.json({ error: existingError.message }, { status: 500 });
-    }
+  const { data: menusData, error: menusError } = await supabase
+    .from('menus')
+    .select('id, name, price');
+  if (menusError || !menusData) {
+    tagStatus(evt, 500);
+    evt.set('reject_reason', 'menu_fetch_failed').error(menusError);
+    return { kind: 'error', response: NextResponse.json({ error: 'menu_fetch_failed' }, { status: 500 }) };
+  }
 
-    const { data: menusData, error: menusError } = await supabase
-      .from('menus')
-      .select('id, name, price');
-    if (menusError || !menusData) {
-      return NextResponse.json({ error: 'menu_fetch_failed' }, { status: 500 });
-    }
-
-    let computed;
-    try {
-      computed = computeReplaceItems({
-        existing: (existingItems ?? []) as ExistingItem[],
-        requested: parsed.data.items,
-        menus: menusData as MenuRef[],
-      });
-    } catch (err) {
-      console.warn(`[tx] PATCH ${id} → invalid_items:`, err instanceof Error ? err.message : err);
-      return NextResponse.json(
+  let computed;
+  try {
+    computed = computeReplaceItems({
+      existing: (existingItems ?? []) as ExistingItem[],
+      requested: requestedItems,
+      menus: menusData as MenuRef[],
+    });
+  } catch (err) {
+    tagStatus(evt, 400);
+    evt.set('reject_reason', 'invalid_items').error(err);
+    return {
+      kind: 'error',
+      response: NextResponse.json(
         { error: 'invalid_items', details: err instanceof Error ? err.message : 'unknown' },
         { status: 400 }
-      );
-    }
-    console.log(`[tx] PATCH ${id} → computed ${computed.rows.length} rows (from ${existingItems?.length ?? 0} existing)`);
-
-    const { error: deleteError } = await supabase
-      .from('transaction_items')
-      .delete()
-      .eq('transaction_id', id);
-    if (deleteError) {
-      console.error(`[tx] PATCH ${id} → delete existing items error:`, deleteError);
-      return NextResponse.json({ error: deleteError.message }, { status: 500 });
-    }
-
-    if (computed.rows.length > 0) {
-      const insertRows = computed.rows.map((r) => ({ ...r, transaction_id: id }));
-      const { error: insertError } = await supabase
-        .from('transaction_items')
-        .insert(insertRows);
-      if (insertError) {
-        console.error(`[tx] PATCH ${id} → insert new items error:`, insertError);
-        return NextResponse.json({ error: insertError.message }, { status: 500 });
-      }
-    }
-    console.log(`[tx] PATCH ${id} → items replaced (${computed.rows.length} new)`);
+      ),
+    };
   }
 
-  const { data: finalTx } = await supabase
-    .from('transactions')
-    .select('*')
-    .eq('id', id)
-    .single();
-  const { data: finalItems } = await supabase
-    .from('transaction_items')
-    .select('*')
-    .eq('transaction_id', id)
-    .order('sort_order');
+  evt.merge({
+    items_existing_count: existingItems?.length ?? 0,
+    items_computed_count: computed.rows.length,
+  });
 
-  return NextResponse.json({ transaction: finalTx, items: finalItems ?? [] });
+  const { error: deleteError } = await supabase
+    .from('transaction_items')
+    .delete()
+    .eq('transaction_id', id);
+  if (deleteError) {
+    tagStatus(evt, 500);
+    evt.error(deleteError);
+    return { kind: 'error', response: NextResponse.json({ error: deleteError.message }, { status: 500 }) };
+  }
+
+  if (computed.rows.length > 0) {
+    const insertRows = computed.rows.map((r) => ({ ...r, transaction_id: id }));
+    const { error: insertError } = await supabase
+      .from('transaction_items')
+      .insert(insertRows);
+    if (insertError) {
+      tagStatus(evt, 500);
+      evt.error(insertError);
+      return { kind: 'error', response: NextResponse.json({ error: insertError.message }, { status: 500 }) };
+    }
+  }
+  return { kind: 'ok' };
 }

@@ -7,29 +7,61 @@ const FALLBACK_MODEL = 'gemini-2.5-pro';
 
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-function truncate(s: string, n = 800): string {
+export type ScanAttempt = {
+  model: string;
+  duration_ms: number;
+  outcome: 'success' | 'api_error' | 'empty_response' | 'invalid_json' | 'schema_mismatch';
+  error_message?: string;
+  raw_text_preview?: string;
+  schema_issues?: unknown[];
+  items_count?: number;
+  handwritten_total?: number;
+};
+
+export type ScanMeta = {
+  attempts: ScanAttempt[];
+  final_model: string | null; // null = all failed, result is the empty fallback
+  fell_back: boolean;
+};
+
+export type ScanNotaResult = {
+  result: ScanResult;
+  meta: ScanMeta;
+};
+
+const EMPTY_RESULT: ScanResult = {
+  items: [],
+  handwritten_total: 0,
+  customer_name: null,
+  table_no: null,
+};
+
+function truncate(s: string, n = 400): string {
   return s.length > n ? s.slice(0, n) + `… [+${s.length - n} chars]` : s;
 }
 
 /**
- * OCR sebuah foto nota.
- * - Try PRIMARY_MODEL (Flash) dulu — cepat & murah.
- * - Kalau hasil "kosong" (items kosong DAN handwritten_total = 0), retry sekali pakai FALLBACK_MODEL (Pro).
- * - Return parsed result, throw kalau dua-duanya gagal.
+ * OCR sebuah foto nota. Function ini PURE OF SIDE EFFECTS — tidak console.log.
+ * Caller dapat seluruh meta (attempts, errors, durations) dan decide apa yang
+ * mau di-include di request log.
+ *
+ * - Try PRIMARY_MODEL (Flash) dulu.
+ * - Kalau gagal atau hasil kosong, retry dengan FALLBACK_MODEL (Pro).
+ * - Never throws. Kalau semua gagal → return EMPTY_RESULT dengan final_model=null.
  */
 export async function scanNota(
   base64Image: string,
   mimeType: string,
   menus: MenuRef[]
-): Promise<ScanResult> {
+): Promise<ScanNotaResult> {
   const schema = buildScanSchema(menus);
   const menuRefText = buildMenuRefText(menus);
+  const attempts: ScanAttempt[] = [];
 
-  console.log(`[gemini] scanNota start — image=${base64Image.length}B base64, mime=${mimeType}, menus=${menus.length}`);
-
-  async function callModel(model: string): Promise<ScanResult> {
+  async function callModel(model: string): Promise<ScanResult | null> {
     const t0 = Date.now();
-    console.log(`[gemini] → calling model="${model}"`);
+    const attempt: ScanAttempt = { model, duration_ms: 0, outcome: 'success' };
+
     let response;
     try {
       response = await client.models.generateContent({
@@ -49,55 +81,71 @@ export async function scanNota(
         },
       });
     } catch (err) {
-      const dt = Date.now() - t0;
-      console.error(`[gemini] ✗ model="${model}" API error after ${dt}ms:`, err instanceof Error ? err.message : err);
-      throw new Error(`gemini-api-error: ${err instanceof Error ? err.message : 'unknown'}`);
+      attempt.duration_ms = Date.now() - t0;
+      attempt.outcome = 'api_error';
+      attempt.error_message = err instanceof Error ? err.message : String(err);
+      attempts.push(attempt);
+      return null;
     }
-    const dt = Date.now() - t0;
-    console.log(`[gemini] ✓ model="${model}" responded in ${dt}ms`);
+    attempt.duration_ms = Date.now() - t0;
 
     const text = response.text;
     if (!text) {
-      console.error(`[gemini] ✗ model="${model}" returned empty text. Full response:`, JSON.stringify(response).slice(0, 600));
-      throw new Error('gemini-empty-response');
+      attempt.outcome = 'empty_response';
+      attempts.push(attempt);
+      return null;
     }
-    console.log(`[gemini]   raw text (${text.length} chars): ${truncate(text)}`);
+    attempt.raw_text_preview = truncate(text);
 
     let parsedJson: unknown;
     try {
       parsedJson = JSON.parse(text);
     } catch (err) {
-      console.error(`[gemini] ✗ model="${model}" invalid JSON:`, err instanceof Error ? err.message : err);
-      throw new Error('gemini-invalid-json');
+      attempt.outcome = 'invalid_json';
+      attempt.error_message = err instanceof Error ? err.message : String(err);
+      attempts.push(attempt);
+      return null;
     }
 
     const parsed = schema.safeParse(parsedJson);
     if (!parsed.success) {
-      console.error(`[gemini] ✗ model="${model}" schema mismatch. Issues:`, JSON.stringify(parsed.error.issues, null, 2));
-      console.error(`[gemini]   parsed JSON was:`, JSON.stringify(parsedJson).slice(0, 600));
-      throw new Error('gemini-schema-mismatch');
+      attempt.outcome = 'schema_mismatch';
+      attempt.schema_issues = parsed.error.issues.slice(0, 6);
+      attempts.push(attempt);
+      return null;
     }
-    console.log(`[gemini]   ✓ parsed: ${parsed.data.items.length} items, handwritten_total=${parsed.data.handwritten_total}`);
+
+    attempt.items_count = parsed.data.items.length;
+    attempt.handwritten_total = parsed.data.handwritten_total;
+    attempts.push(attempt);
     return parsed.data;
   }
 
-  let result: ScanResult;
-  try {
-    result = await callModel(PRIMARY_MODEL);
-  } catch (err) {
-    console.warn(`[gemini] primary model failed (${err instanceof Error ? err.message : err}), trying fallback…`);
-    return await callModel(FALLBACK_MODEL);
+  // Try primary
+  const primaryResult = await callModel(PRIMARY_MODEL);
+  if (primaryResult && (primaryResult.items.length > 0 || primaryResult.handwritten_total > 0)) {
+    return {
+      result: primaryResult,
+      meta: { attempts, final_model: PRIMARY_MODEL, fell_back: false },
+    };
   }
 
-  if (result.items.length === 0 && result.handwritten_total === 0) {
-    console.warn(`[gemini] primary returned empty result — retrying with fallback`);
-    try {
-      return await callModel(FALLBACK_MODEL);
-    } catch (err) {
-      console.warn(`[gemini] fallback also failed, returning primary's empty result. err=`, err instanceof Error ? err.message : err);
-      return result;
-    }
+  // Primary either failed OR returned empty — try fallback
+  const fallbackResult = await callModel(FALLBACK_MODEL);
+  if (fallbackResult) {
+    return {
+      result: fallbackResult,
+      meta: { attempts, final_model: FALLBACK_MODEL, fell_back: true },
+    };
   }
 
-  return result;
+  // Both failed completely. Prefer primary's empty result (might at least have customer/table) over EMPTY_RESULT.
+  return {
+    result: primaryResult ?? EMPTY_RESULT,
+    meta: {
+      attempts,
+      final_model: primaryResult ? PRIMARY_MODEL : null,
+      fell_back: true,
+    },
+  };
 }
