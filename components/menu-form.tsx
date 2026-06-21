@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -57,9 +58,12 @@ export function MenuForm({
         }
         throw new Error('Gagal menyimpan. Coba lagi.');
       }
+      toast.success(initial?.id ? 'Menu diperbarui' : 'Menu baru ditambah');
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal menyimpan. Coba lagi.');
+      const message = err instanceof Error ? err.message : 'Gagal menyimpan. Coba lagi.';
+      setError(message);
+      toast.error('Gagal menyimpan menu', { description: message });
     } finally {
       setPending(false);
     }

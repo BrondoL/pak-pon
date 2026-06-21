@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { formatRp } from '@/lib/currency';
@@ -49,9 +50,12 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
     try {
       const res = await fetch(`/api/menus/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('delete-failed');
+      toast.success('Menu dinonaktifkan');
       refresh();
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'delete-failed';
       setMutationError('Gagal menonaktifkan menu. Coba lagi.');
+      toast.error('Gagal menonaktifkan menu', { description: message });
       setConfirmingDeactivate(null);
     }
   }

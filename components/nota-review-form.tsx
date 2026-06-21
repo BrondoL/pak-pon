@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -93,15 +94,21 @@ export function NotaReviewForm({
         const data: { error?: string } = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'patch-failed');
       }
+      toast.success('Nota tersimpan', {
+        description: 'Transaksi sudah masuk laporan harian.',
+      });
       startTransition(() => {
         router.push('/');
       });
     } catch (err) {
-      setSubmitError(
+      const message =
         err instanceof Error
           ? `Gagal menyimpan: ${err.message}. Coba lagi.`
-          : 'Gagal menyimpan. Coba lagi.'
-      );
+          : 'Gagal menyimpan. Coba lagi.';
+      setSubmitError(message);
+      toast.error('Gagal menyimpan nota', {
+        description: err instanceof Error ? err.message : 'Coba lagi.',
+      });
     }
   }
 

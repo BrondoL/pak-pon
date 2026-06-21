@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -83,9 +84,33 @@ export function TransactionDetail({
         const data: { error?: string } = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'delete-failed');
       }
+      const restoreTx = async () => {
+        const restoreRes = await fetch(
+          `/api/transactions/${transaction.id}/restore`,
+          { method: 'POST' }
+        );
+        if (restoreRes.ok) {
+          toast.success('Transaksi dipulihkan');
+          router.push(`/transactions/${transaction.id}`);
+        } else {
+          toast.error('Gagal memulihkan transaksi');
+        }
+      };
+      toast.success('Transaksi dihapus', {
+        description: 'Soft-delete; permanen setelah 7 hari.',
+        action: {
+          label: 'Pulihkan',
+          onClick: restoreTx,
+        },
+        duration: 10000,
+      });
       startTransition(() => router.push('/transactions'));
     } catch (err) {
-      setError(err instanceof Error ? `Gagal menghapus: ${err.message}` : 'Gagal menghapus');
+      const message = err instanceof Error ? `Gagal menghapus: ${err.message}` : 'Gagal menghapus';
+      setError(message);
+      toast.error('Gagal menghapus transaksi', {
+        description: err instanceof Error ? err.message : 'Coba lagi.',
+      });
     }
   }
 

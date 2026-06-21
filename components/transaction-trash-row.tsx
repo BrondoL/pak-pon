@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { formatRp } from '@/lib/currency';
 
@@ -63,9 +64,11 @@ export function TransactionTrashRow({ tx }: { tx: TrashRow }) {
         const data: { error?: string } = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'restore-failed');
       }
+      toast.success('Transaksi dipulihkan');
       startTransition(() => router.refresh());
     } catch (err) {
       setError(err instanceof Error ? `Gagal pulihkan: ${err.message}` : 'Gagal pulihkan');
+      toast.error('Gagal memulihkan transaksi');
     } finally {
       setBusy(false);
     }
