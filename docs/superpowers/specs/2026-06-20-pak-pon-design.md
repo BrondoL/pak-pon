@@ -39,7 +39,7 @@ Internal web app untuk warung **Pecel Lele Pak Pon** (Bandar Lampung). Bukan pub
 
 **Acceptance:**
 - Halaman `/reports/daily` menampilkan total pemasukan hari berjalan + jumlah transaksi
-- Cut-off harian: midnight-to-midnight (00:00–23:59 WIB)
+- Cut-off harian: business-day, default jam 12:00 WIB (env `NEXT_PUBLIC_BUSINESS_DAY_CUTOFF_HOURS`)
 - Bisa pilih tanggal lain untuk lihat historis
 
 ### US-3 — Reporting bulanan
@@ -77,7 +77,7 @@ Internal web app untuk warung **Pecel Lele Pak Pon** (Bandar Lampung). Bukan pub
 | 2 | Asal nota | Pre-printed form Pak Pon, tulisan tangan kasir di kolom qty + total | OCR sangat akurat dengan schema + enum menu reference |
 | 3 | Anotasi ("D P", "Dada") | Catatan dapur → field `notes` di item, BUKAN variant menu | Schema simpel: nullable text |
 | 4 | Pembayaran | TIDAK di-track | Tidak ada kolom `payment_method` |
-| 5 | Cut-off harian | Midnight-to-midnight (23:59 WIB) | Query report `WHERE created_at::date = $date` |
+| 5 | Cut-off harian | Midnight-to-midnight (23:59 WIB) | **Superseded** oleh `2026-06-21-shift-cutoff-design.md` — sekarang business-day berbasis env var |
 | 6 | Harga menu | Snapshot per transaksi (`unit_price_snapshot`) | Transaksi historis aman saat menu master diubah |
 | 7 | Handwritten total | OCR ekstrak juga → warning kalau ≠ sum items, sum items = source of truth | Field `handwritten_total` di transaction header |
 | 8 | Akun login | 1 akun share via Supabase Auth email/password | No signup page, no user table tambahan |
@@ -444,6 +444,7 @@ export async function compressNotaImage(file: File): Promise<File> {
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | client+server | project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | client+server | publishable key |
+| `NEXT_PUBLIC_BUSINESS_DAY_CUTOFF_HOURS` | client+server | jam cut-off business-day (default 12) |
 | `SUPABASE_SECRET_KEY` | server-only | service-role untuk cron (bypass RLS) |
 | `GEMINI_API_KEY` | server-only | Gemini API key |
 | `CRON_SECRET` | server-only | random string, validate `Authorization` header dari Vercel Cron |
@@ -554,6 +555,7 @@ pak-pon/
 - **Soft delete (transactions)**: gunakan `deleted_at` timestamp; filter `WHERE deleted_at IS NULL` di semua query default; cron cleanup hapus permanen >7 hari
 - **Soft delete (menus)**: gunakan `is_active=false` (permanent, tidak ada cleanup) — preserve FK ke transaksi historis
 - **Currency display**: `formatRp(120000)` → `"Rp 120.000"` (dengan space + titik separator ribuan)
+- **Business day**: pakai `currentBusinessDate()` / `businessDayRange()` dari `lib/date.ts`; jangan inline `created_at::date`
 
 ## 15. Out of scope (MVP)
 
@@ -571,7 +573,6 @@ Hal-hal berikut **sengaja tidak masuk MVP**, di-defer ke fase berikutnya kalau m
 - Inventory / stock management
 - Notifikasi push / email
 - Export CSV/Excel report
-- Buka warung lewat tengah malam (B option di Q5) — sekarang midnight-to-midnight
 
 ## 16. Open implementation details (decided saat coding)
 
