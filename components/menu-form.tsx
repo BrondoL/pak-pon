@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 export type MenuFormValues = {
   id?: string;
@@ -93,33 +94,31 @@ export function MenuForm({
         {/* Category — segmented toggle, bukan native select */}
         <div>
           <Label>Kategori</Label>
-          <div
-            role="radiogroup"
+          <RadioGroup
+            value={category}
+            onValueChange={(v) => setCategory(v as MenuFormValues['category'])}
             aria-label="Kategori menu"
             className="mt-2 inline-flex rounded-lg bg-cream p-1"
           >
-            {categoryOptions.map((opt) => {
-              const active = category === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setCategory(opt.value)}
+            {categoryOptions.map((opt) => (
+              <div key={opt.value} className="flex">
+                <RadioGroupItem value={opt.value} id={`cat-${opt.value}`} className="peer sr-only" />
+                <Label
+                  htmlFor={`cat-${opt.value}`}
+                  variant="default"
                   className={[
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-[var(--duration-fast)]',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brick focus-visible:ring-offset-1 focus-visible:ring-offset-cream',
-                    active
-                      ? 'bg-paper-soft text-coal shadow-[var(--shadow-paper)]'
-                      : 'text-coal-soft hover:text-coal',
+                    'cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-all',
+                    'duration-[var(--duration-fast)]',
+                    'peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-brick peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-cream',
+                    'peer-data-[checked]:bg-paper-soft peer-data-[checked]:text-coal peer-data-[checked]:shadow-[var(--shadow-paper)]',
+                    'text-coal-soft hover:text-coal',
                   ].join(' ')}
                 >
                   {opt.label}
-                </button>
-              );
-            })}
-          </div>
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
         </div>
 
         {/* Price + sort_order on one row pada wider screens */}
