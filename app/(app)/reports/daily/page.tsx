@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { getSupabaseServer } from '@/lib/supabase/server';
-import { today, parseYmd, startOfDayWIB, endOfDayWIB } from '@/lib/date';
+import { currentBusinessDate, parseYmd, businessDayRange } from '@/lib/date';
 import { DailySummary } from '@/components/daily-summary';
 
 export const dynamic = 'force-dynamic';
@@ -11,15 +11,17 @@ export default async function DailyReportPage({
   searchParams: Promise<{ date?: string }>;
 }) {
   const sp = await searchParams;
-  const date = (sp.date && parseYmd(sp.date)) ?? today();
+  const date = (sp.date && parseYmd(sp.date)) ?? currentBusinessDate();
   const supabase = await getSupabaseServer();
+
+  const { start, end } = businessDayRange(date);
 
   const { data } = await supabase
     .from('transactions')
     .select('id, status, customer_name, handwritten_total, transaction_items(qty, unit_price_snapshot, menu_name_snapshot)')
     .is('deleted_at', null)
-    .gte('created_at', startOfDayWIB(date))
-    .lt('created_at', endOfDayWIB(date));
+    .gte('created_at', start)
+    .lt('created_at', end);
 
   const txs = data ?? [];
   let total = 0;
