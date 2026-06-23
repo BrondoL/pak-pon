@@ -20,6 +20,7 @@ type Transaction = {
   customer_name: string | null;
   table_no: string | null;
   created_at: string;
+  rescanned_at: string | null;
 };
 
 type PrinterTarget = 'dapur' | 'minuman';
@@ -326,10 +327,15 @@ export function NotaReviewForm({
               type="button"
               variant="secondary"
               onClick={handleRescan}
-              disabled={rescanning || pending || thousandsApplying}
+              disabled={rescanning || pending || thousandsApplying || !!transaction.rescanned_at}
               className="w-full"
+              title={transaction.rescanned_at ? 'Rescan hanya boleh 1x per transaksi' : undefined}
             >
-              {rescanning ? '🔄 Rescanning dengan Pro…' : '🔄 Rescan dengan Pro'}
+              {rescanning
+                ? '🔄 Rescanning dengan Pro…'
+                : transaction.rescanned_at
+                ? '🔄 Rescan sudah dipakai (1x max)'
+                : '🔄 Rescan dengan Pro'}
             </Button>
           </div>
         )}

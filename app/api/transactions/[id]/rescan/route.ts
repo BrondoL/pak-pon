@@ -31,7 +31,7 @@ export async function POST(
 
     const { data: tx, error: txError } = await supabase
       .from('transactions')
-      .select('id, status, scan_image_path')
+      .select('id, status, scan_image_path, rescanned_at')
       .eq('id', id)
       .is('deleted_at', null)
       .single();
@@ -53,6 +53,14 @@ export async function POST(
       tagStatus(evt, 409);
       evt.set('reject_reason', 'no_scan_image');
       return NextResponse.json({ error: 'no_scan_image' }, { status: 409 });
+    }
+    if (tx.rescanned_at) {
+      tagStatus(evt, 409);
+      evt.set('reject_reason', 'already_rescanned').set('rescanned_at', tx.rescanned_at);
+      return NextResponse.json(
+        { error: 'already_rescanned', rescanned_at: tx.rescanned_at },
+        { status: 409 }
+      );
     }
     evt.set('storage_path', tx.scan_image_path);
 
@@ -163,13 +171,15 @@ export async function POST(
       }
     }
 
-    // Update header fields from new OCR (overwrite — rescan is opt-in by kasir)
+    // Update header fields from new OCR (overwrite — rescan is opt-in by kasir).
+    // Also stamp rescanned_at to enforce the 1x-per-tx limit.
     const { error: txUpdateError } = await supabase
       .from('transactions')
       .update({
         handwritten_total: ocr.handwritten_total || null,
         customer_name: ocr.customer_name,
         table_no: ocr.table_no,
+        rescanned_at: new Date().toISOString(),
       })
       .eq('id', id)
       .is('deleted_at', null);
