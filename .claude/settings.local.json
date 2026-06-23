@@ -8,7 +8,21 @@
       "Bash(node *)",
       "mcp__plugin_supabase_supabase__execute_sql",
       "Bash(npx tsc *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(sed -n '1,30p;90,180p' components/nota-item-modal.tsx)",
+      "Bash(sed -n '1,30p;60,130p' components/menu-form.tsx)",
+      "Bash(sed -n '1,100p' components/date-filter.tsx)",
+      "Bash(sed -n '200,260p' components/transaction-detail.tsx)",
+      "Bash(npx shadcn@latest init --help)",
+      "Bash(NPM_CONFIG_LEGACY_PEER_DEPS=true npx shadcn@latest init --yes --base radix --css-variables)",
+      "Bash(NPM_CONFIG_LEGACY_PEER_DEPS=true npx shadcn@latest init -d --css-variables)",
+      "Bash(NPM_CONFIG_LEGACY_PEER_DEPS=true npm install)",
+      "Bash(NPM_CONFIG_LEGACY_PEER_DEPS=true npx shadcn@latest *)",
+      "Bash(yes n *)",
+      "Bash(grep *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk read *)"
     ]
   },
   "enabledPlugins": {

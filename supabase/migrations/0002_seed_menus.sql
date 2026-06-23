@@ -32,6 +32,6 @@ INSERT INTO menus (name, category, price, sort_order) VALUES
   ('Es Jeruk',                'minuman', 10000, 5),
   ('Jeruk Panas',             'minuman',  8000, 6),
   ('Es Tawar',                'minuman',  3000, 7),
-  ('Es Batu',                 'minuman',  5000, 8),
+  ('Es Batu',                 'minuman',  2000, 8),
   ('Mineral Botol',           'minuman',  5000, 9),
   ('Teh Botol Sosro',         'minuman',  7000, 10);

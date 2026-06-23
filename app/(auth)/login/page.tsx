@@ -56,7 +56,7 @@ export default function LoginPage() {
                 required
                 autoComplete="username"
                 placeholder="kasir@pakpon.id"
-                className="mt-2"
+                className="mt-2 text-black"
               />
             </div>
 
@@ -70,7 +70,7 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 minLength={6}
                 placeholder="••••••••"
-                className="mt-2"
+                className="mt-2 text-black"
               />
             </div>
 

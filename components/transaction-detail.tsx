@@ -217,7 +217,7 @@ export function TransactionDetail({
                         <span className="text-xs text-clay shrink-0">× {it.qty}</span>
                       </div>
                       <div className="mt-0.5 text-xs text-clay">
-                        {formatRp(it.unit_price_snapshot)} ea
+                        {formatRp(it.unit_price_snapshot)}
                         {it.notes && <> · <span className="italic">{it.notes}</span></>}
                       </div>
                     </div>
