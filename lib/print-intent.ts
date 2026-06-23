@@ -14,10 +14,12 @@ const RAWBT_PACKAGE = 'ru.a402d.rawbtprinter';
 
 export type PrintTarget = 'dapur' | 'minuman';
 
+export type MenuCategory = 'makanan' | 'nasi' | 'minuman';
+
 export type TransactionItemForPrint = {
   id: string;
   menu_name_snapshot: string;
-  menu_category: string; // 'makanan' | 'nasi' | 'minuman'
+  menu_category: MenuCategory;
   qty: number;
   notes: string | null;
 };
@@ -43,8 +45,9 @@ export function buildRawBtIntentUrl(args: {
 }): string {
   const payloadB64 = uint8ToBase64(args.bytes);
   const encodedProfile = encodeURIComponent(args.profile);
-  const encodedPayload = encodeURIComponent(payloadB64);
-  return `intent://print/#Intent;scheme=rawbt;package=${RAWBT_PACKAGE};S.profile=${encodedProfile};S.payload=${encodedPayload};end`;
+  // Base64 chars (A-Z a-z 0-9 + / =) don't conflict with `;` separator and
+  // Intent.parseUri() reads S.key=value literally (no percent-decoding).
+  return `intent://print/#Intent;scheme=rawbt;package=${RAWBT_PACKAGE};S.profile=${encodedProfile};S.payload=${payloadB64};end`;
 }
 
 /**

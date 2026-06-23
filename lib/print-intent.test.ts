@@ -16,7 +16,7 @@ describe('buildRawBtIntentUrl', () => {
   it('encodes bytes as base64 in payload', () => {
     const url = buildRawBtIntentUrl({ profile: 'Dapur', bytes: dummyBytes });
     // base64 of [0x1b, 0x40, 0x48, 0x49] = "G0BISQ=="
-    expect(url).toContain('S.payload=G0BISQ%3D%3D'); // url-encoded
+    expect(url).toContain('S.payload=G0BISQ=='); // raw, no url-encoding (see buildRawBtIntentUrl)
   });
 
   it('different profiles produce different URLs', () => {
