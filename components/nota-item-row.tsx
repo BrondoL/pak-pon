@@ -106,9 +106,11 @@ export function NotaItemRow({
 
       {showAlts && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          <span className={['font-semibold', tierClass!.badge].join(' ')}>
-            ⚠ {item.confidence}%
-          </span>
+          {tierClass && (
+            <span className={['font-semibold', tierClass.badge].join(' ')}>
+              ⚠ {item.confidence}%
+            </span>
+          )}
           <span className="text-clay">Mungkin:</span>
           {validAlts.map((alt) => {
             const altMenu = menusByName.get(alt.menu_name)!;
@@ -127,9 +129,9 @@ export function NotaItemRow({
         </div>
       )}
 
-      {tier !== null && !showAlts && (
+      {tierClass && !showAlts && (
         <div className="mt-2 text-xs">
-          <span className={['font-semibold', tierClass!.badge].join(' ')}>
+          <span className={['font-semibold', tierClass.badge].join(' ')}>
             ⚠ {item.confidence}% — periksa item ini
           </span>
         </div>
