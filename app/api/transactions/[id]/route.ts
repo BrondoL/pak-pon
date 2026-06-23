@@ -10,10 +10,16 @@ const STORAGE_BUCKET = 'notas';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const NOT_FOUND_CODE = 'PGRST116';
 
+const AlternativeSchema = z.object({
+  menu_name: z.string(),
+  confidence: z.number().int().min(0).max(100),
+});
+
 const PatchSchema = z.object({
   status: z.enum(['pending_review', 'confirmed']).optional(),
   customer_name: z.string().nullable().optional(),
   table_no: z.string().nullable().optional(),
+  handwritten_total: z.number().int().nonnegative().nullable().optional(),
   items: z
     .array(
       z.object({
@@ -22,6 +28,8 @@ const PatchSchema = z.object({
         qty: z.number().int().positive(),
         notes: z.string().nullable().default(null),
         sort_order: z.number().int().default(0),
+        confidence: z.number().int().min(0).max(100).nullable().optional(),
+        alternatives: z.array(AlternativeSchema).max(2).optional(),
       })
     )
     .optional(),
@@ -120,6 +128,7 @@ export async function PATCH(
       patch_items_count: parsed.data.items?.length ?? null,
       patch_set_customer_name: parsed.data.customer_name !== undefined,
       patch_set_table_no: parsed.data.table_no !== undefined,
+      patch_set_handwritten_total: parsed.data.handwritten_total !== undefined,
     });
 
     const headerStatus = await applyHeaderUpdate(supabase, id, parsed.data, evt);
@@ -222,6 +231,10 @@ async function applyHeaderUpdate(
   }
   if (patch.customer_name !== undefined) headerUpdate.customer_name = patch.customer_name;
   if (patch.table_no !== undefined) headerUpdate.table_no = patch.table_no;
+  if (patch.handwritten_total !== undefined) {
+    headerUpdate.handwritten_total = patch.handwritten_total;
+    evt.set('total_changed', true);
+  }
 
   if (Object.keys(headerUpdate).length === 0) return { kind: 'ok' };
 
