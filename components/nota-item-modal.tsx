@@ -53,11 +53,13 @@ export function NotaItemModal({
     initial ? (menus.find((m) => m.id === initial.menu_id)?.category ?? 'makanan') : 'makanan'
   );
 
+  // Search overrides the category filter — if user typed anything, search across
+  // ALL categories so they don't have to guess which tab the menu lives in.
+  const isSearching = search.trim().length > 0;
   const visibleMenus = useMemo(() => {
     const s = search.toLowerCase().trim();
-    return menus
-      .filter((m) => m.category === activeCategory)
-      .filter((m) => (s ? m.name.toLowerCase().includes(s) : true));
+    if (s) return menus.filter((m) => m.name.toLowerCase().includes(s));
+    return menus.filter((m) => m.category === activeCategory);
   }, [menus, activeCategory, search]);
 
   const categoryCounts = useMemo(() => {
@@ -110,19 +112,24 @@ export function NotaItemModal({
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-3 gap-1.5" aria-hidden={isSearching}>
             {CATEGORY_ORDER.map((cat) => {
-              const active = cat === activeCategory;
+              const active = !isSearching && cat === activeCategory;
               return (
                 <button
                   key={cat}
                   type="button"
-                  onClick={() => setActiveCategory(cat)}
+                  onClick={() => {
+                    setActiveCategory(cat);
+                    if (isSearching) setSearch('');
+                  }}
+                  disabled={isSearching}
                   className={[
                     'rounded-md border px-2 py-1.5 text-xs font-medium transition-colors',
                     active
                       ? 'border-coal bg-coal text-paper'
                       : 'border-clay-soft bg-paper-soft text-coal hover:bg-cream',
+                    isSearching ? 'opacity-50 cursor-not-allowed' : '',
                   ].join(' ')}
                 >
                   {CATEGORY_LABEL[cat]} <span className="text-[10px] opacity-70">({categoryCounts[cat]})</span>
@@ -134,7 +141,9 @@ export function NotaItemModal({
           <div className="max-h-64 overflow-y-auto rounded-md border border-clay-soft">
             {visibleMenus.length === 0 && (
               <p className="px-3 py-4 text-center text-sm text-clay">
-                Tidak ada menu cocok di {CATEGORY_LABEL[activeCategory]}.
+                {isSearching
+                  ? `Tidak ada menu cocok dengan "${search.trim()}".`
+                  : `Tidak ada menu di ${CATEGORY_LABEL[activeCategory]}.`}
               </p>
             )}
             {visibleMenus.map((m) => {
@@ -145,12 +154,19 @@ export function NotaItemModal({
                   type="button"
                   onClick={() => setMenuId(m.id)}
                   className={[
-                    'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors',
+                    'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors',
                     active ? 'bg-gold-faint text-coal' : 'hover:bg-cream',
                   ].join(' ')}
                 >
-                  <span>{m.name}</span>
-                  <span className="text-clay">{formatRp(m.price)}</span>
+                  <span className="flex items-baseline gap-2 min-w-0">
+                    <span className="truncate">{m.name}</span>
+                    {isSearching && (
+                      <span className="text-[10px] uppercase tracking-wider text-clay">
+                        {m.category}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-clay shrink-0">{formatRp(m.price)}</span>
                 </button>
               );
             })}
