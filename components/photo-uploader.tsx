@@ -2,30 +2,37 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { compressNotaImage } from '@/lib/compress';
+import { compressNotaImage, preprocessNotaImage } from '@/lib/compress';
+import { analyzeImageQuality, type QualityReport } from '@/lib/image-quality';
 import { Button } from '@/components/ui/button';
 
-type Stage = 'idle' | 'compressing' | 'uploading' | 'ocr' | 'error';
+type Stage =
+  | 'idle'
+  | 'analyzing'
+  | 'review-quality'
+  | 'preprocessing'
+  | 'compressing'
+  | 'uploading'
+  | 'ocr'
+  | 'error';
 
 export function PhotoUploader() {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>('idle');
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [qualityReport, setQualityReport] = useState<QualityReport | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(file: File) {
-    const t0 = performance.now();
-    const evt: Record<string, unknown> = {
-      route: 'PhotoUploader.handleFile',
-      file_name: file.name,
-      file_type: file.type,
-      file_bytes: file.size,
-    };
-
     if (!file.type.startsWith('image/')) {
-      console.log(JSON.stringify({ ...evt, outcome: 'rejected_not_image', duration_ms: Math.round(performance.now() - t0) }));
+      console.log(JSON.stringify({
+        route: 'PhotoUploader.handleFile',
+        outcome: 'rejected_not_image',
+        file_type: file.type,
+      }));
       setError('File harus berupa gambar (JPG/PNG).');
       setStage('error');
       return;
@@ -33,10 +40,50 @@ export function PhotoUploader() {
 
     setError(null);
     setPreview(URL.createObjectURL(file));
+    setPendingFile(file);
+    setStage('analyzing');
+
+    let report: QualityReport;
+    try {
+      report = await analyzeImageQuality(file);
+    } catch (err) {
+      console.error(JSON.stringify({
+        route: 'PhotoUploader.analyze',
+        outcome: 'analyze_failed',
+        error: err instanceof Error ? err.message : String(err),
+      }));
+      // Gate failure shouldn't block — fall through to scan
+      await runScan(file);
+      return;
+    }
+
+    setQualityReport(report);
+    if (report.warnings.length > 0) {
+      setStage('review-quality');
+    } else {
+      await runScan(file);
+    }
+  }
+
+  async function runScan(file: File) {
+    const t0 = performance.now();
+    const evt: Record<string, unknown> = {
+      route: 'PhotoUploader.runScan',
+      file_name: file.name,
+      file_type: file.type,
+      file_bytes: file.size,
+      quality_brightness: qualityReport?.brightness,
+      quality_contrast: qualityReport?.contrast,
+      quality_warnings: qualityReport?.warnings,
+    };
 
     try {
+      setStage('preprocessing');
+      const enhanced = await preprocessNotaImage(file);
+      evt.preprocessed_bytes = enhanced.size;
+
       setStage('compressing');
-      const compressed = await compressNotaImage(file);
+      const compressed = await compressNotaImage(enhanced);
       evt.compressed_bytes = compressed.size;
 
       setStage('uploading');
@@ -71,15 +118,29 @@ export function PhotoUploader() {
     }
   }
 
+  async function proceedAnyway() {
+    if (!pendingFile) return;
+    await runScan(pendingFile);
+  }
+
   function reset() {
     setStage('idle');
     setError(null);
     setPreview(null);
+    setPendingFile(null);
+    setQualityReport(null);
     if (cameraInputRef.current) cameraInputRef.current.value = '';
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  const busy = stage === 'compressing' || stage === 'uploading' || stage === 'ocr';
+  const busy =
+    stage === 'analyzing' ||
+    stage === 'preprocessing' ||
+    stage === 'compressing' ||
+    stage === 'uploading' ||
+    stage === 'ocr';
+
+  const reviewingQuality = stage === 'review-quality';
 
   return (
     <div className="space-y-4">
@@ -117,6 +178,31 @@ export function PhotoUploader() {
         </div>
       )}
 
+      {reviewingQuality && qualityReport && (
+        <div
+          className="rounded-md border border-mustard/40 bg-mustard-faint px-4 py-3 text-sm text-coal"
+          role="alert"
+        >
+          <p className="font-medium">Foto kelihatan kurang ideal:</p>
+          <ul className="mt-2 space-y-1">
+            {qualityReport.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-coal-soft">
+            Lanjut tetap bisa, tapi hasil OCR mungkin kurang akurat. Disarankan foto ulang.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={reset}>
+              📷 Foto ulang
+            </Button>
+            <Button size="sm" onClick={proceedAnyway}>
+              Lanjut tetap scan
+            </Button>
+          </div>
+        </div>
+      )}
+
       {busy && (
         <div
           className="flex items-center gap-3 rounded-md bg-clay-mist px-4 py-3 text-sm text-coal-soft"
@@ -128,6 +214,8 @@ export function PhotoUploader() {
             aria-hidden
           />
           <span className="flex-1">
+            {stage === 'analyzing' && 'Mengecek kualitas foto…'}
+            {stage === 'preprocessing' && 'Memperbaiki kontras…'}
             {stage === 'compressing' && 'Mengompres foto…'}
             {stage === 'uploading' && 'Mengunggah ke server…'}
             {stage === 'ocr' && 'OCR sedang membaca nota… (biasanya 5–15 detik)'}
@@ -164,7 +252,7 @@ export function PhotoUploader() {
         </div>
       )}
 
-      {(stage === 'error' || (preview && !busy)) && (
+      {(stage === 'error' || (preview && !busy && !reviewingQuality)) && (
         <Button variant="ghost" onClick={reset} className="w-full">
           Mulai ulang
         </Button>

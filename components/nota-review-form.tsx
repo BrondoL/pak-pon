@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -113,6 +113,17 @@ export function NotaReviewForm({
   const [thousandsDismissed, setThousandsDismissed] = useState(false);
   const [thousandsApplying, setThousandsApplying] = useState(false);
   const [rescanning, setRescanning] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // ESC closes the lightbox
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxOpen]);
 
   const menusByName = useMemo(
     () => new Map(menus.map((m) => [m.name, m])),
@@ -323,12 +334,19 @@ export function NotaReviewForm({
         {scanUrl && (
           <div className="lg:sticky lg:top-4 lg:self-start space-y-3">
             <Card variant="paper" className="overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={scanUrl}
-                alt="Foto nota"
-                className="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
-              />
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(true)}
+                aria-label="Perbesar foto nota"
+                className="block w-full cursor-zoom-in"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={scanUrl}
+                  alt="Foto nota"
+                  className="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
+                />
+              </button>
             </Card>
             <AlertDialog>
               <AlertDialogTrigger
@@ -476,6 +494,32 @@ export function NotaReviewForm({
           </div>
         </div>
       </div>
+
+      {lightboxOpen && scanUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Foto nota fullscreen"
+          onClick={() => setLightboxOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-coal/90 p-4 cursor-zoom-out"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={scanUrl}
+            alt="Foto nota fullscreen"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-full max-w-full object-contain cursor-default"
+          />
+          <button
+            type="button"
+            aria-label="Tutup"
+            onClick={() => setLightboxOpen(false)}
+            className="fixed top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-paper/90 text-2xl text-coal shadow-md hover:bg-paper"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {(editing || adding) && (
         <NotaItemModal
