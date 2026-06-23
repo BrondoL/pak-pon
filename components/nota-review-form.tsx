@@ -10,6 +10,9 @@ import { Label } from '@/components/ui/label';
 import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
+import { renderTicket } from '@/lib/escpos';
+import { buildRawBtIntentUrl, splitItemsByTarget, type TransactionItemForPrint } from '@/lib/print-intent';
+import { setPrinterStatus, type PrinterTarget } from '@/lib/printer-status';
 
 type Transaction = {
   id: string;
@@ -19,6 +22,72 @@ type Transaction = {
   table_no: string | null;
   created_at: string;
 };
+
+async function postPrintLog(args: {
+  tx_id: string;
+  daily_seq: number | null;
+  target: PrinterTarget;
+  outcome: 'dispatched';
+}) {
+  try {
+    await fetch('/api/print/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...args,
+        trigger: 'auto',
+        url_scheme_variant: 'rawbt-intent-v1',
+        user_agent: navigator.userAgent,
+      }),
+    });
+  } catch { /* swallow */ }
+}
+
+function triggerAutoPrint(
+  confirmedTx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null },
+  itemsForPrint: TransactionItemForPrint[],
+): PrinterTarget[] {
+  const split = splitItemsByTarget(itemsForPrint);
+  const targets: PrinterTarget[] = [];
+  if (split.dapur.length > 0) targets.push('dapur');
+  if (split.minuman.length > 0) targets.push('minuman');
+
+  targets.forEach((target, idx) => {
+    setTimeout(() => {
+      const targetItems = target === 'dapur' ? split.dapur : split.minuman;
+      const bytes = renderTicket({
+        target,
+        daily_seq: confirmedTx.daily_seq ?? 0,
+        created_at: new Date(confirmedTx.created_at),
+        customer_name: confirmedTx.customer_name,
+        table_no: confirmedTx.table_no,
+        items: targetItems.map((i) => ({
+          qty: i.qty,
+          name: i.menu_name_snapshot,
+          note: i.notes,
+        })),
+      });
+      const url = buildRawBtIntentUrl({
+        profile: target === 'dapur' ? 'Dapur' : 'Minuman',
+        bytes,
+      });
+      window.location.href = url;
+      postPrintLog({
+        tx_id: confirmedTx.id,
+        daily_seq: confirmedTx.daily_seq,
+        target,
+        outcome: 'dispatched',
+      });
+      setPrinterStatus(target, {
+        state: 'success',
+        last_check: new Date().toISOString(),
+        last_outcome_note: 'auto print',
+      });
+    }, idx * 300);
+  });
+
+  return targets;
+}
 
 export function NotaReviewForm({
   transaction,
@@ -94,9 +163,37 @@ export function NotaReviewForm({
         const data: { error?: string } = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'patch-failed');
       }
-      toast.success('Nota tersimpan', {
-        description: 'Transaksi sudah masuk laporan harian.',
+      const data = await res.json() as {
+        transaction: {
+          id: string;
+          daily_seq: number | null;
+          created_at: string;
+          customer_name: string | null;
+          table_no: string | null;
+        };
+        items: Array<{ id: string; menu_id: string; menu_name_snapshot: string; qty: number; notes: string | null }>;
+      };
+
+      // Lookup category dari `menus` prop pakai menu_id
+      const itemsForPrint: TransactionItemForPrint[] = data.items.map((it) => {
+        const menu = menus.find((m) => m.id === it.menu_id);
+        return {
+          id: it.id,
+          menu_name_snapshot: it.menu_name_snapshot,
+          menu_category: (menu?.category ?? 'makanan') as TransactionItemForPrint['menu_category'],
+          qty: it.qty,
+          notes: it.notes,
+        };
       });
+
+      const printedTargets = triggerAutoPrint(data.transaction, itemsForPrint);
+
+      toast.success(
+        printedTargets.length > 0
+          ? `Nota tersimpan, mencetak ke ${printedTargets.join(' & ')}...`
+          : 'Nota tersimpan'
+      );
+
       startTransition(() => {
         router.push('/');
       });
@@ -233,7 +330,7 @@ export function NotaReviewForm({
               disabled={pending || items.length === 0}
               className="flex-1"
             >
-              {pending ? 'Menyimpan…' : '✓ Konfirmasi'}
+              {pending ? 'Menyimpan…' : '✓ Simpan & Cetak'}
             </Button>
           </div>
         </div>
