@@ -4,6 +4,7 @@ import { getSupabaseServer } from '@/lib/supabase/server';
 import { scanNota } from '@/lib/gemini';
 import { newEvent, tagStatus } from '@/lib/logger';
 import type { MenuRef } from '@/lib/prompts';
+import { detectThousandsMissing } from '@/lib/total-parser';
 
 const STORAGE_BUCKET = 'notas';
 
@@ -104,6 +105,8 @@ export async function POST(request: NextRequest) {
           qty: item.qty,
           notes: item.notes,
           sort_order: idx,
+          confidence: item.confidence,
+          alternatives: item.alternatives,
         };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -111,6 +114,19 @@ export async function POST(request: NextRequest) {
       evt.set('ocr_unknown_menu_names', unknownMenuNames);
     }
     evt.set('items_resolved', itemRows.length);
+
+    const confidences = ocr.items.map((it) => it.confidence);
+    if (confidences.length > 0) {
+      const minConf = Math.min(...confidences);
+      const meanConf = Math.round(confidences.reduce((a, b) => a + b, 0) / confidences.length);
+      const lowConfItems = ocr.items.filter((it) => it.confidence < 75).map((it) => it.menu_name);
+      evt.merge({
+        ocr_conf_min: minConf,
+        ocr_conf_mean: meanConf,
+        ocr_low_conf_count: lowConfItems.length,
+        ocr_low_conf_items: lowConfItems,
+      });
+    }
 
     const { error: txError } = await supabase.from('transactions').insert({
       id: transactionId,
@@ -138,7 +154,12 @@ export async function POST(request: NextRequest) {
 
     const computedSum = itemRows.reduce((acc, it) => acc + it.qty * it.unit_price_snapshot, 0);
     const mismatch = !!ocr.handwritten_total && computedSum !== ocr.handwritten_total;
-    evt.merge({ computed_sum: computedSum, mismatch });
+    const suggestThousands = detectThousandsMissing(ocr.handwritten_total, computedSum);
+    evt.merge({
+      computed_sum: computedSum,
+      mismatch,
+      suggest_thousands: suggestThousands.suggest,
+    });
 
     if (!itemsInsertOk) {
       tagStatus(evt, 207);
@@ -155,6 +176,7 @@ export async function POST(request: NextRequest) {
         handwritten_total: ocr.handwritten_total,
         computed_sum: computedSum,
         mismatch,
+        suggest_thousands: suggestThousands,
         ocr_total_failure: ocrMeta.final_model === null,
       },
       { status: 201 }
