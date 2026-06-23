@@ -1,65 +1,72 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TestPrintDialog } from './test-print-dialog';
-import { getPrinterStatus } from '@/lib/printer-status';
+
+const mockFetchOk = (body: unknown, status = 201) =>
+  vi.fn(
+    (...args: [input: RequestInfo | URL, init?: RequestInit]) => {
+      void args;
+      return Promise.resolve(new Response(JSON.stringify(body), { status }));
+    },
+  );
 
 describe('<TestPrintDialog />', () => {
   beforeEach(() => {
-    localStorage.clear();
     vi.restoreAllMocks();
-    // Prevent jsdom navigation error from intent URL trigger
-    vi.spyOn(window, 'open').mockImplementation(() => null);
-    // Mock window.location.href assignment — jsdom throws on real navigation
-    Object.defineProperty(window, 'location', {
-      value: { ...window.location, href: '' },
-      writable: true,
-      configurable: true,
-    });
-    // sendBeacon is the navigation-resilient log path — mock it for jsdom.
-    Object.defineProperty(navigator, 'sendBeacon', {
-      value: vi.fn(() => true),
-      writable: true,
-      configurable: true,
-    });
-    // Mock fetch fallback for /api/print/log
-    global.fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))) as unknown as typeof fetch;
   });
 
-  it('renders trigger button initially', () => {
+  it('renders idle state with submit button', () => {
     render(<TestPrintDialog target="dapur" onClose={vi.fn()} />);
     expect(screen.getByRole('button', { name: /cetak tes/i })).toBeInTheDocument();
   });
 
-  it('shows confirmation prompt after firing test', async () => {
+  it('shows submitting then awaiting_agent after POST success', async () => {
+    global.fetch = mockFetchOk({ job_id: 'job-1' }) as unknown as typeof fetch;
     const user = userEvent.setup();
     render(<TestPrintDialog target="dapur" onClose={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /cetak tes/i }));
-    expect(screen.getByText(/berhasil/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /berhasil/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /gagal/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/job dikirim/i)).toBeInTheDocument();
+    });
   });
 
-  it('sets status success when user confirms berhasil', async () => {
+  it('shows error state when POST fails', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ error: 'server' }), { status: 500 }))
+    ) as unknown as typeof fetch;
     const user = userEvent.setup();
-    const onClose = vi.fn();
-    render(<TestPrintDialog target="dapur" onClose={onClose} />);
+    render(<TestPrintDialog target="dapur" onClose={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /cetak tes/i }));
-    await user.click(screen.getByRole('button', { name: /berhasil/i }));
-    const status = getPrinterStatus();
-    expect(status.dapur.state).toBe('success');
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText(/gagal mengirim/i)).toBeInTheDocument();
+    });
   });
 
-  it('sets status failed when user confirms gagal & tutup', async () => {
+  it('posts correct payload (target, trigger=test, tx_id=null, bytes_b64 non-empty)', async () => {
+    const fetchMock = mockFetchOk({ job_id: 'job-1' });
+    global.fetch = fetchMock as unknown as typeof fetch;
     const user = userEvent.setup();
+    render(<TestPrintDialog target="minuman" onClose={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: /cetak tes/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const call = fetchMock.mock.calls[0];
+    expect(call[0]).toBe('/api/print/queue');
+    const body = JSON.parse(call[1]!.body as string);
+    expect(body.target).toBe('minuman');
+    expect(body.trigger).toBe('test');
+    expect(body.tx_id).toBeNull();
+    expect(body.bytes_b64).toMatch(/^[A-Za-z0-9+/]+=*$/);
+  });
+
+  it('close button returns to closed state via onClose callback', async () => {
+    global.fetch = mockFetchOk({ job_id: 'job-1' }) as unknown as typeof fetch;
     const onClose = vi.fn();
+    const user = userEvent.setup();
     render(<TestPrintDialog target="dapur" onClose={onClose} />);
     await user.click(screen.getByRole('button', { name: /cetak tes/i }));
-    await user.click(screen.getByRole('button', { name: /gagal/i }));
+    await waitFor(() => expect(screen.getByText(/job dikirim/i)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /tutup/i }));
-    const status = getPrinterStatus();
-    expect(status.dapur.state).toBe('failed');
     expect(onClose).toHaveBeenCalled();
   });
 });
