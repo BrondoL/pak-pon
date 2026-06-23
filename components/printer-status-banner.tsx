@@ -15,12 +15,25 @@ export function PrinterStatusBanner() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
 
   useEffect(() => {
-    fetch('/api/agent/heartbeat')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d) => setAgents(d.agents as Agent[]))
-      .catch(() => {
-        // SSR-safe: on fetch error, leave agents=null (banner hidden, defensive)
-      });
+    let cancelled = false;
+
+    function fetchAgents() {
+      fetch('/api/agent/heartbeat')
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((d) => {
+          if (!cancelled) setAgents(d.agents as Agent[]);
+        })
+        .catch(() => {
+          // SSR-safe: on fetch error, leave agents as-is
+        });
+    }
+
+    fetchAgents();
+    const intervalId = setInterval(fetchAgents, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
   }, []);
 
   if (agents === null) return null;

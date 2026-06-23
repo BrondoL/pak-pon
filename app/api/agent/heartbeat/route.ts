@@ -1,10 +1,10 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
 
 const ONLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   const evt = newEvent('GET /api/agent/heartbeat');
   try {
     const supabase = await getSupabaseServer();

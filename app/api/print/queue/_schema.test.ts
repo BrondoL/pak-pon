@@ -26,7 +26,8 @@ describe('PrintQueueInsertSchema', () => {
   });
 
   it('rejects missing bytes_b64', () => {
-    const { bytes_b64: _, ...without } = valid;
+    const without = { ...valid } as Partial<typeof valid>;
+    delete without.bytes_b64;
     expect(PrintQueueInsertSchema.safeParse(without).success).toBe(false);
   });
 
