@@ -43,7 +43,7 @@ export function PrinterStatusBanner() {
   return (
     <div
       data-testid="printer-banner"
-      className="mx-4 my-2 rounded-md border border-brick-soft bg-brick-faint p-3 text-sm text-brick-dark"
+      className="mx-0 my-2 rounded-md border border-brick-soft bg-brick-faint p-3 text-sm text-brick-dark"
     >
       <div className="flex items-center justify-between gap-2">
         <span>Print agent belum jalan</span>
