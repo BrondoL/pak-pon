@@ -150,6 +150,43 @@ describe('buildScanSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts string-shaped alternatives (some Gemini versions return shorthand)', () => {
+    const schema = buildScanSchema(sampleMenus);
+    const result = schema.safeParse({
+      items: [{
+        menu_name: 'Pecel Lele',
+        qty: 1,
+        notes: null,
+        confidence: 60,
+        alternatives: ['Es Teh'],
+      }],
+      handwritten_total: 0,
+      customer_name: null,
+      table_no: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.items[0].alternatives?.[0]).toEqual({ menu_name: 'Es Teh' });
+    }
+  });
+
+  it('rejects string alternative with menu_name not in master list', () => {
+    const schema = buildScanSchema(sampleMenus);
+    const result = schema.safeParse({
+      items: [{
+        menu_name: 'Pecel Lele',
+        qty: 1,
+        notes: null,
+        confidence: 60,
+        alternatives: ['Burger'],
+      }],
+      handwritten_total: 0,
+      customer_name: null,
+      table_no: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects alternative with menu_name not in master list', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({

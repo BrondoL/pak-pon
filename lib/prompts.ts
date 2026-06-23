@@ -56,6 +56,17 @@ export function buildScanSchema(menus: MenuRef[]) {
 
   const confidenceSchema = z.number().int().min(0).max(100);
 
+  // Tolerate AI returning alternatives as either [{menu_name, confidence?}]
+  // (the documented shape) OR ["MenuName"] (shorthand some Gemini versions emit).
+  // Coerce string → {menu_name} before validation.
+  const altItemSchema = z.preprocess(
+    (v) => (typeof v === 'string' ? { menu_name: v } : v),
+    z.object({
+      menu_name: menuNameSchema,
+      confidence: confidenceSchema.optional(),
+    })
+  );
+
   return z.object({
     items: z.array(
       z.object({
@@ -65,12 +76,7 @@ export function buildScanSchema(menus: MenuRef[]) {
         // Both optional so AI can skip them on certain items without breaking schema.
         // Trade: less attention budget on confidence reasoning → more on item detection.
         confidence: confidenceSchema.optional(),
-        alternatives: z.array(
-          z.object({
-            menu_name: menuNameSchema,
-            confidence: confidenceSchema.optional(),
-          })
-        ).max(2).optional(),
+        alternatives: z.array(altItemSchema).max(2).optional(),
       })
     ),
     handwritten_total: z.number().int().nonnegative(),
