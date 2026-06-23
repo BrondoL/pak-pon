@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { computeReplaceItems, type ExistingItem, type MenuRef } from '@/lib/transactions';
 import { newEvent, tagStatus, type RequestEvent } from '@/lib/logger';
+import { computeNextDailySeq } from '@/lib/daily-seq';
+import { businessDate, businessDayRange } from '@/lib/date';
 
 const STORAGE_BUCKET = 'notas';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -174,7 +176,7 @@ async function applyHeaderUpdate(
       // touch confirmed_at — better to leave it stale than risk overwriting the original.
       const { data: existing, error: readErr } = await supabase
         .from('transactions')
-        .select('confirmed_at')
+        .select('confirmed_at, status')
         .eq('id', id)
         .single();
       if (readErr) {
@@ -184,6 +186,37 @@ async function applyHeaderUpdate(
       }
       if (!existing?.confirmed_at) {
         headerUpdate.confirmed_at = new Date().toISOString();
+      }
+
+      // — TAMBAHAN: generate daily_seq saat status berubah ke 'confirmed' —
+      // Hanya pada transisi pending_review → confirmed (bukan re-confirm).
+      // Business-day basis: pakai tanggal saat ini, bukan created_at lama,
+      // karena daily_seq cerminkan urutan confirm hari ini.
+      const isConfirming = existing?.status !== 'confirmed';
+      if (isConfirming) {
+        const ymd = businessDate(new Date());
+        const { start, end } = businessDayRange(ymd);
+
+        const { data: sameDayTxs, error: queryErr } = await supabase
+          .from('transactions')
+          .select('daily_seq')
+          .eq('status', 'confirmed')
+          .is('deleted_at', null)
+          .gte('created_at', start)
+          .lt('created_at', end);
+
+        if (queryErr) {
+          tagStatus(evt, 500);
+          evt.error(queryErr);
+          return { kind: 'error', response: NextResponse.json({ error: queryErr.message }, { status: 500 }) };
+        }
+
+        const existingSeqs = (sameDayTxs ?? []).map(
+          (r) => r.daily_seq as number | null
+        );
+        const dailySeqToSet = computeNextDailySeq(existingSeqs);
+        headerUpdate.daily_seq = dailySeqToSet;
+        evt.set('daily_seq_assigned', dailySeqToSet);
       }
     }
   }
