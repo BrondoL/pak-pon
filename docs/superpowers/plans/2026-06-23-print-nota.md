@@ -1,609 +1,132 @@
-# Print Nota Dapur & Minuman — Implementation Plan
+# Print Nota Web Refactor — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Auto-print 2 thermal printer (dapur + minuman) iWare via RawBT bridge app setelah kasir confirm scan nota, plus reprint manual di halaman detail dan diagnostic UI untuk dev support remote.
+**Goal:** Refactor web app print integration dari pattern "Android Intent URL ke RawBT" ke pattern "POST job ke Supabase queue table, Print Agent (Spec B) consume via Realtime". Atomic refactor — replace existing impl, delete unused, end state clean.
 
-**Architecture:** Web app generate ESC/POS bytes di client → trigger Android intent URL ke RawBT (bridge app di tab Android) → RawBT forward via TCP:9100 ke printer LAN. Server set `daily_seq` saat confirm. Status printer di localStorage per-device. Log via wide-event server-side untuk remote diagnose.
+**Architecture:** Web app jadi producer: render ESC/POS bytes (existing `lib/escpos.ts`), encode base64, POST ke `/api/print/queue`. Backend insert ke `print_queue` table, Supabase Realtime push ke subscriber. Agent (Spec B) consume. Status feedback via realtime updates dari agent. Banner status baca `agent_heartbeats` table.
 
-**Tech Stack:** Next.js 16 App Router, TypeScript, Vitest + jsdom + React Testing Library, Supabase (Postgres + RLS), TailwindCSS, sonner (toast), Zod (validation). Pure-function libs di `lib/`, tests adjacent (`lib/foo.test.ts`).
+**Tech Stack:** Next.js 16 App Router, TypeScript, Supabase (Postgres + RLS + Realtime), Vitest + jsdom + RTL, Zod, sonner.
 
 **Spec:** `docs/superpowers/specs/2026-06-23-print-nota-design.md`
 
-**Out of scope (separate plan jika perlu):**
-- Plan B fallback (IP-direct via settings table) — di-stub via env flag tapi tidak diimplementasi
-- Bluetooth printer fallback
-- Print struk PDF untuk pelanggan
-- Custom layout per printer
-- Auto-detect printer / mDNS
+**Branch:** `feat/print-nota` (existing — semua commit di branch ini)
+
+**Out of scope (covered in Spec B / separate plan):**
+- Print Agent Android app — UI, foreground service, TCP socket, settings
+- Multi-warung config
+- Print struk customer PDF
 
 ---
 
-## Task 1: Migration `0004_print_nota.sql` — kolom `daily_seq` + tabel `print_events`
+## Task 1: Migration 0005 — drop print_events, create print_queue & agent_heartbeats, enable realtime
 
 **Files:**
-- Create: `supabase/migrations/0004_print_nota.sql`
+- Create: `supabase/migrations/0005_print_queue.sql`
 
-- [ ] **Step 1: Tulis migration SQL**
+- [ ] **Step 1: Tulis SQL migration**
 
-Buat file `supabase/migrations/0004_print_nota.sql`:
+Buat file `supabase/migrations/0005_print_queue.sql`:
 
 ```sql
--- 0004_print_nota.sql — daily_seq column & print_events table
+-- 0005_print_queue.sql — replace print_events with print_queue + agent_heartbeats
 
--- 1. Add daily_seq to transactions
--- Set saat status berubah ke 'confirmed' (di PATCH endpoint).
--- Nullable supaya transaksi 'pending_review' tidak punya seq.
--- Basis hari = business-day WIB (helper di lib/date.ts).
-ALTER TABLE transactions ADD COLUMN daily_seq int;
+-- 1. Drop print_events (replaced by print_queue + wide-event logger)
+DROP TABLE IF EXISTS print_events;
 
--- Index untuk lookup harian (compute next seq, dan filter business-day)
--- Note: business_date dihitung di app (lib/date.ts), tidak via SQL expression
--- supaya konsisten dengan rest of app.
-CREATE INDEX transactions_business_day_seq_idx
-  ON transactions (
-    ((created_at AT TIME ZONE 'Asia/Jakarta')::date),
-    daily_seq
-  );
-
--- 2. print_events table — persist subset wide-event untuk diagnostic page
-CREATE TABLE print_events (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  -- tx_id nullable: test print events (trigger='test') tidak terkait transaksi
-  tx_id       uuid REFERENCES transactions(id) ON DELETE CASCADE,
-  daily_seq   int,
-  target      text NOT NULL CHECK (target IN ('dapur', 'minuman')),
-  trigger     text NOT NULL CHECK (trigger IN ('auto', 'reprint', 'test')),
-  outcome     text NOT NULL CHECK (outcome IN ('dispatched', 'reported_success', 'reported_failed')),
-  failure_note text,
-  url_scheme_variant text,
-  user_agent  text,
-  user_id     uuid REFERENCES auth.users(id),
-  created_at  timestamptz NOT NULL DEFAULT now()
+-- 2. print_queue — job queue, agent consume from here
+CREATE TABLE print_queue (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- tx_id nullable: test print jobs (trigger='test') tidak terkait transaksi
+  tx_id           uuid REFERENCES transactions(id) ON DELETE CASCADE,
+  target          text NOT NULL CHECK (target IN ('dapur', 'minuman')),
+  trigger         text NOT NULL CHECK (trigger IN ('auto', 'reprint', 'test')),
+  bytes_b64       text NOT NULL,
+  status          text NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'printing', 'done', 'failed')),
+  failure_reason  text,
+  created_by      uuid REFERENCES auth.users(id),
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  picked_up_at    timestamptz,
+  completed_at    timestamptz
 );
 
-CREATE INDEX print_events_recent_idx
-  ON print_events (created_at DESC);
+CREATE INDEX print_queue_status_created_idx
+  ON print_queue (status, created_at)
+  WHERE status IN ('pending', 'printing');
 
-ALTER TABLE print_events ENABLE ROW LEVEL SECURITY;
+CREATE INDEX print_queue_recent_idx
+  ON print_queue (created_at DESC);
 
--- All authenticated users can read/insert print_events
--- (warung internal, 1 account share, mirror existing transactions policies)
-CREATE POLICY "auth read print_events" ON print_events
+ALTER TABLE print_queue ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "auth read print_queue" ON print_queue
   FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY "auth insert print_events" ON print_events
+CREATE POLICY "auth insert print_queue" ON print_queue
   FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "auth update print_queue" ON print_queue
+  FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+-- 3. agent_heartbeats — track agent online status
+CREATE TABLE agent_heartbeats (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_label     text NOT NULL UNIQUE,
+  last_seen_at    timestamptz NOT NULL DEFAULT now(),
+  agent_version   text,
+  device_info     text
+);
+
+CREATE INDEX agent_heartbeats_recent_idx
+  ON agent_heartbeats (last_seen_at DESC);
+
+ALTER TABLE agent_heartbeats ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "auth read agent_heartbeats" ON agent_heartbeats
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "auth insert agent_heartbeats" ON agent_heartbeats
+  FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "auth update agent_heartbeats" ON agent_heartbeats
+  FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+-- 4. Enable realtime on print_queue (untuk push notif ke Print Agent)
+ALTER PUBLICATION supabase_realtime ADD TABLE print_queue;
 ```
 
-- [ ] **Step 2: Apply migration locally**
+- [ ] **Step 2: SKIP apply migration — controller akan apply via MCP**
 
-Run:
-```bash
-# Asumsikan Supabase local atau remote project sudah di-link
-npx supabase migration up
-# atau kalau pakai db push:
-# npx supabase db push
-```
+JANGAN apply migration. Controller (Claude main session) yang handle apply via `mcp__plugin_supabase_supabase__apply_migration`.
 
-Expected: migration applied tanpa error, `daily_seq` column muncul di `transactions`, `print_events` table tercipta.
-
-- [ ] **Step 3: Verifikasi schema**
-
-Run:
-```bash
-npx supabase db dump --schema public 2>&1 | grep -E "daily_seq|print_events" | head
-```
-
-Expected: output menunjukkan `daily_seq integer` di transactions, dan struktur `print_events` table.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add supabase/migrations/0004_print_nota.sql
-git commit -m "feat(db): add daily_seq column & print_events table"
+git add supabase/migrations/0005_print_queue.sql
+git commit -m "feat(db): drop print_events, add print_queue & agent_heartbeats + enable realtime"
 ```
 
 ---
 
-## Task 2: `lib/daily-seq.ts` — helper compute next daily seq
+## Task 2: Helper `uint8ToBase64` di `lib/escpos.ts` + extract & test
 
 **Files:**
-- Create: `lib/daily-seq.ts`
-- Create: `lib/daily-seq.test.ts`
+- Modify: `lib/escpos.ts` (export helper)
+- Modify: `lib/escpos.test.ts` (test helper)
 
-- [ ] **Step 1: Write the failing test**
+**Konteks:** `lib/print-intent.ts` punya `uint8ToBase64` private function. Sebelum delete `print-intent.ts` (Task 16), helper ini harus pindah ke tempat yang masih dipakai (escpos atau new lib). Pilih `lib/escpos.ts` karena paling related (encoder output = bytes → consumer often needs base64).
 
-Buat `lib/daily-seq.test.ts`:
+- [ ] **Step 1: Tambah export `uint8ToBase64` di `lib/escpos.ts`**
 
-```ts
-import { describe, it, expect } from 'vitest';
-import { computeNextDailySeq } from './daily-seq';
-
-describe('computeNextDailySeq', () => {
-  it('returns 1 when no existing seq in business day', () => {
-    expect(computeNextDailySeq([])).toBe(1);
-  });
-
-  it('returns max + 1 from existing seqs', () => {
-    expect(computeNextDailySeq([1, 2, 3])).toBe(4);
-  });
-
-  it('ignores null seqs (pending_review tx)', () => {
-    expect(computeNextDailySeq([1, null, 2, null])).toBe(3);
-  });
-
-  it('handles non-contiguous seqs (e.g. soft-deleted gaps)', () => {
-    expect(computeNextDailySeq([1, 5, 7])).toBe(8);
-  });
-});
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx vitest run lib/daily-seq.test.ts`
-Expected: FAIL with "computeNextDailySeq is not defined" or "Cannot find module './daily-seq'"
-
-- [ ] **Step 3: Implement the lib**
-
-Buat `lib/daily-seq.ts`:
+Buka `lib/escpos.ts`. Di akhir file (setelah `renderTicket` export), tambah:
 
 ```ts
 /**
- * Compute next daily_seq dari array existing seq dalam business-day yang sama.
- * Pure function — caller bertanggung jawab query DB untuk dapat existing seqs.
- *
- * Race condition: caller harus pakai SELECT ... FOR UPDATE atau retry-on-conflict
- * di DB transaction. Lib ini tidak handle locking.
+ * Convert Uint8Array ke base64 string. Browser-safe (no Node Buffer).
+ * Cocok untuk encode ESC/POS bytes ke text yang aman dikirim via JSON/URL.
  */
-export function computeNextDailySeq(existingSeqs: Array<number | null>): number {
-  const nonNull = existingSeqs.filter((s): s is number => s !== null);
-  if (nonNull.length === 0) return 1;
-  return Math.max(...nonNull) + 1;
-}
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `npx vitest run lib/daily-seq.test.ts`
-Expected: PASS, 4 tests passed.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/daily-seq.ts lib/daily-seq.test.ts
-git commit -m "feat(lib): add computeNextDailySeq helper"
-```
-
----
-
-## Task 3: Modify `PATCH /api/transactions/[id]` — set `daily_seq` saat confirm
-
-**Files:**
-- Modify: `app/api/transactions/[id]/route.ts`
-
-- [ ] **Step 1: Read existing PATCH handler**
-
-Run: `cat app/api/transactions/\[id\]/route.ts | head -200`
-Identify: bagian yang handle `status='confirmed'` transition.
-
-- [ ] **Step 2: Tambah logic generate daily_seq saat status berubah confirmed**
-
-Di handler PATCH `app/api/transactions/[id]/route.ts`, sebelum execute UPDATE transactions (atau di dalam helper `applyHeaderUpdate` kalau pattern existing pakai helper terpisah), tambah block:
-
-```ts
-// — TAMBAHAN: generate daily_seq saat status berubah ke 'confirmed' —
-import { computeNextDailySeq } from '@/lib/daily-seq';
-import { businessDate, businessDayRange } from '@/lib/date';
-
-// ... di dalam handler PATCH, setelah validasi body & sebelum UPDATE transactions:
-
-let dailySeqToSet: number | null = null;
-const isConfirming =
-  parsed.data.status === 'confirmed' && existingTx.status !== 'confirmed';
-
-if (isConfirming) {
-  // Business-day basis: tanggal saat ini (bukan dari created_at lama),
-  // karena daily_seq cerminkan urutan confirm hari ini.
-  const ymd = businessDate(new Date());
-  const { start, end } = businessDayRange(ymd);
-
-  const { data: sameDayTxs, error: queryErr } = await supabase
-    .from('transactions')
-    .select('daily_seq')
-    .eq('status', 'confirmed')
-    .is('deleted_at', null)
-    .gte('created_at', start)
-    .lt('created_at', end);
-
-  if (queryErr) {
-    tagStatus(evt, 500);
-    evt.error(queryErr);
-    return NextResponse.json({ error: queryErr.message }, { status: 500 });
-  }
-
-  const existingSeqs = (sameDayTxs ?? []).map((r) => r.daily_seq);
-  dailySeqToSet = computeNextDailySeq(existingSeqs);
-  evt.set('daily_seq_assigned', dailySeqToSet);
-}
-```
-
-Lalu di UPDATE statement, tambah `daily_seq: dailySeqToSet` di payload kalau `isConfirming`. Contoh pattern:
-```ts
-const updatePayload: Record<string, unknown> = { /* existing fields */ };
-if (isConfirming && dailySeqToSet !== null) {
-  updatePayload.daily_seq = dailySeqToSet;
-}
-```
-
-**Note race condition:** Pendekatan ini ada race kalau 2 PATCH bersamaan. Untuk warung kecil volume rendah, risiko diterima. Mitigasi sederhana kalau jadi masalah: add `UNIQUE (business_date, daily_seq)` constraint dan retry-on-conflict. Defer ke spec berikutnya kalau benar2 ada concurrent confirm conflict di prod.
-
-- [ ] **Step 3: Manual smoke test**
-
-Run dev server, scan nota, confirm, lalu query DB:
-```sql
-SELECT id, status, daily_seq, created_at FROM transactions
-ORDER BY created_at DESC LIMIT 5;
-```
-Expected: transaksi yang baru di-confirm punya `daily_seq` integer, transaksi `pending_review` masih `NULL`.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add app/api/transactions/\[id\]/route.ts
-git commit -m "feat(api): set daily_seq when confirming transaction"
-```
-
----
-
-## Task 4: `lib/escpos.ts` — ESC/POS bytes generator
-
-**Files:**
-- Create: `lib/escpos.ts`
-- Create: `lib/escpos.test.ts`
-
-- [ ] **Step 1: Write the failing test**
-
-Buat `lib/escpos.test.ts`:
-
-```ts
-import { describe, it, expect } from 'vitest';
-import { renderTicket, type TicketInput } from './escpos';
-
-const baseInput: TicketInput = {
-  target: 'dapur',
-  daily_seq: 42,
-  created_at: new Date('2026-06-23T07:32:00.000Z'), // 14:32 WIB
-  customer_name: 'Pak Budi',
-  table_no: '5',
-  items: [
-    { qty: 2, name: 'Ayam Goreng', note: 'Dada, DP' },
-    { qty: 1, name: 'Nasi Putih', note: null },
-  ],
-};
-
-describe('renderTicket', () => {
-  it('produces non-empty Uint8Array for valid input', () => {
-    const bytes = renderTicket(baseInput);
-    expect(bytes).toBeInstanceOf(Uint8Array);
-    expect(bytes.byteLength).toBeGreaterThan(20);
-  });
-
-  it('includes target header text', () => {
-    const bytes = renderTicket(baseInput);
-    const ascii = new TextDecoder('latin1').decode(bytes);
-    expect(ascii).toContain('DAPUR');
-  });
-
-  it('includes daily_seq with hash prefix', () => {
-    const bytes = renderTicket(baseInput);
-    const ascii = new TextDecoder('latin1').decode(bytes);
-    expect(ascii).toContain('#0042');
-  });
-
-  it('omits Meja line when table_no null', () => {
-    const bytes = renderTicket({ ...baseInput, table_no: null });
-    const ascii = new TextDecoder('latin1').decode(bytes);
-    expect(ascii).not.toContain('Meja:');
-  });
-
-  it('omits customer line when customer_name null', () => {
-    const bytes = renderTicket({ ...baseInput, customer_name: null });
-    const ascii = new TextDecoder('latin1').decode(bytes);
-    expect(ascii).not.toContain('Pak Budi');
-  });
-
-  it('omits note line when note null', () => {
-    const bytes = renderTicket({
-      ...baseInput,
-      items: [{ qty: 1, name: 'Nasi Putih', note: null }],
-    });
-    const ascii = new TextDecoder('latin1').decode(bytes);
-    expect(ascii).not.toMatch(/>\s*$/m);
-  });
-
-  it('renders MINUMAN header for minuman target', () => {
-    const bytes = renderTicket({ ...baseInput, target: 'minuman' });
-    const ascii = new TextDecoder('latin1').decode(bytes);
-    expect(ascii).toContain('MINUMAN');
-  });
-
-  it('ends with cut command', () => {
-    const bytes = renderTicket(baseInput);
-    // ESC/POS cut: 0x1D 0x56 0x00 (full cut) or 0x1D 0x56 0x42 0x00
-    const last5 = Array.from(bytes.slice(-5));
-    expect(last5).toContain(0x1d);
-    expect(last5).toContain(0x56);
-  });
-});
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx vitest run lib/escpos.test.ts`
-Expected: FAIL with module not found error.
-
-- [ ] **Step 3: Implement the lib**
-
-Buat `lib/escpos.ts`:
-
-```ts
-/**
- * ESC/POS bytes generator untuk kitchen/bar ticket.
- *
- * Subset minimal command supaya compatible dengan banyak printer thermal:
- * - ESC @         (0x1B 0x40)        Init
- * - ESC a n       (0x1B 0x61 n)       Align (0=left 1=center 2=right)
- * - ESC E n       (0x1B 0x45 n)       Bold on/off
- * - GS ! n        (0x1D 0x21 n)       Char size (0=normal, 0x11=double)
- * - LF            (0x0A)              Line feed
- * - GS V 0        (0x1D 0x56 0x00)    Full cut
- *
- * Codepage default: CP437 / Latin-1 compatible ASCII (no full UTF-8 for non-ASCII glyphs).
- */
-
-export type TicketInput = {
-  target: 'dapur' | 'minuman';
-  daily_seq: number;
-  created_at: Date;
-  customer_name: string | null;
-  table_no: string | null;
-  items: Array<{
-    qty: number;
-    name: string;
-    note: string | null;
-  }>;
-};
-
-// ESC/POS command constants
-const ESC = 0x1b;
-const GS = 0x1d;
-const LF = 0x0a;
-
-const INIT = new Uint8Array([ESC, 0x40]);
-const ALIGN_CENTER = new Uint8Array([ESC, 0x61, 0x01]);
-const ALIGN_LEFT = new Uint8Array([ESC, 0x61, 0x00]);
-const BOLD_ON = new Uint8Array([ESC, 0x45, 0x01]);
-const BOLD_OFF = new Uint8Array([ESC, 0x45, 0x00]);
-const SIZE_DOUBLE = new Uint8Array([GS, 0x21, 0x11]);
-const SIZE_NORMAL = new Uint8Array([GS, 0x21, 0x00]);
-const CUT = new Uint8Array([GS, 0x56, 0x00]);
-
-function encodeText(s: string): Uint8Array {
-  // Latin-1 / CP437 encoding for thermal printer compatibility
-  const bytes = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i);
-    bytes[i] = code > 0xff ? 0x3f : code; // '?' for non-Latin-1
-  }
-  return bytes;
-}
-
-function concat(...parts: Uint8Array[]): Uint8Array {
-  const total = parts.reduce((sum, p) => sum + p.byteLength, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const p of parts) {
-    out.set(p, offset);
-    offset += p.byteLength;
-  }
-  return out;
-}
-
-function lineFeed(n = 1): Uint8Array {
-  return new Uint8Array(new Array(n).fill(LF));
-}
-
-function formatSeq(n: number): string {
-  return `#${n.toString().padStart(4, '0')}`;
-}
-
-function formatTimestamp(d: Date): string {
-  // Format ke WIB (UTC+7) DD/MM/YYYY HH:MM
-  const wib = new Date(d.getTime() + 7 * 3600 * 1000);
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${pad(wib.getUTCDate())}/${pad(wib.getUTCMonth() + 1)}/${wib.getUTCFullYear()} ${pad(wib.getUTCHours())}:${pad(wib.getUTCMinutes())}`;
-}
-
-export function renderTicket(input: TicketInput): Uint8Array {
-  const parts: Uint8Array[] = [];
-
-  // 1. Init + center align + bold + double size header
-  parts.push(INIT);
-  parts.push(ALIGN_CENTER);
-  parts.push(BOLD_ON);
-  parts.push(SIZE_DOUBLE);
-  parts.push(encodeText(input.target === 'dapur' ? 'DAPUR' : 'MINUMAN'));
-  parts.push(lineFeed(1));
-  parts.push(SIZE_NORMAL);
-  parts.push(BOLD_OFF);
-
-  // 2. Center align: No. antrian + meja (kalau ada)
-  let line2 = formatSeq(input.daily_seq);
-  if (input.table_no) line2 += `  |  Meja: ${input.table_no}`;
-  parts.push(encodeText(line2));
-  parts.push(lineFeed(1));
-
-  // 3. Customer name (kalau ada)
-  if (input.customer_name) {
-    parts.push(encodeText(input.customer_name));
-    parts.push(lineFeed(1));
-  }
-
-  // 4. Timestamp
-  parts.push(encodeText(formatTimestamp(input.created_at)));
-  parts.push(lineFeed(1));
-
-  // 5. Separator
-  parts.push(ALIGN_LEFT);
-  parts.push(encodeText('--------------------------------'));
-  parts.push(lineFeed(1));
-
-  // 6. Items
-  for (const item of input.items) {
-    parts.push(encodeText(`${item.qty}x ${item.name}`));
-    parts.push(lineFeed(1));
-    if (item.note) {
-      parts.push(encodeText(`    > ${item.note}`));
-      parts.push(lineFeed(1));
-    }
-  }
-
-  // 7. Bottom separator + spacing
-  parts.push(encodeText('--------------------------------'));
-  parts.push(lineFeed(4));
-
-  // 8. Full cut
-  parts.push(CUT);
-
-  return concat(...parts);
-}
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `npx vitest run lib/escpos.test.ts`
-Expected: PASS, 8 tests passed.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/escpos.ts lib/escpos.test.ts
-git commit -m "feat(lib): add renderTicket ESC/POS generator"
-```
-
----
-
-## Task 5: `lib/print-intent.ts` — intent URL builder
-
-**Files:**
-- Create: `lib/print-intent.ts`
-- Create: `lib/print-intent.test.ts`
-
-- [ ] **Step 1: Write the failing test**
-
-Buat `lib/print-intent.test.ts`:
-
-```ts
-import { describe, it, expect } from 'vitest';
-import { buildRawBtIntentUrl, splitItemsByTarget } from './print-intent';
-
-describe('buildRawBtIntentUrl', () => {
-  const dummyBytes = new Uint8Array([0x1b, 0x40, 0x48, 0x49]); // "HI" with init
-
-  it('builds intent URL with profile name & base64 payload', () => {
-    const url = buildRawBtIntentUrl({ profile: 'Dapur', bytes: dummyBytes });
-    expect(url).toMatch(/^intent:\/\//);
-    expect(url).toContain('scheme=rawbt');
-    expect(url).toContain('S.profile=Dapur');
-    expect(url).toContain('S.payload=');
-    expect(url).toContain('end');
-  });
-
-  it('encodes bytes as base64 in payload', () => {
-    const url = buildRawBtIntentUrl({ profile: 'Dapur', bytes: dummyBytes });
-    // base64 of [0x1b, 0x40, 0x48, 0x49] = "G0BISQ=="
-    expect(url).toContain('S.payload=G0BISQ%3D%3D'); // url-encoded
-  });
-
-  it('different profiles produce different URLs', () => {
-    const a = buildRawBtIntentUrl({ profile: 'Dapur', bytes: dummyBytes });
-    const b = buildRawBtIntentUrl({ profile: 'Minuman', bytes: dummyBytes });
-    expect(a).not.toBe(b);
-    expect(b).toContain('S.profile=Minuman');
-  });
-});
-
-describe('splitItemsByTarget', () => {
-  const items = [
-    { id: '1', menu_name_snapshot: 'Ayam Goreng', menu_category: 'makanan', qty: 2, notes: null },
-    { id: '2', menu_name_snapshot: 'Nasi Putih', menu_category: 'nasi', qty: 1, notes: null },
-    { id: '3', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', qty: 1, notes: null },
-  ];
-
-  it('routes makanan & nasi to dapur', () => {
-    const { dapur } = splitItemsByTarget(items);
-    expect(dapur).toHaveLength(2);
-    expect(dapur.map((i) => i.menu_category)).toEqual(['makanan', 'nasi']);
-  });
-
-  it('routes minuman to minuman', () => {
-    const { minuman } = splitItemsByTarget(items);
-    expect(minuman).toHaveLength(1);
-    expect(minuman[0].menu_category).toBe('minuman');
-  });
-
-  it('returns empty array for target without items', () => {
-    const { dapur, minuman } = splitItemsByTarget([
-      { id: '1', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', qty: 1, notes: null },
-    ]);
-    expect(dapur).toEqual([]);
-    expect(minuman).toHaveLength(1);
-  });
-});
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx vitest run lib/print-intent.test.ts`
-Expected: FAIL with module not found.
-
-- [ ] **Step 3: Implement the lib**
-
-Buat `lib/print-intent.ts`:
-
-```ts
-/**
- * Build Android intent URL untuk trigger RawBT print job.
- *
- * Format default (Plan A — multi-profile via name):
- *   intent://print/#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.profile=Dapur;S.payload=<base64>;end
- *
- * RawBT terima intent, lookup profile by name dari setting-nya, kirim payload via TCP:9100.
- *
- * Plan B (env flag PAK_PON_PRINTER_MODE=ip_direct, future, gak diimplementasi di plan ini):
- *   intent://...;S.ip=192.168.1.50;I.port=9100;S.payload=<base64>;end
- */
-
-const RAWBT_PACKAGE = 'ru.a402d.rawbtprinter';
-
-export type PrintTarget = 'dapur' | 'minuman';
-
-export type TransactionItemForPrint = {
-  id: string;
-  menu_name_snapshot: string;
-  menu_category: string; // 'makanan' | 'nasi' | 'minuman'
-  qty: number;
-  notes: string | null;
-};
-
-export type SplitItems = {
-  dapur: TransactionItemForPrint[];
-  minuman: TransactionItemForPrint[];
-};
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  // Browser-safe base64 (no Node Buffer)
+export function uint8ToBase64(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
@@ -611,301 +134,162 @@ function uint8ToBase64(bytes: Uint8Array): string {
   // btoa available in browser & jsdom
   return btoa(binary);
 }
-
-export function buildRawBtIntentUrl(args: {
-  profile: string;
-  bytes: Uint8Array;
-}): string {
-  const payloadB64 = uint8ToBase64(args.bytes);
-  const encodedProfile = encodeURIComponent(args.profile);
-  const encodedPayload = encodeURIComponent(payloadB64);
-  return `intent://print/#Intent;scheme=rawbt;package=${RAWBT_PACKAGE};S.profile=${encodedProfile};S.payload=${encodedPayload};end`;
-}
-
-/**
- * Split transaction items berdasarkan kategori menu:
- * - makanan, nasi → dapur
- * - minuman      → minuman
- */
-export function splitItemsByTarget(
-  items: TransactionItemForPrint[]
-): SplitItems {
-  const dapur: TransactionItemForPrint[] = [];
-  const minuman: TransactionItemForPrint[] = [];
-  for (const it of items) {
-    if (it.menu_category === 'minuman') {
-      minuman.push(it);
-    } else if (it.menu_category === 'makanan' || it.menu_category === 'nasi') {
-      dapur.push(it);
-    }
-    // else: unknown category, skip (defensive)
-  }
-  return { dapur, minuman };
-}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 2: Tambah test di `lib/escpos.test.ts`**
 
-Run: `npx vitest run lib/print-intent.test.ts`
-Expected: PASS, 6 tests passed.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/print-intent.ts lib/print-intent.test.ts
-git commit -m "feat(lib): add buildRawBtIntentUrl & splitItemsByTarget"
-```
-
----
-
-## Task 6: `lib/printer-status.ts` — localStorage helper
-
-**Files:**
-- Create: `lib/printer-status.ts`
-- Create: `lib/printer-status.test.ts`
-
-- [ ] **Step 1: Write the failing test**
-
-Buat `lib/printer-status.test.ts`:
+Di akhir file `lib/escpos.test.ts`, tambah block test baru:
 
 ```ts
-import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  getPrinterStatus,
-  setPrinterStatus,
-  STORAGE_KEY,
-  type PrinterStatusMap,
-} from './printer-status';
+import { uint8ToBase64 } from './escpos';
 
-describe('printer-status', () => {
-  beforeEach(() => {
-    localStorage.clear();
+describe('uint8ToBase64', () => {
+  it('encodes empty array as empty string', () => {
+    expect(uint8ToBase64(new Uint8Array([]))).toBe('');
   });
 
-  it('returns not_configured default for both targets when empty', () => {
-    const status = getPrinterStatus();
-    expect(status.dapur.state).toBe('not_configured');
-    expect(status.minuman.state).toBe('not_configured');
+  it('encodes simple ASCII bytes', () => {
+    // 'HI' = [0x48, 0x49] → 'SEk='
+    expect(uint8ToBase64(new Uint8Array([0x48, 0x49]))).toBe('SEk=');
   });
 
-  it('set + get roundtrip', () => {
-    setPrinterStatus('dapur', { state: 'success', last_check: '2026-06-23T07:00:00Z' });
-    const status = getPrinterStatus();
-    expect(status.dapur.state).toBe('success');
-    expect(status.dapur.last_check).toBe('2026-06-23T07:00:00Z');
-    expect(status.minuman.state).toBe('not_configured');
+  it('encodes ESC/POS control bytes round-trip', () => {
+    // [0x1b, 0x40, 0x48, 0x49] = ESC@HI → 'G0BISQ=='
+    expect(uint8ToBase64(new Uint8Array([0x1b, 0x40, 0x48, 0x49]))).toBe('G0BISQ==');
   });
 
-  it('set both targets independently', () => {
-    setPrinterStatus('dapur', { state: 'success', last_check: '2026-06-23T07:00:00Z' });
-    setPrinterStatus('minuman', { state: 'failed', last_check: '2026-06-23T07:01:00Z' });
-    const status = getPrinterStatus();
-    expect(status.dapur.state).toBe('success');
-    expect(status.minuman.state).toBe('failed');
-  });
-
-  it('handles corrupted JSON gracefully', () => {
-    localStorage.setItem(STORAGE_KEY, '{not valid json');
-    const status = getPrinterStatus();
-    expect(status.dapur.state).toBe('not_configured');
-    expect(status.minuman.state).toBe('not_configured');
-  });
-
-  it('STORAGE_KEY is prefixed pak_pon_', () => {
-    expect(STORAGE_KEY).toMatch(/^pak_pon_/);
+  it('encodes high-byte (>0x7f) correctly', () => {
+    // [0xff] → '/w=='
+    expect(uint8ToBase64(new Uint8Array([0xff]))).toBe('/w==');
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+**Note:** kalau `import { uint8ToBase64 }` sudah ada di file dari import line existing, gabungkan. Kalau belum, tambahkan di import line existing di atas atau di line baru.
 
-Run: `npx vitest run lib/printer-status.test.ts`
-Expected: FAIL with module not found.
+- [ ] **Step 3: Run test**
 
-- [ ] **Step 3: Implement the lib**
+Run: `npx vitest run lib/escpos.test.ts`
+Expected: semua test (existing + 4 baru) pass.
 
-Buat `lib/printer-status.ts`:
-
-```ts
-/**
- * localStorage helper untuk track status printer per device.
- *
- * State per target (dapur, minuman):
- * - not_configured: belum pernah test atau status di-reset
- * - success: test/print terakhir berhasil
- * - failed: test/print terakhir gagal (manual lapor user)
- *
- * SSR-safe: cek typeof window.
- */
-
-export const STORAGE_KEY = 'pak_pon_printer_status';
-
-export type PrinterStatusState = 'success' | 'failed' | 'not_configured';
-export type PrinterTarget = 'dapur' | 'minuman';
-
-export type PrinterStatus = {
-  state: PrinterStatusState;
-  last_check: string | null; // ISO timestamp
-  last_outcome_note?: string;
-};
-
-export type PrinterStatusMap = {
-  dapur: PrinterStatus;
-  minuman: PrinterStatus;
-};
-
-const DEFAULT: PrinterStatusMap = {
-  dapur: { state: 'not_configured', last_check: null },
-  minuman: { state: 'not_configured', last_check: null },
-};
-
-export function getPrinterStatus(): PrinterStatusMap {
-  if (typeof window === 'undefined') return DEFAULT;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT;
-    const parsed = JSON.parse(raw) as Partial<PrinterStatusMap>;
-    return {
-      dapur: parsed.dapur ?? DEFAULT.dapur,
-      minuman: parsed.minuman ?? DEFAULT.minuman,
-    };
-  } catch {
-    return DEFAULT;
-  }
-}
-
-export function setPrinterStatus(target: PrinterTarget, status: PrinterStatus): void {
-  if (typeof window === 'undefined') return;
-  const current = getPrinterStatus();
-  const next: PrinterStatusMap = { ...current, [target]: status };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-}
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `npx vitest run lib/printer-status.test.ts`
-Expected: PASS, 5 tests passed.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add lib/printer-status.ts lib/printer-status.test.ts
-git commit -m "feat(lib): add printer-status localStorage helper"
+git add lib/escpos.ts lib/escpos.test.ts
+git commit -m "feat(lib): export uint8ToBase64 helper from escpos"
 ```
 
 ---
 
-## Task 7: `POST /api/print/log` — log endpoint dengan persist ke `print_events`
+## Task 3: Schema `app/api/print/queue/_schema.ts` + tests
 
 **Files:**
-- Create: `app/api/print/log/route.ts`
-- Create: `app/api/print/log/_schema.ts`
-- Create: `app/api/print/log/_schema.test.ts`
+- Create: `app/api/print/queue/_schema.ts`
+- Create: `app/api/print/queue/_schema.test.ts`
 
-- [ ] **Step 1: Write schema test**
+- [ ] **Step 1: Tulis test (TDD)**
 
-Buat `app/api/print/log/_schema.test.ts`:
+Buat `app/api/print/queue/_schema.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { PrintLogSchema } from './_schema';
+import { PrintQueueInsertSchema } from './_schema';
 
-describe('PrintLogSchema', () => {
+describe('PrintQueueInsertSchema', () => {
   const valid = {
-    tx_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    daily_seq: 42,
+    tx_id: '11111111-1111-4111-8111-111111111111',
     target: 'dapur',
     trigger: 'auto',
-    outcome: 'dispatched',
+    bytes_b64: 'G0BISQ==',
   };
 
   it('accepts valid payload', () => {
-    const result = PrintLogSchema.safeParse(valid);
-    expect(result.success).toBe(true);
+    expect(PrintQueueInsertSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it('accepts null tx_id (test print)', () => {
+    expect(PrintQueueInsertSchema.safeParse({ ...valid, tx_id: null }).success).toBe(true);
   });
 
   it('rejects invalid target', () => {
-    const result = PrintLogSchema.safeParse({ ...valid, target: 'bar' });
-    expect(result.success).toBe(false);
+    expect(PrintQueueInsertSchema.safeParse({ ...valid, target: 'kitchen' }).success).toBe(false);
   });
 
   it('rejects invalid trigger', () => {
-    const result = PrintLogSchema.safeParse({ ...valid, trigger: 'foo' });
-    expect(result.success).toBe(false);
+    expect(PrintQueueInsertSchema.safeParse({ ...valid, trigger: 'manual' }).success).toBe(false);
   });
 
-  it('rejects invalid outcome', () => {
-    const result = PrintLogSchema.safeParse({ ...valid, outcome: 'xyz' });
-    expect(result.success).toBe(false);
+  it('rejects missing bytes_b64', () => {
+    const { bytes_b64: _, ...without } = valid;
+    expect(PrintQueueInsertSchema.safeParse(without).success).toBe(false);
   });
 
-  it('accepts null daily_seq', () => {
-    const result = PrintLogSchema.safeParse({ ...valid, daily_seq: null });
-    expect(result.success).toBe(true);
+  it('rejects empty bytes_b64', () => {
+    expect(PrintQueueInsertSchema.safeParse({ ...valid, bytes_b64: '' }).success).toBe(false);
   });
 
-  it('accepts null tx_id (for test prints)', () => {
-    const result = PrintLogSchema.safeParse({ ...valid, tx_id: null });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts optional failure_note, url_scheme_variant, user_agent', () => {
-    const result = PrintLogSchema.safeParse({
-      ...valid,
-      failure_note: 'kertas habis',
-      url_scheme_variant: 'rawbt-intent-v1',
-      user_agent: 'Mozilla/5.0',
-    });
-    expect(result.success).toBe(true);
+  it('strict — rejects extra unknown fields', () => {
+    expect(PrintQueueInsertSchema.safeParse({ ...valid, extra: 'foo' }).success).toBe(false);
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run test, expect fail (module not found)**
 
-Run: `npx vitest run app/api/print/log/_schema.test.ts`
-Expected: FAIL with module not found.
+Run: `npx vitest run app/api/print/queue/_schema.test.ts`
+Expected: FAIL — `Failed to resolve import "./_schema"`
 
 - [ ] **Step 3: Implement schema**
 
-Buat `app/api/print/log/_schema.ts`:
+Buat `app/api/print/queue/_schema.ts`:
 
 ```ts
 import { z } from 'zod';
 
-export const PrintLogSchema = z.object({
-  // tx_id null untuk test print (gak terkait transaksi)
+export const PrintQueueInsertSchema = z.object({
+  // tx_id null untuk test print (trigger='test')
   tx_id: z.string().uuid().nullable(),
-  daily_seq: z.number().int().nullable(),
   target: z.enum(['dapur', 'minuman']),
   trigger: z.enum(['auto', 'reprint', 'test']),
-  outcome: z.enum(['dispatched', 'reported_success', 'reported_failed']),
-  failure_note: z.string().optional(),
-  url_scheme_variant: z.string().optional(),
-  user_agent: z.string().optional(),
+  bytes_b64: z.string().min(1),
 }).strict();
 
-export type PrintLogInput = z.infer<typeof PrintLogSchema>;
+export type PrintQueueInsertInput = z.infer<typeof PrintQueueInsertSchema>;
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run test, expect pass (7/7)**
 
-Run: `npx vitest run app/api/print/log/_schema.test.ts`
-Expected: PASS, 6 tests passed.
+Run: `npx vitest run app/api/print/queue/_schema.test.ts`
+Expected: PASS, 7 tests passed.
 
-- [ ] **Step 5: Implement route handler**
+**Catatan:** kalau `z.string().uuid()` reject test fixture `'11111111-1111-4111-8111-111111111111'`, switch ke `.guid()` (Zod v4 broader UUID validator). Test fixture itu valid UUIDv4 (version=4, variant=8), tapi kalau Zod stricter than expected, fallback `.guid()` reliable.
 
-Buat `app/api/print/log/route.ts`:
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/api/print/queue/_schema.ts app/api/print/queue/_schema.test.ts
+git commit -m "feat(api): add PrintQueueInsertSchema with 7 validation tests"
+```
+
+---
+
+## Task 4: `POST /api/print/queue` route handler
+
+**Files:**
+- Create: `app/api/print/queue/route.ts`
+
+- [ ] **Step 1: Implement route handler**
+
+Buat `app/api/print/queue/route.ts`:
 
 ```ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
-import { PrintLogSchema } from './_schema';
+import { PrintQueueInsertSchema } from './_schema';
 
 export async function POST(request: NextRequest) {
-  const evt = newEvent('POST /api/print/log');
+  const evt = newEvent('POST /api/print/queue');
   try {
     const supabase = await getSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
@@ -916,7 +300,7 @@ export async function POST(request: NextRequest) {
     evt.set('user_id', user.id);
 
     const body = await request.json();
-    const parsed = PrintLogSchema.safeParse(body);
+    const parsed = PrintQueueInsertSchema.safeParse(body);
     if (!parsed.success) {
       tagStatus(evt, 400);
       evt.merge({ validation_errors: parsed.error.flatten() });
@@ -926,36 +310,31 @@ export async function POST(request: NextRequest) {
     const payload = parsed.data;
     evt.merge({
       tx_id: payload.tx_id,
-      daily_seq: payload.daily_seq,
       target: payload.target,
       trigger: payload.trigger,
-      outcome: payload.outcome,
-      url_scheme_variant: payload.url_scheme_variant,
-      failure_note: payload.failure_note,
+      bytes_size: payload.bytes_b64.length,
     });
 
-    // Persist subset ke print_events table untuk diagnostic page
-    const { error: insertErr } = await supabase
-      .from('print_events')
+    const { data: inserted, error: insertErr } = await supabase
+      .from('print_queue')
       .insert({
-        tx_id: payload.tx_id, // null untuk test print, valid uuid untuk auto/reprint
-        daily_seq: payload.daily_seq,
+        tx_id: payload.tx_id,
         target: payload.target,
         trigger: payload.trigger,
-        outcome: payload.outcome,
-        failure_note: payload.failure_note ?? null,
-        url_scheme_variant: payload.url_scheme_variant ?? null,
-        user_agent: payload.user_agent ?? null,
-        user_id: user.id,
-      });
+        bytes_b64: payload.bytes_b64,
+        created_by: user.id,
+      })
+      .select('id')
+      .single();
     if (insertErr) {
       tagStatus(evt, 500);
       evt.error(insertErr);
       return NextResponse.json({ error: insertErr.message }, { status: 500 });
     }
 
-    tagStatus(evt, 204);
-    return new NextResponse(null, { status: 204 });
+    evt.set('job_id', inserted.id);
+    tagStatus(evt, 201);
+    return NextResponse.json({ job_id: inserted.id }, { status: 201 });
   } catch (err) {
     tagStatus(evt, 500);
     evt.error(err);
@@ -966,41 +345,28 @@ export async function POST(request: NextRequest) {
 }
 ```
 
-- [ ] **Step 6: Manual smoke test**
+- [ ] **Step 2: Lint check**
 
-Run dev server, login, lalu via browser console:
-```js
-fetch('/api/print/log', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    tx_id: '<existing-tx-id-from-db>',
-    daily_seq: 1,
-    target: 'dapur',
-    trigger: 'test',
-    outcome: 'dispatched',
-  }),
-}).then((r) => console.log(r.status));
-```
-Expected: status `204`. Verifikasi row baru di `print_events` via Supabase studio.
+Run: `npm run lint`
+Expected: 0 errors.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add app/api/print/log/
-git commit -m "feat(api): add POST /api/print/log endpoint"
+git add app/api/print/queue/route.ts
+git commit -m "feat(api): add POST /api/print/queue endpoint"
 ```
 
 ---
 
-## Task 8: `GET /api/print/log/recent` — fetch recent events
+## Task 5: `GET /api/print/queue/recent` route handler
 
 **Files:**
-- Create: `app/api/print/log/recent/route.ts`
+- Create: `app/api/print/queue/recent/route.ts`
 
 - [ ] **Step 1: Implement route**
 
-Buat `app/api/print/log/recent/route.ts`:
+Buat `app/api/print/queue/recent/route.ts`:
 
 ```ts
 import { NextResponse, type NextRequest } from 'next/server';
@@ -1009,9 +375,10 @@ import { newEvent, tagStatus } from '@/lib/logger';
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const VALID_STATUS = ['pending', 'printing', 'done', 'failed'] as const;
 
 export async function GET(request: NextRequest) {
-  const evt = newEvent('GET /api/print/log/recent');
+  const evt = newEvent('GET /api/print/queue/recent');
   try {
     const supabase = await getSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
@@ -1022,17 +389,26 @@ export async function GET(request: NextRequest) {
     evt.set('user_id', user.id);
 
     const limitParam = request.nextUrl.searchParams.get('limit');
+    const statusParam = request.nextUrl.searchParams.get('status');
+
     const limit = Math.min(
       Math.max(parseInt(limitParam ?? `${DEFAULT_LIMIT}`, 10) || DEFAULT_LIMIT, 1),
       MAX_LIMIT
     );
     evt.set('limit', limit);
 
-    const { data, error } = await supabase
-      .from('print_events')
-      .select('id, tx_id, daily_seq, target, trigger, outcome, failure_note, url_scheme_variant, created_at')
+    let query = supabase
+      .from('print_queue')
+      .select('id, tx_id, target, trigger, status, failure_reason, created_at, picked_up_at, completed_at')
       .order('created_at', { ascending: false })
       .limit(limit);
+
+    if (statusParam && statusParam !== 'all' && (VALID_STATUS as readonly string[]).includes(statusParam)) {
+      query = query.eq('status', statusParam);
+      evt.set('filter_status', statusParam);
+    }
+
+    const { data, error } = await query;
     if (error) {
       tagStatus(evt, 500);
       evt.error(error);
@@ -1041,7 +417,7 @@ export async function GET(request: NextRequest) {
 
     evt.set('rows_count', data?.length ?? 0);
     tagStatus(evt, 200);
-    return NextResponse.json({ events: data ?? [] });
+    return NextResponse.json({ jobs: data ?? [] });
   } catch (err) {
     tagStatus(evt, 500);
     evt.error(err);
@@ -1052,275 +428,404 @@ export async function GET(request: NextRequest) {
 }
 ```
 
-- [ ] **Step 2: Manual smoke test**
+- [ ] **Step 2: Lint check**
 
-Setelah Task 7 sudah ada beberapa entry di `print_events`, run dev server, login, akses URL:
-`http://localhost:3000/api/print/log/recent?limit=5`
-Expected: JSON `{ events: [...] }` dengan array dari recent print events.
+Run: `npm run lint`
+Expected: 0 errors.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add app/api/print/log/recent/
-git commit -m "feat(api): add GET /api/print/log/recent endpoint"
+git add app/api/print/queue/recent/route.ts
+git commit -m "feat(api): add GET /api/print/queue/recent endpoint with status filter"
 ```
 
 ---
 
-## Task 9: `scripts/printer-emulator.js` — dev TCP printer emulator
+## Task 6: `POST /api/print/queue/[id]/retry` route handler
 
 **Files:**
-- Create: `scripts/printer-emulator.js`
+- Create: `app/api/print/queue/[id]/retry/route.ts`
 
-- [ ] **Step 1: Create the script**
+- [ ] **Step 1: Implement route**
 
-Buat `scripts/printer-emulator.js`:
+Buat `app/api/print/queue/[id]/retry/route.ts`:
 
-```js
-#!/usr/bin/env node
-/**
- * Printer emulator untuk dev self-test (§9.5 design spec).
- *
- * Listen TCP socket, capture ESC/POS bytes dari RawBT, dump ke file
- * dan print ASCII preview di terminal.
- *
- * Usage:
- *   node scripts/printer-emulator.js [port] [label]
- *
- * Examples:
- *   node scripts/printer-emulator.js 9100 dapur
- *   node scripts/printer-emulator.js 9101 minuman
- *
- * Run dua paralel di terminal berbeda untuk simulate 2 printer.
- */
+```ts
+import { NextResponse, type NextRequest } from 'next/server';
+import { getSupabaseServer } from '@/lib/supabase/server';
+import { newEvent, tagStatus } from '@/lib/logger';
 
-import net from 'node:net';
-import fs from 'node:fs';
-import path from 'node:path';
+const NOT_FOUND_CODE = 'PGRST116';
 
-const PORT = parseInt(process.argv[2] || '9100', 10);
-const LABEL = process.argv[3] || 'dapur';
-const OUT_DIR = path.resolve('tmp/print-emulator', LABEL);
+export async function POST(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const evt = newEvent('POST /api/print/queue/[id]/retry', { job_id: id });
+  try {
+    const supabase = await getSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      tagStatus(evt, 401);
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
+    evt.set('user_id', user.id);
 
-fs.mkdirSync(OUT_DIR, { recursive: true });
+    const { data: job, error: fetchErr } = await supabase
+      .from('print_queue')
+      .select('id, status')
+      .eq('id', id)
+      .single();
+    if (fetchErr) {
+      if (fetchErr.code === NOT_FOUND_CODE) {
+        tagStatus(evt, 404);
+        return NextResponse.json({ error: 'not_found' }, { status: 404 });
+      }
+      tagStatus(evt, 500);
+      evt.error(fetchErr);
+      return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+    }
 
-const server = net.createServer((socket) => {
-  const chunks = [];
-  socket.on('data', (chunk) => chunks.push(chunk));
-  socket.on('end', () => {
-    const buffer = Buffer.concat(chunks);
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = path.join(OUT_DIR, `print-${ts}.bin`);
-    fs.writeFileSync(filename, buffer);
+    evt.set('previous_status', job.status);
+    if (job.status !== 'failed') {
+      tagStatus(evt, 409);
+      return NextResponse.json(
+        { error: 'invalid_state', detail: `cannot retry job with status=${job.status}` },
+        { status: 409 }
+      );
+    }
 
-    // ASCII preview: strip ESC/POS commands (any byte < 0x20 except 0x0A LF; any byte > 0x7E)
-    const asciiPreview = buffer
-      .toString('latin1')
-      .replace(/[\x00-\x09\x0B-\x1F\x7F-\xFF]/g, '');
-    console.log('━'.repeat(50));
-    console.log(`✓ [${LABEL}] ${buffer.byteLength} bytes → ${filename}`);
-    console.log('--- preview ---');
-    console.log(asciiPreview);
-    console.log('━'.repeat(50));
-  });
-  socket.on('error', (err) => console.error(`[${LABEL}] socket error:`, err.message));
-});
+    const { data: updated, error: updateErr } = await supabase
+      .from('print_queue')
+      .update({
+        status: 'pending',
+        failure_reason: null,
+        completed_at: null,
+        picked_up_at: null,
+      })
+      .eq('id', id)
+      .select('id, tx_id, target, trigger, status, failure_reason, created_at')
+      .single();
+    if (updateErr) {
+      tagStatus(evt, 500);
+      evt.error(updateErr);
+      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    }
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[${LABEL}] listening on 0.0.0.0:${PORT}`);
-  console.log(`[${LABEL}] output dir: ${OUT_DIR}`);
-});
-
-process.on('SIGINT', () => {
-  console.log(`\n[${LABEL}] shutting down`);
-  server.close(() => process.exit(0));
-});
+    evt.set('new_status', updated.status);
+    tagStatus(evt, 200);
+    return NextResponse.json({ job: updated });
+  } catch (err) {
+    tagStatus(evt, 500);
+    evt.error(err);
+    throw err;
+  } finally {
+    evt.emit();
+  }
+}
 ```
 
-- [ ] **Step 2: Test the emulator manually**
+- [ ] **Step 2: Lint check**
 
-Run di terminal:
-```bash
-node scripts/printer-emulator.js 9100 dapur
-```
-Di terminal lain, kirim bytes:
-```bash
-echo -e '\x1b@Hello world\n\x1dV\x00' | nc localhost 9100
-```
-Expected: terminal pertama tampilkan "✓ [dapur] N bytes → ...bin" dan preview "Hello world".
+Run: `npm run lint`
+Expected: 0 errors.
 
-- [ ] **Step 3: Add convenience npm script**
-
-Edit `package.json`, di section `scripts` tambah:
-
-```json
-"emulator:dapur": "node scripts/printer-emulator.js 9100 dapur",
-"emulator:minuman": "node scripts/printer-emulator.js 9101 minuman"
-```
-
-- [ ] **Step 4: Add tmp/ to .gitignore**
-
-Edit `.gitignore`, tambah baris kalau belum ada:
-```
-tmp/
-```
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add scripts/printer-emulator.js package.json .gitignore
-git commit -m "feat(dev): add printer emulator script for self-test"
+git add 'app/api/print/queue/[id]/retry/route.ts'
+git commit -m "feat(api): add POST /api/print/queue/[id]/retry endpoint"
 ```
 
 ---
 
-## Task 10: `<PrinterStatusBanner />` component
+## Task 7: `POST /api/print/queue/[id]/cancel` route handler
 
 **Files:**
-- Create: `components/printer-status-banner.tsx`
-- Create: `components/printer-status-banner.test.tsx`
+- Create: `app/api/print/queue/[id]/cancel/route.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Implement route**
 
-Buat `components/printer-status-banner.test.tsx`:
+Buat `app/api/print/queue/[id]/cancel/route.ts`:
+
+```ts
+import { NextResponse, type NextRequest } from 'next/server';
+import { getSupabaseServer } from '@/lib/supabase/server';
+import { newEvent, tagStatus } from '@/lib/logger';
+
+const NOT_FOUND_CODE = 'PGRST116';
+
+export async function POST(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const evt = newEvent('POST /api/print/queue/[id]/cancel', { job_id: id });
+  try {
+    const supabase = await getSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      tagStatus(evt, 401);
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
+    evt.set('user_id', user.id);
+
+    const { data: job, error: fetchErr } = await supabase
+      .from('print_queue')
+      .select('id, status')
+      .eq('id', id)
+      .single();
+    if (fetchErr) {
+      if (fetchErr.code === NOT_FOUND_CODE) {
+        tagStatus(evt, 404);
+        return NextResponse.json({ error: 'not_found' }, { status: 404 });
+      }
+      tagStatus(evt, 500);
+      evt.error(fetchErr);
+      return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+    }
+
+    evt.set('previous_status', job.status);
+    if (job.status !== 'pending') {
+      tagStatus(evt, 409);
+      return NextResponse.json(
+        { error: 'invalid_state', detail: `cannot cancel job with status=${job.status}` },
+        { status: 409 }
+      );
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('print_queue')
+      .update({
+        status: 'failed',
+        failure_reason: 'cancelled by user',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select('id, tx_id, target, trigger, status, failure_reason, created_at, completed_at')
+      .single();
+    if (updateErr) {
+      tagStatus(evt, 500);
+      evt.error(updateErr);
+      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    }
+
+    evt.set('new_status', updated.status);
+    tagStatus(evt, 200);
+    return NextResponse.json({ job: updated });
+  } catch (err) {
+    tagStatus(evt, 500);
+    evt.error(err);
+    throw err;
+  } finally {
+    evt.emit();
+  }
+}
+```
+
+- [ ] **Step 2: Lint check**
+
+Run: `npm run lint`
+Expected: 0 errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add 'app/api/print/queue/[id]/cancel/route.ts'
+git commit -m "feat(api): add POST /api/print/queue/[id]/cancel endpoint"
+```
+
+---
+
+## Task 8: `GET /api/agent/heartbeat` route handler
+
+**Files:**
+- Create: `app/api/agent/heartbeat/route.ts`
+
+- [ ] **Step 1: Implement route**
+
+Buat `app/api/agent/heartbeat/route.ts`:
+
+```ts
+import { NextResponse, type NextRequest } from 'next/server';
+import { getSupabaseServer } from '@/lib/supabase/server';
+import { newEvent, tagStatus } from '@/lib/logger';
+
+const ONLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+export async function GET(_request: NextRequest) {
+  const evt = newEvent('GET /api/agent/heartbeat');
+  try {
+    const supabase = await getSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      tagStatus(evt, 401);
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
+    evt.set('user_id', user.id);
+
+    const { data, error } = await supabase
+      .from('agent_heartbeats')
+      .select('agent_label, last_seen_at, agent_version, device_info')
+      .order('last_seen_at', { ascending: false });
+    if (error) {
+      tagStatus(evt, 500);
+      evt.error(error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const now = Date.now();
+    const agents = (data ?? []).map((a) => ({
+      ...a,
+      online: now - new Date(a.last_seen_at).getTime() < ONLINE_THRESHOLD_MS,
+    }));
+    evt.merge({ agents_count: agents.length, online_count: agents.filter((a) => a.online).length });
+
+    tagStatus(evt, 200);
+    return NextResponse.json({ agents });
+  } catch (err) {
+    tagStatus(evt, 500);
+    evt.error(err);
+    throw err;
+  } finally {
+    evt.emit();
+  }
+}
+```
+
+- [ ] **Step 2: Lint check**
+
+Run: `npm run lint`
+Expected: 0 errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add app/api/agent/heartbeat/route.ts
+git commit -m "feat(api): add GET /api/agent/heartbeat endpoint with online computation"
+```
+
+---
+
+## Task 9: Refactor `components/printer-status-banner.tsx` — read agent heartbeat
+
+**Files:**
+- Modify: `components/printer-status-banner.tsx`
+- Modify: `components/printer-status-banner.test.tsx`
+
+**Konteks:** Banner sekarang baca dari localStorage (`getPrinterStatus`). Refactor → fetch `/api/agent/heartbeat`, tampilkan banner red kalau 0 agent online.
+
+- [ ] **Step 1: Update test untuk new behavior (TDD)**
+
+Replace `components/printer-status-banner.test.tsx` ISI dengan:
 
 ```tsx
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import { PrinterStatusBanner } from './printer-status-banner';
-import { STORAGE_KEY } from '@/lib/printer-status';
+
+const mockFetch = (response: unknown, status = 200) =>
+  vi.fn(() => Promise.resolve(new Response(JSON.stringify(response), { status })));
 
 describe('<PrinterStatusBanner />', () => {
   beforeEach(() => {
-    localStorage.clear();
+    vi.restoreAllMocks();
   });
 
-  it('renders red banner when both targets not_configured', () => {
+  it('renders red banner when no agents found', async () => {
+    global.fetch = mockFetch({ agents: [] }) as unknown as typeof fetch;
     render(<PrinterStatusBanner />);
-    expect(screen.getByText(/setup printer/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /setup printer/i })).toHaveAttribute('href', '/setup/printer');
+    await waitFor(() => {
+      expect(screen.getByText(/print agent belum jalan/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('link', { name: /setup/i })).toHaveAttribute('href', '/setup/printer');
   });
 
-  it('renders red banner when any target failed', () => {
-    const recentISO = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      dapur: { state: 'success', last_check: recentISO },
-      minuman: { state: 'failed', last_check: recentISO },
-    }));
+  it('renders red banner when all agents offline (stale heartbeat)', async () => {
+    const staleISO = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    global.fetch = mockFetch({
+      agents: [{ agent_label: 'main-tab', last_seen_at: staleISO, online: false }],
+    }) as unknown as typeof fetch;
     render(<PrinterStatusBanner />);
-    expect(screen.getByText(/printer minuman/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/print agent belum jalan/i)).toBeInTheDocument();
+    });
   });
 
-  it('renders nothing (or hidden) when both success within 24h', () => {
+  it('renders nothing when at least 1 agent online', async () => {
     const recentISO = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      dapur: { state: 'success', last_check: recentISO },
-      minuman: { state: 'success', last_check: recentISO },
-    }));
+    global.fetch = mockFetch({
+      agents: [{ agent_label: 'main-tab', last_seen_at: recentISO, online: true }],
+    }) as unknown as typeof fetch;
     const { container } = render(<PrinterStatusBanner />);
-    expect(container.querySelector('[data-testid="printer-banner"]')).toBeNull();
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="printer-banner"]')).toBeNull();
+    });
   });
 
-  it('renders yellow stale warning when success >24h ago', () => {
-    const staleISO = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      dapur: { state: 'success', last_check: staleISO },
-      minuman: { state: 'success', last_check: staleISO },
-    }));
-    render(<PrinterStatusBanner />);
-    expect(screen.getByText(/sudah lama tidak dites/i)).toBeInTheDocument();
+  it('handles fetch error gracefully (renders nothing)', async () => {
+    global.fetch = vi.fn(() => Promise.reject(new Error('network'))) as unknown as typeof fetch;
+    const { container } = render(<PrinterStatusBanner />);
+    await waitFor(() => {
+      // Defensive: error treated as "unknown" — gak tampilkan banner sampai data tersedia
+      expect(container.querySelector('[data-testid="printer-banner"]')).toBeNull();
+    });
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run test, expect fail (still uses old localStorage logic)**
 
 Run: `npx vitest run components/printer-status-banner.test.tsx`
-Expected: FAIL with module not found.
+Expected: FAIL — current implementation reads localStorage, not fetch.
 
-- [ ] **Step 3: Implement component**
-
-Buat `components/printer-status-banner.tsx`:
+- [ ] **Step 3: Replace `components/printer-status-banner.tsx` ISI dengan:**
 
 ```tsx
 'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getPrinterStatus, type PrinterStatusMap } from '@/lib/printer-status';
 
-const STALE_MS = 24 * 3600 * 1000;
-
-type BannerState = 'hidden' | 'red' | 'yellow';
-
-function computeBannerState(status: PrinterStatusMap): {
-  level: BannerState;
-  failed_targets: string[];
-} {
-  const targets = ['dapur', 'minuman'] as const;
-  const failed: string[] = [];
-  let anyNotConfigured = false;
-  let anyStale = false;
-
-  for (const t of targets) {
-    const s = status[t];
-    if (s.state === 'not_configured') anyNotConfigured = true;
-    else if (s.state === 'failed') failed.push(t);
-    else if (s.state === 'success') {
-      if (!s.last_check || (Date.now() - new Date(s.last_check).getTime() > STALE_MS)) {
-        anyStale = true;
-      }
-    }
-  }
-
-  if (anyNotConfigured || failed.length > 0) return { level: 'red', failed_targets: failed };
-  if (anyStale) return { level: 'yellow', failed_targets: [] };
-  return { level: 'hidden', failed_targets: [] };
-}
+type Agent = {
+  agent_label: string;
+  last_seen_at: string;
+  agent_version: string | null;
+  device_info: string | null;
+  online: boolean;
+};
 
 export function PrinterStatusBanner() {
-  const [status, setStatus] = useState<PrinterStatusMap | null>(null);
+  const [agents, setAgents] = useState<Agent[] | null>(null);
 
   useEffect(() => {
-    setStatus(getPrinterStatus());
+    fetch('/api/agent/heartbeat')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      .then((d) => setAgents(d.agents as Agent[]))
+      .catch(() => {
+        // SSR-safe: on fetch error, leave agents=null (banner hidden, defensive)
+      });
   }, []);
 
-  if (!status) return null;
-  const banner = computeBannerState(status);
-  if (banner.level === 'hidden') return null;
-
-  if (banner.level === 'red') {
-    const msg =
-      banner.failed_targets.length > 0
-        ? `Printer ${banner.failed_targets.join(' & ')} bermasalah`
-        : 'Printer belum di-setup';
-    return (
-      <div
-        data-testid="printer-banner"
-        className="mx-4 my-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span>{msg}</span>
-          <Link
-            href="/setup/printer"
-            className="rounded bg-red-600 px-3 py-1 text-xs font-medium text-white"
-          >
-            Setup printer
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  if (agents === null) return null;
+  const onlineCount = agents.filter((a) => a.online).length;
+  if (onlineCount > 0) return null;
 
   return (
     <div
       data-testid="printer-banner"
-      className="mx-4 my-2 rounded-md border border-yellow-300 bg-yellow-50 p-2 text-xs text-yellow-900"
+      className="mx-4 my-2 rounded-md border border-brick-soft bg-brick-faint p-3 text-sm text-brick-dark"
     >
       <div className="flex items-center justify-between gap-2">
-        <span>Sudah lama tidak dites — coba tes printer?</span>
-        <Link href="/setup/printer" className="underline">
-          Tes printer
+        <span>Print agent belum jalan</span>
+        <Link
+          href="/setup/printer"
+          className="rounded bg-brick px-3 py-1 text-xs font-medium text-white"
+        >
+          Setup
         </Link>
       </div>
     </div>
@@ -1328,110 +833,121 @@ export function PrinterStatusBanner() {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run test, expect pass (4/4)**
 
 Run: `npx vitest run components/printer-status-banner.test.tsx`
 Expected: PASS, 4 tests passed.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Lint check**
+
+Run: `npm run lint`
+Expected: 0 new errors.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add components/printer-status-banner.tsx components/printer-status-banner.test.tsx
-git commit -m "feat(ui): add PrinterStatusBanner component"
+git commit -m "refactor(ui): banner reads agent heartbeat instead of localStorage"
 ```
 
 ---
 
-## Task 11: `<TestPrintDialog />` component
+## Task 10: Refactor `components/test-print-dialog.tsx` — POST queue
 
 **Files:**
-- Create: `components/test-print-dialog.tsx`
-- Create: `components/test-print-dialog.test.tsx`
+- Modify: `components/test-print-dialog.tsx`
+- Modify: `components/test-print-dialog.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+**Konteks:** Refactor dari "fire intent URL + manual confirm Berhasil/Gagal" jadi "POST job to queue, show submitting → awaiting_agent". Optional realtime listener untuk live status, tapi MVP version skip — user cek di debug page.
 
-Buat `components/test-print-dialog.test.tsx`:
+- [ ] **Step 1: Replace test ISI dengan:**
+
+Replace seluruh isi `components/test-print-dialog.test.tsx`:
 
 ```tsx
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TestPrintDialog } from './test-print-dialog';
-import { STORAGE_KEY, getPrinterStatus } from '@/lib/printer-status';
+
+const mockFetchOk = (body: unknown, status = 201) =>
+  vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status })));
 
 describe('<TestPrintDialog />', () => {
   beforeEach(() => {
-    localStorage.clear();
     vi.restoreAllMocks();
-    // Prevent jsdom navigation error from intent URL trigger
-    vi.spyOn(window, 'open').mockImplementation(() => null);
-    // Mock fetch for /api/print/log
-    global.fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))) as unknown as typeof fetch;
   });
 
-  it('renders trigger button initially', () => {
+  it('renders idle state with submit button', () => {
     render(<TestPrintDialog target="dapur" onClose={vi.fn()} />);
     expect(screen.getByRole('button', { name: /cetak tes/i })).toBeInTheDocument();
   });
 
-  it('shows confirmation prompt after firing test', async () => {
+  it('shows submitting then awaiting_agent after POST success', async () => {
+    global.fetch = mockFetchOk({ job_id: 'job-1' }) as unknown as typeof fetch;
     const user = userEvent.setup();
     render(<TestPrintDialog target="dapur" onClose={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /cetak tes/i }));
-    expect(screen.getByText(/berhasil/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /berhasil/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /gagal/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/job dikirim/i)).toBeInTheDocument();
+    });
   });
 
-  it('sets status success when user confirms berhasil', async () => {
+  it('shows error state when POST fails', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ error: 'server' }), { status: 500 }))
+    ) as unknown as typeof fetch;
     const user = userEvent.setup();
-    const onClose = vi.fn();
-    render(<TestPrintDialog target="dapur" onClose={onClose} />);
+    render(<TestPrintDialog target="dapur" onClose={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /cetak tes/i }));
-    await user.click(screen.getByRole('button', { name: /berhasil/i }));
-    const status = getPrinterStatus();
-    expect(status.dapur.state).toBe('success');
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText(/gagal mengirim/i)).toBeInTheDocument();
+    });
   });
 
-  it('sets status failed when user confirms gagal & tutup', async () => {
+  it('posts correct payload (target, trigger=test, tx_id=null, bytes_b64 non-empty)', async () => {
+    const fetchMock = mockFetchOk({ job_id: 'job-1' });
+    global.fetch = fetchMock as unknown as typeof fetch;
     const user = userEvent.setup();
+    render(<TestPrintDialog target="minuman" onClose={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: /cetak tes/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const call = fetchMock.mock.calls[0];
+    expect(call[0]).toBe('/api/print/queue');
+    const body = JSON.parse(call[1].body as string);
+    expect(body.target).toBe('minuman');
+    expect(body.trigger).toBe('test');
+    expect(body.tx_id).toBeNull();
+    expect(body.bytes_b64).toMatch(/^[A-Za-z0-9+/]+=*$/);
+  });
+
+  it('close button returns to closed state via onClose callback', async () => {
+    global.fetch = mockFetchOk({ job_id: 'job-1' }) as unknown as typeof fetch;
     const onClose = vi.fn();
+    const user = userEvent.setup();
     render(<TestPrintDialog target="dapur" onClose={onClose} />);
     await user.click(screen.getByRole('button', { name: /cetak tes/i }));
-    await user.click(screen.getByRole('button', { name: /gagal/i }));
+    await waitFor(() => expect(screen.getByText(/job dikirim/i)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /tutup/i }));
-    const status = getPrinterStatus();
-    expect(status.dapur.state).toBe('failed');
     expect(onClose).toHaveBeenCalled();
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Replace component ISI dengan:**
 
-Run: `npx vitest run components/test-print-dialog.test.tsx`
-Expected: FAIL with module not found.
-
-- [ ] **Step 3: Implement component**
-
-Buat `components/test-print-dialog.tsx`:
+Replace seluruh isi `components/test-print-dialog.tsx`:
 
 ```tsx
 'use client';
 
 import { useState } from 'react';
-import { setPrinterStatus, type PrinterTarget } from '@/lib/printer-status';
-import { renderTicket } from '@/lib/escpos';
-import { buildRawBtIntentUrl } from '@/lib/print-intent';
+import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
 
-type Phase = 'idle' | 'awaiting_confirm' | 'failed_followup';
+type Phase = 'idle' | 'submitting' | 'awaiting_agent' | 'error';
+type Target = 'dapur' | 'minuman';
 
-function profileForTarget(target: PrinterTarget): string {
-  return target === 'dapur' ? 'Dapur' : 'Minuman';
-}
-
-function fireTestIntent(target: PrinterTarget) {
+function buildTestPayload(target: Target): string {
   const bytes = renderTicket({
     target,
     daily_seq: 0,
@@ -1440,91 +956,54 @@ function fireTestIntent(target: PrinterTarget) {
     table_no: null,
     items: [{ qty: 1, name: `TES PRINTER ${target.toUpperCase()}`, note: null }],
   });
-  const url = buildRawBtIntentUrl({ profile: profileForTarget(target), bytes });
-  // Trigger intent via window.location for Android Chrome
-  window.location.href = url;
-}
-
-async function postLog(payload: {
-  target: PrinterTarget;
-  outcome: 'dispatched' | 'reported_success' | 'reported_failed';
-  failure_note?: string;
-}) {
-  try {
-    await fetch('/api/print/log', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tx_id: null, // test print gak terkait tx
-        daily_seq: null,
-        target: payload.target,
-        trigger: 'test',
-        outcome: payload.outcome,
-        failure_note: payload.failure_note,
-        url_scheme_variant: 'rawbt-intent-v1',
-        user_agent: navigator.userAgent,
-      }),
-    });
-  } catch {
-    // Best-effort logging, swallow
-  }
+  return uint8ToBase64(bytes);
 }
 
 export function TestPrintDialog({
   target,
   onClose,
 }: {
-  target: PrinterTarget;
+  target: Target;
   onClose: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>('idle');
-  const [failureNote, setFailureNote] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
-  function handleFire() {
-    fireTestIntent(target);
-    postLog({ target, outcome: 'dispatched' });
-    setPhase('awaiting_confirm');
-  }
-
-  function handleSuccess() {
-    setPrinterStatus(target, {
-      state: 'success',
-      last_check: new Date().toISOString(),
-      last_outcome_note: 'test print success',
-    });
-    postLog({ target, outcome: 'reported_success' });
-    onClose();
-  }
-
-  function handleFailedClicked() {
-    setPhase('failed_followup');
-  }
-
-  function handleRetry() {
-    fireTestIntent(target);
-    postLog({ target, outcome: 'dispatched' });
-    setPhase('awaiting_confirm');
-    setFailureNote('');
-  }
-
-  function handleCloseAsFailed() {
-    setPrinterStatus(target, {
-      state: 'failed',
-      last_check: new Date().toISOString(),
-      last_outcome_note: failureNote || 'test print failed',
-    });
-    postLog({ target, outcome: 'reported_failed', failure_note: failureNote || undefined });
-    onClose();
+  async function handleFire() {
+    setPhase('submitting');
+    setError(null);
+    try {
+      const res = await fetch('/api/print/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tx_id: null,
+          target,
+          trigger: 'test',
+          bytes_b64: buildTestPayload(target),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(`gagal mengirim: ${data.error ?? `HTTP ${res.status}`}`);
+        setPhase('error');
+        return;
+      }
+      setPhase('awaiting_agent');
+    } catch (err) {
+      setError(`gagal mengirim: ${err instanceof Error ? err.message : 'unknown'}`);
+      setPhase('error');
+    }
   }
 
   const label = target.toUpperCase();
 
   if (phase === 'idle') {
     return (
-      <div className="space-y-3 rounded-md border bg-card p-4">
-        <h3 className="font-medium">Cetak tes printer {label}</h3>
-        <p className="text-sm text-muted-foreground">
-          Pastikan kertas terpasang, lalu tekan tombol di bawah.
+      <div className="space-y-3 rounded-md border border-clay-soft bg-paper-soft p-4">
+        <h3 className="font-medium text-coal">Cetak tes printer {label}</h3>
+        <p className="text-sm text-coal-soft">
+          Pastikan agent app jalan & printer siap. Lalu tekan tombol di bawah.
         </p>
         <button
           onClick={handleFire}
@@ -1532,52 +1011,56 @@ export function TestPrintDialog({
         >
           Cetak Tes Sekarang
         </button>
+        <button
+          onClick={onClose}
+          className="w-full rounded-md border border-clay-soft px-4 py-2 text-coal"
+        >
+          Batal
+        </button>
       </div>
     );
   }
 
-  if (phase === 'awaiting_confirm') {
+  if (phase === 'submitting') {
     return (
-      <div className="space-y-3 rounded-md border bg-card p-4">
-        <h3 className="font-medium">Apakah kertas keluar?</h3>
-        <p className="text-sm text-muted-foreground">
-          Bertuliskan &quot;TES PRINTER {label}&quot;
-        </p>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSuccess}
-            className="flex-1 rounded-md bg-green-600 px-4 py-2 text-white"
-          >
-            ✓ Berhasil
-          </button>
-          <button
-            onClick={handleFailedClicked}
-            className="flex-1 rounded-md border border-red-300 px-4 py-2 text-red-700"
-          >
-            ✗ Gagal
-          </button>
-        </div>
+      <div className="space-y-3 rounded-md border border-clay-soft bg-paper-soft p-4">
+        <p className="text-sm text-coal">Mengirim...</p>
       </div>
     );
   }
 
+  if (phase === 'awaiting_agent') {
+    return (
+      <div className="space-y-3 rounded-md border border-clay-soft bg-paper-soft p-4">
+        <h3 className="font-medium text-coal">Job dikirim ke agent</h3>
+        <p className="text-sm text-coal-soft">
+          Tunggu agent process &amp; cetak. Cek halaman <a href="/setup/printer/debug" className="underline">diagnostic</a> untuk status terkini.
+        </p>
+        <button
+          onClick={onClose}
+          className="w-full rounded-md bg-primary px-4 py-2 text-primary-foreground"
+        >
+          Tutup
+        </button>
+      </div>
+    );
+  }
+
+  // phase === 'error'
   return (
-    <div className="space-y-3 rounded-md border bg-card p-4">
-      <h3 className="font-medium">Apa yang terjadi?</h3>
-      <textarea
-        value={failureNote}
-        onChange={(e) => setFailureNote(e.target.value)}
-        placeholder="Kertas tidak keluar, error, dll (opsional)"
-        className="w-full rounded-md border p-2 text-sm"
-        rows={3}
-      />
+    <div className="space-y-3 rounded-md border border-brick-soft bg-brick-faint p-4">
+      <h3 className="font-medium text-brick-dark">Gagal mengirim ke queue</h3>
+      <p className="text-sm text-brick-dark">{error ?? 'unknown error'}</p>
       <div className="flex gap-2">
-        <button onClick={handleRetry} className="flex-1 rounded-md border px-4 py-2">
+        <button
+          onClick={() => setPhase('idle')}
+          className="flex-1 rounded-md border border-brick-soft px-4 py-2 text-brick"
+        >
           Coba Lagi
         </button>
         <button
-          onClick={handleCloseAsFailed}
-          className="flex-1 rounded-md bg-red-600 px-4 py-2 text-white"
+          onClick={onClose}
+          className="flex-1 rounded-md bg-brick px-4 py-2 text-white"
         >
           Tutup
         </button>
@@ -1587,64 +1070,65 @@ export function TestPrintDialog({
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 3: Run test, expect 5/5 pass**
 
 Run: `npx vitest run components/test-print-dialog.test.tsx`
-Expected: PASS, 4 tests passed.
+Expected: PASS, 5 tests passed.
+
+- [ ] **Step 4: Lint & TS check**
+
+Run: `npm run lint && npx tsc --noEmit`
+Expected: 0 errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add components/test-print-dialog.tsx components/test-print-dialog.test.tsx
-git commit -m "feat(ui): add TestPrintDialog component"
+git commit -m "refactor(ui): test-print-dialog POSTs to queue instead of intent URL"
 ```
 
 ---
 
-## Task 12: `<ReprintCard />` component
+## Task 11: Refactor `components/reprint-card.tsx` — POST queue
 
 **Files:**
-- Create: `components/reprint-card.tsx`
-- Create: `components/reprint-card.test.tsx`
+- Modify: `components/reprint-card.tsx`
+- Modify: `components/reprint-card.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
-
-Buat `components/reprint-card.test.tsx`:
+- [ ] **Step 1: Replace test ISI dengan:**
 
 ```tsx
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ReprintCard } from './reprint-card';
+import type { TransactionItemForPrint } from './reprint-card';
 
 const txBase = {
-  id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  id: '11111111-1111-4111-8111-111111111111',
   daily_seq: 42,
   created_at: '2026-06-23T07:32:00.000Z',
   customer_name: 'Pak Budi',
   table_no: '5',
 };
 
-const itemsBoth = [
+const itemsBoth: TransactionItemForPrint[] = [
   { id: '1', menu_name_snapshot: 'Ayam', menu_category: 'makanan', qty: 2, notes: null },
   { id: '2', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', qty: 1, notes: null },
 ];
-const itemsDapurOnly = [
+const itemsDapurOnly: TransactionItemForPrint[] = [
   { id: '1', menu_name_snapshot: 'Ayam', menu_category: 'makanan', qty: 2, notes: null },
 ];
-const itemsMinumanOnly = [
+const itemsMinumanOnly: TransactionItemForPrint[] = [
   { id: '1', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', qty: 1, notes: null },
 ];
+
+const mockFetchOk = () =>
+  vi.fn(() => Promise.resolve(new Response(JSON.stringify({ job_id: 'job-1' }), { status: 201 })));
 
 describe('<ReprintCard />', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(window, 'open').mockImplementation(() => null);
-    Object.defineProperty(window, 'location', {
-      value: { ...window.location, href: '' },
-      writable: true,
-    });
-    global.fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))) as unknown as typeof fetch;
   });
 
   it('renders 3 buttons when both categories present', () => {
@@ -1664,31 +1148,53 @@ describe('<ReprintCard />', () => {
     expect(screen.getByRole('button', { name: /cetak dapur/i })).toBeDisabled();
   });
 
-  it('shows confirmation prompt after print', async () => {
+  it('POSTs job for single target with correct shape', async () => {
+    const fetchMock = mockFetchOk();
+    global.fetch = fetchMock as unknown as typeof fetch;
     const user = userEvent.setup();
     render(<ReprintCard transaction={txBase} items={itemsBoth} />);
     await user.click(screen.getByRole('button', { name: /cetak dapur/i }));
-    expect(screen.getByText(/berhasil/i)).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.target).toBe('dapur');
+    expect(body.trigger).toBe('reprint');
+    expect(body.tx_id).toBe(txBase.id);
+    expect(body.bytes_b64).toMatch(/^[A-Za-z0-9+/]+=*$/);
+  });
+
+  it('POSTs 2 jobs (dapur then minuman) when "Cetak Keduanya" clicked', async () => {
+    const fetchMock = mockFetchOk();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const user = userEvent.setup();
+    render(<ReprintCard transaction={txBase} items={itemsBoth} />);
+    await user.click(screen.getByRole('button', { name: /cetak keduanya/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const body0 = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const body1 = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect([body0.target, body1.target].sort()).toEqual(['dapur', 'minuman']);
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx vitest run components/reprint-card.test.tsx`
-Expected: FAIL with module not found.
-
-- [ ] **Step 3: Implement component**
-
-Buat `components/reprint-card.tsx`:
+- [ ] **Step 2: Replace component ISI dengan:**
 
 ```tsx
 'use client';
 
 import { useState } from 'react';
-import { renderTicket } from '@/lib/escpos';
-import { buildRawBtIntentUrl, splitItemsByTarget, type TransactionItemForPrint } from '@/lib/print-intent';
-import { setPrinterStatus, type PrinterTarget } from '@/lib/printer-status';
+import { toast } from 'sonner';
+import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
+
+export type MenuCategory = 'makanan' | 'nasi' | 'minuman';
+export type PrinterTarget = 'dapur' | 'minuman';
+
+export type TransactionItemForPrint = {
+  id: string;
+  menu_name_snapshot: string;
+  menu_category: MenuCategory;
+  qty: number;
+  notes: string | null;
+};
 
 type TxBase = {
   id: string;
@@ -1698,30 +1204,52 @@ type TxBase = {
   table_no: string | null;
 };
 
-function profileForTarget(target: PrinterTarget): string {
-  return target === 'dapur' ? 'Dapur' : 'Minuman';
+function splitByTarget(items: TransactionItemForPrint[]) {
+  const dapur: TransactionItemForPrint[] = [];
+  const minuman: TransactionItemForPrint[] = [];
+  for (const it of items) {
+    if (it.menu_category === 'minuman') minuman.push(it);
+    else if (it.menu_category === 'makanan' || it.menu_category === 'nasi') dapur.push(it);
+  }
+  return { dapur, minuman };
 }
 
-async function postLog(payload: {
-  tx_id: string;
-  daily_seq: number | null;
+async function submitJob(args: {
+  tx: TxBase;
   target: PrinterTarget;
-  outcome: 'dispatched' | 'reported_success' | 'reported_failed';
-  trigger: 'reprint';
-  failure_note?: string;
-}) {
+  targetItems: TransactionItemForPrint[];
+}): Promise<{ ok: boolean; error?: string }> {
+  const bytes = renderTicket({
+    target: args.target,
+    daily_seq: args.tx.daily_seq ?? 0,
+    created_at: new Date(args.tx.created_at),
+    customer_name: args.tx.customer_name,
+    table_no: args.tx.table_no,
+    items: args.targetItems.map((i) => ({
+      qty: i.qty,
+      name: i.menu_name_snapshot,
+      note: i.notes,
+    })),
+  });
+  const bytes_b64 = uint8ToBase64(bytes);
   try {
-    await fetch('/api/print/log', {
+    const res = await fetch('/api/print/queue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ...payload,
-        url_scheme_variant: 'rawbt-intent-v1',
-        user_agent: navigator.userAgent,
+        tx_id: args.tx.id,
+        target: args.target,
+        trigger: 'reprint',
+        bytes_b64,
       }),
     });
-  } catch {
-    // best-effort
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { ok: false, error: data.error ?? `HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'unknown' };
   }
 }
 
@@ -1732,514 +1260,332 @@ export function ReprintCard({
   transaction: TxBase;
   items: TransactionItemForPrint[];
 }) {
-  const [pending, setPending] = useState<PrinterTarget | null>(null);
-  const split = splitItemsByTarget(items);
+  const [submitting, setSubmitting] = useState<PrinterTarget | 'both' | null>(null);
+  const split = splitByTarget(items);
   const hasDapur = split.dapur.length > 0;
   const hasMinuman = split.minuman.length > 0;
 
-  function fireFor(target: PrinterTarget) {
+  async function fireFor(target: PrinterTarget) {
+    setSubmitting(target);
     const targetItems = target === 'dapur' ? split.dapur : split.minuman;
-    if (targetItems.length === 0) return;
-    const bytes = renderTicket({
-      target,
-      daily_seq: transaction.daily_seq ?? 0,
-      created_at: new Date(transaction.created_at),
-      customer_name: transaction.customer_name,
-      table_no: transaction.table_no,
-      items: targetItems.map((i) => ({
-        qty: i.qty,
-        name: i.menu_name_snapshot,
-        note: i.notes,
-      })),
-    });
-    const url = buildRawBtIntentUrl({ profile: profileForTarget(target), bytes });
-    window.location.href = url;
-    postLog({
-      tx_id: transaction.id,
-      daily_seq: transaction.daily_seq,
-      target,
-      trigger: 'reprint',
-      outcome: 'dispatched',
-    });
-    setPending(target);
-  }
-
-  function fireBoth() {
-    if (hasDapur) fireFor('dapur');
-    if (hasMinuman) {
-      // Sequential dengan delay supaya RawBT gak overlap
-      setTimeout(() => fireFor('minuman'), 300);
+    const result = await submitJob({ tx: transaction, target, targetItems });
+    setSubmitting(null);
+    if (result.ok) {
+      toast.success(`Job cetak ${target} dikirim ke agent`);
+    } else {
+      toast.error(`Gagal kirim job ${target}: ${result.error}`);
     }
   }
 
-  function confirmSuccess() {
-    if (!pending) return;
-    setPrinterStatus(pending, {
-      state: 'success',
-      last_check: new Date().toISOString(),
-      last_outcome_note: `reprint ${pending}`,
-    });
-    postLog({
-      tx_id: transaction.id,
-      daily_seq: transaction.daily_seq,
-      target: pending,
-      trigger: 'reprint',
-      outcome: 'reported_success',
-    });
-    setPending(null);
-  }
-
-  function confirmFailed() {
-    if (!pending) return;
-    setPrinterStatus(pending, {
-      state: 'failed',
-      last_check: new Date().toISOString(),
-      last_outcome_note: `reprint ${pending} failed`,
-    });
-    postLog({
-      tx_id: transaction.id,
-      daily_seq: transaction.daily_seq,
-      target: pending,
-      trigger: 'reprint',
-      outcome: 'reported_failed',
-    });
-    setPending(null);
-  }
-
-  if (pending) {
-    return (
-      <div className="rounded-md border bg-card p-4 space-y-3">
-        <h3 className="font-medium">Cetak ulang ke {pending.toUpperCase()}</h3>
-        <p className="text-sm">Apakah kertas berhasil keluar?</p>
-        <div className="flex gap-2">
-          <button onClick={confirmSuccess} className="flex-1 rounded-md bg-green-600 px-4 py-2 text-white">
-            ✓ Berhasil
-          </button>
-          <button onClick={confirmFailed} className="flex-1 rounded-md border border-red-300 px-4 py-2 text-red-700">
-            ✗ Gagal
-          </button>
-        </div>
-      </div>
-    );
+  async function fireBoth() {
+    setSubmitting('both');
+    const jobs: Promise<{ ok: boolean; error?: string; target: PrinterTarget }>[] = [];
+    if (hasDapur) {
+      jobs.push(submitJob({ tx: transaction, target: 'dapur', targetItems: split.dapur }).then((r) => ({ ...r, target: 'dapur' as const })));
+    }
+    if (hasMinuman) {
+      jobs.push(submitJob({ tx: transaction, target: 'minuman', targetItems: split.minuman }).then((r) => ({ ...r, target: 'minuman' as const })));
+    }
+    const results = await Promise.all(jobs);
+    setSubmitting(null);
+    const succeeded = results.filter((r) => r.ok).map((r) => r.target);
+    const failed = results.filter((r) => !r.ok);
+    if (failed.length === 0) {
+      toast.success(`${succeeded.length} job dikirim ke agent`);
+    } else {
+      toast.error(`${succeeded.length} sukses, ${failed.length} gagal: ${failed.map((f) => `${f.target}=${f.error}`).join(', ')}`);
+    }
   }
 
   return (
-    <div className="rounded-md border bg-card p-4 space-y-3">
-      <h3 className="font-medium">Cetak ulang</h3>
+    <div className="rounded-md border border-clay-soft bg-paper-soft p-4 space-y-3">
+      <h3 className="font-medium text-coal">Cetak ulang</h3>
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => fireFor('dapur')}
-          disabled={!hasDapur}
-          className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+          disabled={!hasDapur || submitting !== null}
+          className="rounded-md border border-clay-soft px-3 py-2 text-sm text-coal disabled:opacity-50"
         >
-          Cetak Dapur
+          {submitting === 'dapur' ? 'Mengirim...' : 'Cetak Dapur'}
         </button>
         <button
           onClick={() => fireFor('minuman')}
-          disabled={!hasMinuman}
-          className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+          disabled={!hasMinuman || submitting !== null}
+          className="rounded-md border border-clay-soft px-3 py-2 text-sm text-coal disabled:opacity-50"
         >
-          Cetak Minuman
+          {submitting === 'minuman' ? 'Mengirim...' : 'Cetak Minuman'}
         </button>
       </div>
       <button
         onClick={fireBoth}
-        disabled={!hasDapur && !hasMinuman}
+        disabled={(!hasDapur && !hasMinuman) || submitting !== null}
         className="w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
       >
-        Cetak Keduanya
+        {submitting === 'both' ? 'Mengirim...' : 'Cetak Keduanya'}
       </button>
     </div>
   );
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 3: Run test, expect 5/5 pass**
 
 Run: `npx vitest run components/reprint-card.test.tsx`
-Expected: PASS, 4 tests passed.
+Expected: PASS, 5 tests passed.
+
+- [ ] **Step 4: Lint & TS check**
+
+Run: `npm run lint && npx tsc --noEmit`
+Expected: 0 errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add components/reprint-card.tsx components/reprint-card.test.tsx
-git commit -m "feat(ui): add ReprintCard component"
+git commit -m "refactor(ui): reprint-card POSTs jobs to queue instead of intent URL"
 ```
 
 ---
 
-## Task 13: Modify `components/nota-review-form.tsx` — auto-print on confirm
+## Task 12: Refactor `components/nota-review-form.tsx` — auto-print POST queue
 
 **Files:**
 - Modify: `components/nota-review-form.tsx`
 
-**Konteks:** Confirm handler ada di `handleConfirm()` (sekitar baris 73). Setelah PATCH success (response punya `{ transaction, items }`), saat ini langsung `router.push('/')`. Modifikasi: tambah trigger print sebelum redirect. Items punya `menu_id` (NotaItem type), category bisa di-lookup dari `menus: MenuOption[]` prop yang sudah ada.
+**Konteks:** `handleConfirm()` saat ini fire intent URL × 2 targets. Refactor → POST job × N targets paralel via fetch.
 
-- [ ] **Step 1: Cek shape MenuOption — pastikan punya category**
+- [ ] **Step 1: Locate & read existing handleConfirm**
 
-```bash
-grep -n "MenuOption\|category" components/nota-item-modal.tsx
-```
-Expected: `MenuOption` type punya field `category`. Kalau tidak, tambah ke type definition (field sudah ada di DB schema `menus.category`).
+Run: `grep -n "handleConfirm\|triggerAutoPrint\|postPrintLogBeacon" components/nota-review-form.tsx | head`
 
-- [ ] **Step 2: Tambah imports & helper di nota-review-form.tsx**
+- [ ] **Step 2: Replace imports & helpers di nota-review-form.tsx**
 
-Di bagian imports atas:
+Hapus imports lama related ke intent URL & printer-status. Tambah:
 ```tsx
-import { renderTicket } from '@/lib/escpos';
-import { buildRawBtIntentUrl, splitItemsByTarget, type TransactionItemForPrint } from '@/lib/print-intent';
-import { setPrinterStatus, type PrinterTarget } from '@/lib/printer-status';
+import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
+```
+Hapus imports:
+```tsx
+// HAPUS:
+// import { buildRawBtIntentUrl, splitItemsByTarget, type TransactionItemForPrint } from '@/lib/print-intent';
+// import { setPrinterStatus, type PrinterTarget } from '@/lib/printer-status';
 ```
 
-Di dalam component scope (sebelum `return`), tambah helper:
+Hapus module-level helpers lama (`postPrintLogBeacon`, `triggerAutoPrint`, `profileForTarget`, dll).
+
+Replace dengan helpers baru (sebelum `export function NotaReviewForm`):
+
 ```tsx
-async function postPrintLog(args: {
-  tx_id: string;
-  daily_seq: number | null;
+type PrinterTarget = 'dapur' | 'minuman';
+
+type ItemForQueue = {
+  qty: number;
+  menu_name_snapshot: string;
+  menu_category: string;
+  notes: string | null;
+};
+
+function splitItems(items: ItemForQueue[]) {
+  const dapur: ItemForQueue[] = [];
+  const minuman: ItemForQueue[] = [];
+  for (const it of items) {
+    if (it.menu_category === 'minuman') minuman.push(it);
+    else if (it.menu_category === 'makanan' || it.menu_category === 'nasi') dapur.push(it);
+  }
+  return { dapur, minuman };
+}
+
+async function submitPrintJob(args: {
+  tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null };
   target: PrinterTarget;
-  outcome: 'dispatched';
-}) {
+  items: ItemForQueue[];
+}): Promise<boolean> {
+  const bytes = renderTicket({
+    target: args.target,
+    daily_seq: args.tx.daily_seq ?? 0,
+    created_at: new Date(args.tx.created_at),
+    customer_name: args.tx.customer_name,
+    table_no: args.tx.table_no,
+    items: args.items.map((i) => ({
+      qty: i.qty,
+      name: i.menu_name_snapshot,
+      note: i.notes,
+    })),
+  });
+  const bytes_b64 = uint8ToBase64(bytes);
   try {
-    await fetch('/api/print/log', {
+    const res = await fetch('/api/print/queue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ...args,
+        tx_id: args.tx.id,
+        target: args.target,
         trigger: 'auto',
-        url_scheme_variant: 'rawbt-intent-v1',
-        user_agent: navigator.userAgent,
+        bytes_b64,
       }),
     });
-  } catch { /* swallow */ }
-}
-
-function triggerAutoPrint(
-  confirmedTx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null },
-  itemsForPrint: TransactionItemForPrint[],
-): PrinterTarget[] {
-  const split = splitItemsByTarget(itemsForPrint);
-  const targets: PrinterTarget[] = [];
-  if (split.dapur.length > 0) targets.push('dapur');
-  if (split.minuman.length > 0) targets.push('minuman');
-
-  targets.forEach((target, idx) => {
-    setTimeout(() => {
-      const targetItems = target === 'dapur' ? split.dapur : split.minuman;
-      const bytes = renderTicket({
-        target,
-        daily_seq: confirmedTx.daily_seq ?? 0,
-        created_at: new Date(confirmedTx.created_at),
-        customer_name: confirmedTx.customer_name,
-        table_no: confirmedTx.table_no,
-        items: targetItems.map((i) => ({
-          qty: i.qty,
-          name: i.menu_name_snapshot,
-          note: i.notes,
-        })),
-      });
-      const url = buildRawBtIntentUrl({
-        profile: target === 'dapur' ? 'Dapur' : 'Minuman',
-        bytes,
-      });
-      window.location.href = url;
-      postPrintLog({
-        tx_id: confirmedTx.id,
-        daily_seq: confirmedTx.daily_seq,
-        target,
-        outcome: 'dispatched',
-      });
-      setPrinterStatus(target, {
-        state: 'success',
-        last_check: new Date().toISOString(),
-        last_outcome_note: 'auto print',
-      });
-    }, idx * 300);
-  });
-
-  return targets;
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 ```
 
-- [ ] **Step 3: Modify `handleConfirm` untuk trigger print sebelum redirect**
+- [ ] **Step 3: Replace handleConfirm logic**
 
-Replace bagian try block di `handleConfirm()`:
+Cari di file existing block PATCH → toast → router.push. Replace dengan:
 
-**Before (existing):**
 ```tsx
-const res = await fetch(`/api/transactions/${transaction.id}`, {
-  method: 'PATCH',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(payload),
-});
-if (!res.ok) {
-  const data: { error?: string } = await res.json().catch(() => ({}));
-  throw new Error(data.error ?? 'patch-failed');
-}
-toast.success('Nota tersimpan', {
-  description: 'Transaksi sudah masuk laporan harian.',
-});
-startTransition(() => {
-  router.push('/');
-});
-```
-
-**After:**
-```tsx
-const res = await fetch(`/api/transactions/${transaction.id}`, {
-  method: 'PATCH',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(payload),
-});
-if (!res.ok) {
-  const data: { error?: string } = await res.json().catch(() => ({}));
-  throw new Error(data.error ?? 'patch-failed');
-}
-const data = await res.json() as {
-  transaction: {
-    id: string;
-    daily_seq: number | null;
-    created_at: string;
-    customer_name: string | null;
-    table_no: string | null;
-  };
-  items: Array<{ id: string; menu_id: string; menu_name_snapshot: string; qty: number; notes: string | null }>;
-};
-
-// Lookup category dari `menus` prop pakai menu_id
-const itemsForPrint: TransactionItemForPrint[] = data.items.map((it) => {
-  const menu = menus.find((m) => m.id === it.menu_id);
-  return {
-    id: it.id,
-    menu_name_snapshot: it.menu_name_snapshot,
-    menu_category: menu?.category ?? 'makanan', // defensive fallback: unknown → dapur
-    qty: it.qty,
-    notes: it.notes,
-  };
-});
-
-const printedTargets = triggerAutoPrint(data.transaction, itemsForPrint);
-
-toast.success(
-  printedTargets.length > 0
-    ? `Nota tersimpan, mencetak ke ${printedTargets.join(' & ')}...`
-    : 'Nota tersimpan'
-);
-
-startTransition(() => {
-  router.push('/');
-});
-```
-
-- [ ] **Step 4: Rename button text "✓ Konfirmasi" → "✓ Simpan & Cetak"**
-
-Ganti (sekitar baris 236):
-```tsx
-{pending ? 'Menyimpan…' : '✓ Konfirmasi'}
-```
-Jadi:
-```tsx
-{pending ? 'Menyimpan…' : '✓ Simpan & Cetak'}
-```
-
-- [ ] **Step 5: Manual smoke test**
-
-1. `npm run dev`
-2. Terminal 2: `npm run emulator:dapur`, terminal 3: `npm run emulator:minuman`
-3. Scan nota dummy via desktop browser (atau via HP Android dev kalau test full intent)
-4. Klik "Simpan & Cetak"
-5. Expected: toast muncul, redirect ke `/`, di terminal emulator (kalau test dari HP Android + RawBT terkonfig) muncul preview bytes.
-
-Catatan: intent URL `intent://...` cuma trigger app di Android Chrome — di desktop browser nothing happens (normal, gak ada error).
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add components/nota-review-form.tsx components/nota-item-modal.tsx
-git commit -m "feat(scan): trigger auto-print after confirm + rename button"
-```
-
----
-
-## Task 14: Embed `<ReprintCard />` di transaction detail (+ fetch menu_category via join)
-
-**Files:**
-- Modify: `app/api/transactions/[id]/route.ts` (GET handler — tambah join)
-- Modify: `app/(app)/transactions/[id]/page.tsx` (atau component file detail-nya)
-
-**Konteks:** `transaction_items` table TIDAK simpan `menu_category` (cuma `menu_name_snapshot`). Untuk routing ke printer dapur vs minuman, perlu category. Solusi: join `menus(category)` via foreign-table select di GET endpoint. Aman karena `menus` pakai soft delete (`is_active=false`) per CLAUDE.md, FK selalu valid.
-
-- [ ] **Step 1: Update GET handler include menu category via join**
-
-Di `app/api/transactions/[id]/route.ts`, GET handler — ubah query items:
-
-**Before:**
-```ts
-const { data: items, error: itemsError } = await supabase
-  .from('transaction_items')
-  .select('*')
-  .eq('transaction_id', id)
-  .order('sort_order');
-```
-
-**After:**
-```ts
-const { data: items, error: itemsError } = await supabase
-  .from('transaction_items')
-  .select('*, menus(category)')
-  .eq('transaction_id', id)
-  .order('sort_order');
-```
-
-Response shape sekarang setiap item punya `menus: { category: 'makanan' | 'nasi' | 'minuman' } | null`. Catat ini untuk consumer (TransactionDetail component).
-
-- [ ] **Step 2: Verifikasi GET response via manual curl/browser**
-
-```bash
-npm run dev
-# Di browser console (logged in):
-fetch('/api/transactions/<existing-tx-id>').then(r=>r.json()).then(d=>console.log(d.items[0]))
-```
-Expected: object item punya field `menus: { category: ... }`.
-
-- [ ] **Step 3: Locate transaction detail render component**
-
-Detail page biasanya delegasi ke component `components/transaction-detail.tsx` (lihat existing struktur). Confirm via:
-```bash
-grep -rn "ReprintCard\|TransactionDetail" app/\(app\)/transactions/\[id\]/ components/transaction-detail.tsx
-```
-
-- [ ] **Step 4: Embed ReprintCard di detail render**
-
-Di file detail (component atau page langsung — sesuai existing pattern), tambah import:
-```tsx
-import { ReprintCard } from '@/components/reprint-card';
-```
-
-Di JSX, setelah section info utama (sebelum/setelah image), insert kondisional:
-```tsx
-{transaction.status === 'confirmed' && (
-  <ReprintCard
-    transaction={{
-      id: transaction.id,
-      daily_seq: transaction.daily_seq ?? null,
-      created_at: transaction.created_at,
-      customer_name: transaction.customer_name,
-      table_no: transaction.table_no,
-    }}
-    items={items.map((it: any) => ({
+async function handleConfirm() {
+  setSubmitError(null);
+  const payload = {
+    status: 'confirmed' as const,
+    customer_name: customerName.trim() === '' ? null : customerName.trim(),
+    table_no: tableNo.trim() === '' ? null : tableNo.trim(),
+    items: items.map((it, idx) => ({
       id: it.id,
-      menu_name_snapshot: it.menu_name_snapshot,
-      menu_category: it.menus?.category ?? 'makanan', // fallback defensive: kategori unknown → dapur
+      menu_id: it.menu_id,
       qty: it.qty,
       notes: it.notes,
-    }))}
-  />
-)}
+      sort_order: idx,
+    })),
+  };
+  try {
+    const res = await fetch(`/api/transactions/${transaction.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data: { error?: string } = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? 'patch-failed');
+    }
+    const data = await res.json() as {
+      transaction: {
+        id: string;
+        daily_seq: number | null;
+        created_at: string;
+        customer_name: string | null;
+        table_no: string | null;
+      };
+      items: Array<{ id: string; menu_id: string; menu_name_snapshot: string; qty: number; notes: string | null }>;
+    };
+
+    // Lookup category dari `menus` prop pakai menu_id, lalu submit print jobs paralel
+    const itemsForQueue: ItemForQueue[] = data.items.map((it) => {
+      const menu = menus.find((m) => m.id === it.menu_id);
+      return {
+        qty: it.qty,
+        menu_name_snapshot: it.menu_name_snapshot,
+        menu_category: menu?.category ?? 'makanan',
+        notes: it.notes,
+      };
+    });
+    const split = splitItems(itemsForQueue);
+    const submitJobs: Promise<{ target: PrinterTarget; ok: boolean }>[] = [];
+    if (split.dapur.length > 0) {
+      submitJobs.push(
+        submitPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur }).then((ok) => ({ target: 'dapur', ok }))
+      );
+    }
+    if (split.minuman.length > 0) {
+      submitJobs.push(
+        submitPrintJob({ tx: data.transaction, target: 'minuman', items: split.minuman }).then((ok) => ({ target: 'minuman', ok }))
+      );
+    }
+    const results = await Promise.all(submitJobs);
+    const succeeded = results.filter((r) => r.ok).map((r) => r.target);
+    const failed = results.filter((r) => !r.ok).map((r) => r.target);
+
+    if (failed.length === 0 && succeeded.length > 0) {
+      toast.success(`Nota tersimpan, ${succeeded.length} print job dikirim ke agent`);
+    } else if (failed.length > 0) {
+      toast.success('Nota tersimpan');
+      toast.error(`Gagal kirim print job ke: ${failed.join(', ')}. Coba reprint manual dari halaman detail.`);
+    } else {
+      toast.success('Nota tersimpan');
+    }
+
+    startTransition(() => {
+      router.push('/');
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? `Gagal menyimpan: ${err.message}. Coba lagi.`
+        : 'Gagal menyimpan. Coba lagi.';
+    setSubmitError(message);
+    toast.error('Gagal menyimpan nota', {
+      description: err instanceof Error ? err.message : 'Coba lagi.',
+    });
+  }
+}
 ```
 
-Note: kalau project pakai strict typing untuk items, define proper type yang include `menus: { category: string } | null` di response — sesuaikan dengan pattern existing typings di project.
+- [ ] **Step 4: Rename button text (kalau belum)**
 
-- [ ] **Step 5: Manual smoke test**
+Pastikan button text `✓ Simpan & Cetak` (bukan `✓ Konfirmasi`). Kalau sudah dari sebelumnya, skip.
 
-Buka `/transactions/<id>` untuk transaksi confirmed. Expected: card "Cetak ulang" muncul dengan 3 tombol. Untuk tx yang cuma minuman, tombol "Cetak Dapur" disabled. Untuk pending_review tx, card tidak muncul.
+- [ ] **Step 5: Lint & TS check**
 
-- [ ] **Step 6: Commit**
+Run: `npm run lint && npx tsc --noEmit`
+Expected: 0 errors.
+
+- [ ] **Step 6: Run all tests (regression check)**
+
+Run: `npm run test`
+Expected: tests pass (note: existing tests untuk nota-review-form mungkin gak ada — yang penting tests lain gak break).
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add app/api/transactions/\[id\]/route.ts app/\(app\)/transactions/\[id\]/page.tsx components/transaction-detail.tsx
-git commit -m "feat(detail): embed ReprintCard, fetch menu category via join"
+git add components/nota-review-form.tsx
+git commit -m "refactor(scan): auto-print POSTs jobs to queue paralel"
 ```
 
 ---
 
-## Task 15: Create `app/(app)/setup/printer/page.tsx` — tutorial page
+## Task 13: Refactor `app/(app)/setup/printer/page.tsx` — placeholder for agent
 
 **Files:**
-- Create: `app/(app)/setup/printer/page.tsx`
+- Modify: `app/(app)/setup/printer/page.tsx`
 
-- [ ] **Step 1: Implement tutorial page**
-
-Buat `app/(app)/setup/printer/page.tsx`:
+- [ ] **Step 1: Replace ISI dengan**
 
 ```tsx
-'use client';
-
-import { useState } from 'react';
-import { TestPrintDialog } from '@/components/test-print-dialog';
-
 export default function SetupPrinterPage() {
-  const [activeTest, setActiveTest] = useState<'dapur' | 'minuman' | null>(null);
-
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-6">
-      <h1 className="text-2xl font-semibold">Setup Printer</h1>
+      <h1 className="text-2xl font-semibold text-coal">Setup Print Agent</h1>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-medium">1. Install aplikasi RawBT</h2>
-        <p className="text-sm text-muted-foreground">
-          RawBT adalah aplikasi gratis untuk Android yang menyambungkan web app ini ke printer thermal LAN.
+        <p className="text-sm text-coal-soft">
+          Untuk mencetak nota ke printer dapur &amp; minuman, kamu butuh aplikasi
+          <strong> Print Agent</strong> yang berjalan di tab Android di warung.
+          Web app ini cuma mengirim job cetak ke server — Print Agent yang
+          mengambil job dan mengirim ke printer LAN.
         </p>
-        <a
-          href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter"
-          target="_blank"
-          rel="noreferrer"
-          className="inline-block rounded-md bg-primary px-4 py-2 text-primary-foreground"
-        >
-          Buka Play Store
-        </a>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-medium">2. Buat profile "Dapur"</h2>
-        <ol className="list-decimal space-y-1 pl-6 text-sm">
-          <li>Buka RawBT</li>
-          <li>Tap menu → <strong>Settings</strong> → <strong>Printers</strong></li>
-          <li>Tap <strong>+</strong> (tambah)</li>
-          <li>Type: <strong>Network</strong></li>
-          <li>Name: <strong>Dapur</strong> (penting: harus persis &quot;Dapur&quot;)</li>
-          <li>IP: alamat printer dapur (misal 192.168.1.50)</li>
-          <li>Port: <strong>9100</strong></li>
-          <li>Save</li>
-        </ol>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-lg font-medium">3. Buat profile "Minuman"</h2>
-        <p className="text-sm">Ulangi langkah 2, ganti name jadi <strong>Minuman</strong> dan IP printer minuman.</p>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-lg font-medium">4. Tes printer</h2>
-        {activeTest === null && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => setActiveTest('dapur')}
-              className="flex-1 rounded-md border px-4 py-2"
-            >
-              Tes Printer Dapur
-            </button>
-            <button
-              onClick={() => setActiveTest('minuman')}
-              className="flex-1 rounded-md border px-4 py-2"
-            >
-              Tes Printer Minuman
-            </button>
-          </div>
-        )}
-        {activeTest && (
-          <TestPrintDialog
-            target={activeTest}
-            onClose={() => setActiveTest(null)}
-          />
-        )}
-      </section>
-
-      <section className="space-y-3 pt-4 border-t">
-        <h2 className="text-lg font-medium">Bermasalah?</h2>
-        <p className="text-sm text-muted-foreground">
-          Cek halaman diagnostic untuk lihat history print event.
+      <section className="space-y-3 rounded-md border border-mustard-soft bg-mustard-faint p-4">
+        <h2 className="text-lg font-medium text-coal">Status Print Agent</h2>
+        <p className="text-sm text-coal-soft">
+          Print Agent app belum tersedia (sedang dikembangkan). Untuk sekarang,
+          job cetak yang dikirim dari web akan masuk antrian tapi tidak akan dicetak
+          sampai Print Agent dijalankan.
         </p>
-        <a href="/setup/printer/debug" className="text-sm underline">
+        <p className="text-sm text-coal-soft">
+          Spesifikasi teknis Print Agent: lihat dokumen{' '}
+          <code className="bg-clay-mist px-1">docs/superpowers/specs/print-agent-design.md</code> (akan dibuat).
+        </p>
+      </section>
+
+      <section className="space-y-3 pt-4 border-t border-clay-soft">
+        <h2 className="text-lg font-medium text-coal">Diagnostic</h2>
+        <p className="text-sm text-coal-soft">
+          Lihat antrian print job &amp; status agent di halaman diagnostic.
+        </p>
+        <a href="/setup/printer/debug" className="text-sm underline text-coal">
           Buka halaman diagnostic
         </a>
       </section>
@@ -2248,331 +1594,435 @@ export default function SetupPrinterPage() {
 }
 ```
 
-- [ ] **Step 2: Manual smoke test**
+- [ ] **Step 2: Hapus `'use client'` directive (gak butuh client component lagi)**
 
-Buka `/setup/printer` di dev server. Verifikasi: semua section muncul, tombol "Tes Printer Dapur" buka TestPrintDialog inline.
+Pastikan file SUDAH TIDAK pakai `'use client'` (sudah pure server component).
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Lint check**
+
+Run: `npm run lint`
+Expected: 0 errors.
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add app/\(app\)/setup/printer/page.tsx
-git commit -m "feat(ui): add setup printer tutorial page"
+git add 'app/(app)/setup/printer/page.tsx'
+git commit -m "refactor(ui): setup/printer page placeholder for Print Agent (Spec B pending)"
 ```
 
 ---
 
-## Task 16: Create `app/(app)/setup/printer/debug/page.tsx` — diagnostic page
+## Task 14: Refactor `app/(app)/setup/printer/debug/page.tsx` — show queue + heartbeat
 
 **Files:**
-- Create: `app/(app)/setup/printer/debug/page.tsx`
+- Modify: `app/(app)/setup/printer/debug/page.tsx`
 
-- [ ] **Step 1: Implement diagnostic page**
-
-Buat `app/(app)/setup/printer/debug/page.tsx`:
+- [ ] **Step 1: Replace ISI dengan**
 
 ```tsx
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getPrinterStatus, type PrinterStatusMap } from '@/lib/printer-status';
+import { toast } from 'sonner';
 
-type PrintEvent = {
+type Job = {
   id: string;
-  tx_id: string;
-  daily_seq: number | null;
+  tx_id: string | null;
   target: 'dapur' | 'minuman';
   trigger: 'auto' | 'reprint' | 'test';
-  outcome: 'dispatched' | 'reported_success' | 'reported_failed';
-  failure_note: string | null;
-  url_scheme_variant: string | null;
+  status: 'pending' | 'printing' | 'done' | 'failed';
+  failure_reason: string | null;
   created_at: string;
+  completed_at: string | null;
+};
+
+type Agent = {
+  agent_label: string;
+  last_seen_at: string;
+  agent_version: string | null;
+  device_info: string | null;
+  online: boolean;
 };
 
 export default function PrinterDebugPage() {
-  const [status, setStatus] = useState<PrinterStatusMap | null>(null);
-  const [events, setEvents] = useState<PrintEvent[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  async function reload() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [agentRes, jobsRes] = await Promise.all([
+        fetch('/api/agent/heartbeat'),
+        fetch('/api/print/queue/recent?limit=30'),
+      ]);
+      if (!agentRes.ok) throw new Error(`agent HTTP ${agentRes.status}`);
+      if (!jobsRes.ok) throw new Error(`jobs HTTP ${jobsRes.status}`);
+      const agentData = await agentRes.json();
+      const jobsData = await jobsRes.json();
+      setAgents(agentData.agents as Agent[]);
+      setJobs(jobsData.jobs as Job[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'unknown');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    setStatus(getPrinterStatus());
-    fetch('/api/print/log/recent?limit=30')
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((d) => setEvents(d.events))
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+    reload();
   }, []);
+
+  async function retryJob(jobId: string) {
+    const res = await fetch(`/api/print/queue/${jobId}/retry`, { method: 'POST' });
+    if (res.ok) {
+      toast.success('Job di-retry — agent akan pick up lagi');
+      reload();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast.error(`Gagal retry: ${data.error ?? `HTTP ${res.status}`}`);
+    }
+  }
+
+  const pending = jobs.filter((j) => j.status === 'pending' || j.status === 'printing');
+  const recent = jobs.filter((j) => j.status === 'done' || j.status === 'failed');
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-6">
-      <h1 className="text-2xl font-semibold">Printer Diagnostic</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold text-coal">Printer Diagnostic</h1>
+        <button
+          onClick={reload}
+          disabled={loading}
+          className="rounded-md border border-clay-soft px-3 py-1 text-sm text-coal disabled:opacity-50"
+        >
+          {loading ? 'Loading...' : 'Refresh'}
+        </button>
+      </div>
+
+      {error && <p className="text-sm text-brick-dark">Error: {error}</p>}
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium">Status (localStorage)</h2>
-        <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto">
-{JSON.stringify(status, null, 2)}
-        </pre>
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="text-lg font-medium">Recent print events (server)</h2>
-        {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
-        {error && <p className="text-sm text-red-600">Error: {error}</p>}
-        {!loading && !error && events.length === 0 && (
-          <p className="text-sm text-muted-foreground">Belum ada event.</p>
+        <h2 className="text-lg font-medium text-coal">Agent Status</h2>
+        {agents.length === 0 && (
+          <p className="text-sm text-coal-soft">Belum ada agent registered.</p>
         )}
-        {!loading && events.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-2">Time</th>
-                  <th className="text-left p-2">Target</th>
-                  <th className="text-left p-2">Trigger</th>
-                  <th className="text-left p-2">Outcome</th>
-                  <th className="text-left p-2">Note</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((e) => (
-                  <tr key={e.id} className="border-b">
-                    <td className="p-2">{new Date(e.created_at).toLocaleString('id-ID')}</td>
-                    <td className="p-2">{e.target}</td>
-                    <td className="p-2">{e.trigger}</td>
-                    <td className="p-2">{e.outcome}</td>
-                    <td className="p-2">{e.failure_note ?? '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {agents.map((a) => (
+          <div
+            key={a.agent_label}
+            className="flex items-center justify-between rounded-md border border-clay-soft bg-paper-soft p-3"
+          >
+            <div>
+              <p className="font-medium text-coal">{a.agent_label}</p>
+              <p className="text-xs text-coal-soft">
+                Last seen: {new Date(a.last_seen_at).toLocaleString('id-ID')}
+                {a.agent_version && ` · v${a.agent_version}`}
+              </p>
+            </div>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                a.online ? 'bg-leaf text-white' : 'bg-brick text-white'
+              }`}
+            >
+              {a.online ? 'Online' : 'Offline'}
+            </span>
           </div>
+        ))}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-medium text-coal">Pending / In-progress ({pending.length})</h2>
+        {pending.length === 0 && (
+          <p className="text-sm text-coal-soft">Tidak ada job pending.</p>
+        )}
+        {pending.length > 0 && (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-clay-soft">
+                <th className="text-left p-2 text-coal">Time</th>
+                <th className="text-left p-2 text-coal">Target</th>
+                <th className="text-left p-2 text-coal">Trigger</th>
+                <th className="text-left p-2 text-coal">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pending.map((j) => (
+                <tr key={j.id} className="border-b border-clay-soft">
+                  <td className="p-2 text-coal">{new Date(j.created_at).toLocaleString('id-ID')}</td>
+                  <td className="p-2 text-coal">{j.target}</td>
+                  <td className="p-2 text-coal">{j.trigger}</td>
+                  <td className="p-2 text-coal">{j.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
 
-      <section className="space-y-2 pt-4 border-t">
-        <h2 className="text-lg font-medium">User Agent</h2>
-        <p className="text-xs text-muted-foreground">
-          {typeof window !== 'undefined' ? window.navigator.userAgent : '(SSR)'}
-        </p>
+      <section className="space-y-2">
+        <h2 className="text-lg font-medium text-coal">Recent Jobs ({recent.length})</h2>
+        {recent.length === 0 && (
+          <p className="text-sm text-coal-soft">Belum ada job done/failed.</p>
+        )}
+        {recent.length > 0 && (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-clay-soft">
+                <th className="text-left p-2 text-coal">Time</th>
+                <th className="text-left p-2 text-coal">Target</th>
+                <th className="text-left p-2 text-coal">Status</th>
+                <th className="text-left p-2 text-coal">Reason</th>
+                <th className="text-left p-2 text-coal">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map((j) => (
+                <tr key={j.id} className="border-b border-clay-soft">
+                  <td className="p-2 text-coal">{new Date(j.created_at).toLocaleString('id-ID')}</td>
+                  <td className="p-2 text-coal">{j.target}</td>
+                  <td className="p-2">
+                    <span className={j.status === 'done' ? 'text-leaf' : 'text-brick'}>
+                      {j.status}
+                    </span>
+                  </td>
+                  <td className="p-2 text-coal-soft">{j.failure_reason ?? '-'}</td>
+                  <td className="p-2">
+                    {j.status === 'failed' && (
+                      <button
+                        onClick={() => retryJob(j.id)}
+                        className="rounded border border-brick-soft px-2 py-0.5 text-xs text-brick"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
     </div>
   );
 }
 ```
 
-- [ ] **Step 2: Manual smoke test**
+- [ ] **Step 2: Lint & TS check**
 
-Buka `/setup/printer/debug` di dev server. Expected: status JSON & tabel events tampil. Kalau ada event dari Task 7 smoke test, tampil di tabel.
+Run: `npm run lint && npx tsc --noEmit`
+Expected: 0 errors.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add app/\(app\)/setup/printer/debug/page.tsx
-git commit -m "feat(ui): add printer diagnostic page"
+git add 'app/(app)/setup/printer/debug/page.tsx'
+git commit -m "refactor(ui): debug page show agent status, queue + retry button"
 ```
 
 ---
 
-## Task 17: Modify `app/(app)/page.tsx` — embed PrinterStatusBanner
+## Task 15: Extend cron cleanup untuk `print_queue`
 
 **Files:**
-- Modify: `app/(app)/page.tsx`
+- Modify: `app/api/cron/cleanup/route.ts`
 
-- [ ] **Step 1: Read current home page**
+- [ ] **Step 1: Read existing cron**
 
-Run: `cat app/\(app\)/page.tsx`
-Identify: top-level render structure.
+Run: `cat app/api/cron/cleanup/route.ts | head -80` — pahami pattern existing.
 
-- [ ] **Step 2: Import & embed banner**
+- [ ] **Step 2: Tambah cleanup print_queue setelah existing delete blocks**
 
-Tambah di top:
-```tsx
-import { PrinterStatusBanner } from '@/components/printer-status-banner';
+Cari block setelah delete soft-deleted transactions (atau delete storage objects). Tambah:
+
+```ts
+// — TAMBAHAN: cleanup print_queue done/failed > 7 hari —
+const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+const { count: queueDeletedCount, error: queueDeleteErr } = await supabase
+  .from('print_queue')
+  .delete({ count: 'exact' })
+  .in('status', ['done', 'failed'])
+  .lt('created_at', sevenDaysAgo);
+if (queueDeleteErr) {
+  evt.warn(`print_queue cleanup error: ${queueDeleteErr.message}`);
+} else {
+  evt.set('print_queue_deleted', queueDeletedCount ?? 0);
+}
 ```
 
-Di JSX, di paling atas main content (sebelum tile/grid existing):
-```tsx
-<PrinterStatusBanner />
-```
+- [ ] **Step 3: Lint check**
 
-- [ ] **Step 3: Manual smoke test**
-
-Buka `/` di dev server (fresh localStorage). Expected: banner merah muncul "Printer belum di-setup" dengan tombol → `/setup/printer`. Setelah test berhasil via setup page, refresh home, banner hilang.
+Run: `npm run lint`
+Expected: 0 errors.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add app/\(app\)/page.tsx
-git commit -m "feat(home): embed printer status banner"
+git add app/api/cron/cleanup/route.ts
+git commit -m "feat(cron): extend cleanup to delete done/failed print_queue >7d"
 ```
 
 ---
 
-## Task 18: Update `docs/logging.md` — dokumen event `print.*`
+## Task 16: Update `docs/logging.md` — print queue events
 
 **Files:**
 - Modify: `docs/logging.md`
 
-- [ ] **Step 1: Append section dokumen event print.***
+- [ ] **Step 1: Replace "Print events" section yang ada dengan section baru**
 
-Di akhir `docs/logging.md` (atau di section "Event types" kalau ada), tambah:
+Cari section `## Print events` di file (added in old Task 18). Replace seluruh section dengan:
 
 ```markdown
-## Print events
+## Print queue events
 
-Endpoint `POST /api/print/log` (client-triggered) menerima payload print event dan emit wide-event. Selain itu juga di-persist ke tabel `print_events` untuk diagnostic page.
+Endpoint `POST /api/print/queue` accepts print job dari web client, insert row di `print_queue` table. Supabase Realtime push INSERT events ke Print Agent (Spec B) yang subscribe. Agent process job, PATCH status menuju `done` atau `failed`.
 
-### Event fields (selain field standar request)
+### POST /api/print/queue fields
 
-- `tx_id` (uuid) — transaksi terkait. Sentinel `00000000-...-0000` untuk test print.
-- `daily_seq` (int \| null) — nomor antrian saat dicetak; null kalau test print.
+- `user_id` (uuid) — yang submit job
+- `tx_id` (uuid \| null) — transaksi terkait; null untuk test print
 - `target` (`dapur` \| `minuman`) — printer mana
 - `trigger` (`auto` \| `reprint` \| `test`) — sumber print
-- `outcome` (`dispatched` \| `reported_success` \| `reported_failed`) — status
-  - `dispatched`: intent URL sukses di-fire (gak ada error JS, bukan bukti printer cetak)
-  - `reported_success`: user manual lapor "Berhasil" di modal
-  - `reported_failed`: user manual lapor "Gagal"
-- `failure_note` (string?) — catatan user kalau gagal
-- `url_scheme_variant` (string?) — variant URL scheme (mis. `rawbt-intent-v1`), berguna kalau ada migrasi format intent
-- `user_agent` (string?) — UA browser HP kasir untuk diagnose compat issues
+- `bytes_size` (int) — length of bytes_b64 (untuk monitor payload size)
+- `job_id` (uuid) — ID print_queue row yang dibuat (set saat status 201)
+
+### GET /api/print/queue/recent fields
+
+- `limit` (int) — limit parameter (clamped 1-100)
+- `filter_status` (string \| null) — filter param kalau dipakai
+- `rows_count` (int) — jumlah rows returned
+
+### POST /api/print/queue/[id]/retry fields
+
+- `job_id` — id dari path
+- `previous_status` — status sebelum retry
+- `new_status` — status setelah retry (always 'pending' kalau sukses)
+
+### POST /api/print/queue/[id]/cancel fields
+
+Sama dengan retry, tapi `new_status='failed'`, `failure_reason='cancelled by user'`.
+
+### GET /api/agent/heartbeat fields
+
+- `agents_count` — jumlah agent rows
+- `online_count` — jumlah agent dengan `last_seen_at > now() - 2 min`
 
 ### Diagnose flow
 
-Dev cek Vercel logs untuk pattern:
-- Tidak ada `print.dispatched` → JS error di client; minta owner buka Chrome DevTools console screenshot
-- `print.dispatched` tapi `reported_failed` → bridge/printer issue; cek `failure_note`, minta IP profile RawBT screenshot
-- `print.dispatched` dan `reported_success` → working ✅
+Dev cek Vercel logs:
+- POST /api/print/queue dengan status 500 → check `error` field untuk DB issue
+- POST /api/print/queue dengan status 400 → check `validation_errors` (schema mismatch)
+- Job stuck `pending` di `print_queue` → agent gak running (cek heartbeat) atau realtime push gagal
+- Job stuck `printing` >5 min → agent crash mid-print
 ```
 
 - [ ] **Step 2: Commit**
 
 ```bash
 git add docs/logging.md
-git commit -m "docs: document print.* event types & diagnose flow"
+git commit -m "docs: update logging.md for print queue events (replace old print.* docs)"
 ```
 
 ---
 
-## Task 19: Dev self-test end-to-end (no code change)
+## Task 17: Delete unused files (cleanup)
 
-**Files:** none — dokumentasikan hasil di commit message atau temporary scratchpad
+**Files:**
+- Delete: `lib/print-intent.ts`
+- Delete: `lib/print-intent.test.ts`
+- Delete: `lib/printer-status.ts`
+- Delete: `lib/printer-status.test.ts`
+- Delete: `app/api/print/log/route.ts`
+- Delete: `app/api/print/log/_schema.ts`
+- Delete: `app/api/print/log/_schema.test.ts`
+- Delete: `app/api/print/log/recent/route.ts`
 
-- [ ] **Step 1: Setup HP Android dev**
+- [ ] **Step 1: Verify no remaining usage**
 
-1. Install RawBT dari Play Store (atau sideload APK)
-2. Konfig profile:
-   - Name: `Dapur` | Type: Network | IP: `<PC LAN IP>` | Port: `9100`
-   - Name: `Minuman` | Type: Network | IP: `<PC LAN IP>` | Port: `9101`
-3. Pastikan HP & PC di WiFi sama
+Run: `grep -rn "from '@/lib/print-intent'\|from '@/lib/printer-status'\|/api/print/log" app/ components/ lib/ 2>/dev/null`
+Expected: NO MATCHES (semua sudah refactored ke queue paradigm di task sebelumnya).
 
-- [ ] **Step 2: Jalankan printer emulator di PC**
+Kalau ada hasil, tunjukin file mana yang masih reference — gak boleh delete sebelum refactor.
 
-Terminal 1: `npm run emulator:dapur`
-Terminal 2: `npm run emulator:minuman`
-
-- [ ] **Step 3: Deploy preview ke Vercel**
+- [ ] **Step 2: Delete files**
 
 ```bash
-npx vercel deploy
+git rm lib/print-intent.ts lib/print-intent.test.ts \
+       lib/printer-status.ts lib/printer-status.test.ts \
+       app/api/print/log/route.ts \
+       app/api/print/log/_schema.ts \
+       app/api/print/log/_schema.test.ts \
+       app/api/print/log/recent/route.ts
 ```
-Catat preview URL.
 
-- [ ] **Step 4: Test full flow di HP Android dev**
+Kalau direktori `app/api/print/log/` & `app/api/print/log/recent/` jadi kosong setelahnya, hapus dengan `rmdir`:
 
-1. Buka preview URL di Chrome HP
-2. Login
-3. Buka `/setup/printer`, tap "Tes Printer Dapur" → "Cetak Tes Sekarang"
-4. Expected: terminal "dapur" PC tampil "✓ N bytes" + ASCII preview "TES PRINTER DAPUR"
-5. Konfirm "✓ Berhasil"
-6. Ulangi untuk minuman
-7. Buka `/` → banner status harus hilang
-8. Scan nota dummy (atau pakai existing pending tx), klik "Simpan & Cetak"
-9. Expected: 2 nota keluar di kedua terminal emulator
-10. Buka `/transactions/<id>` → ReprintCard muncul, test "Cetak Dapur" reprint
-11. Buka `/setup/printer/debug` → semua event ter-log di tabel
-
-- [ ] **Step 5: Validasi multi-profile routing**
-
-Kalau payload dapur masuk ke emulator dapur saja, dan payload minuman masuk ke emulator minuman saja — **Plan A confirmed working**. Kalau payload tertukar atau cuma 1 yang masuk — investigate (RawBT setting profile name typo, atau URL scheme variant beda).
-
-- [ ] **Step 6: (Optional) Render PNG preview**
-
-Untuk verify layout lebih realistic:
 ```bash
-# Pakai escpos-tools (PHP, install via composer) ATAU receiptline (npm)
-# Contoh dengan escpos-tools:
-# git clone https://github.com/receipt-print-hq/escpos-tools.git
-# php /path/to/escpos-tools/bin2png.php tmp/print-emulator/dapur/print-*.bin
+rmdir app/api/print/log/recent 2>/dev/null
+rmdir app/api/print/log 2>/dev/null
 ```
-Cek PNG hasil visually — header, items, separator, cut.
 
-- [ ] **Step 7: Catat hasil**
+- [ ] **Step 3: Run all tests**
 
-Bikin file scratch (jangan commit) atau tambah ke commit message Task 20 nanti — apakah:
-- Multi-profile routing works? Y / N
-- Layout terlihat benar? Y / N
-- Yang perlu di-iterate sebelum kasih ke owner
+Run: `npm run test`
+Expected: all tests pass — total turun sesuai (sebelum: 97, sekarang harus berkurang yang related ke deleted files).
+
+- [ ] **Step 4: Lint + TS**
+
+Run: `npm run lint && npx tsc --noEmit`
+Expected: 0 errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "chore(cleanup): remove intent URL + localStorage status code (replaced by queue)"
+```
 
 ---
 
-## Task 20: Hand-off ke owner — guide & monitor
+## Task 18: Verify branch in working state
 
-**Files:** none — operational task, no code change
+**Files:** none — final verification
 
-- [ ] **Step 1: Compose WhatsApp guide untuk owner**
+- [ ] **Step 1: Full test suite**
 
-Susun pesan WA (Bahasa Indonesia simple) berisi:
-- Install RawBT dari Play Store (link)
-- Setup profile "Dapur" & "Minuman" dengan IP printer iWare asli (instruksi step + tanya owner IP)
-- Buka `<prod URL>/setup/printer`, ikuti petunjuk
-- Tes printer dapur & minuman → screenshot hasil
-- Scan nota beneran, klik "Simpan & Cetak" → observe printer
-- Buka `/setup/printer/debug` setelah test → screenshot kirim
+Run: `npm run test`
+Expected: all tests pass, count sesuai dengan jumlah file yang sudah ada (akan lebih sedikit dari sebelumnya karena delete print-intent + printer-status tests, plus tambahan tests dari queue refactor).
 
-- [ ] **Step 2: Monitor Vercel logs paralel**
+- [ ] **Step 2: Lint**
 
-Selama owner test:
-```bash
-npx vercel logs --follow
-# atau via dashboard
-```
-Filter berdasarkan route `POST /api/print/log` untuk live event stream.
+Run: `npm run lint`
+Expected: 0 errors, 0 warnings (clean).
 
-- [ ] **Step 3: Diagnose berdasarkan event pattern**
+- [ ] **Step 3: TS check**
 
-Sesuai §9.6 spec:
-- No event `print.dispatched` → JS error / browser cache issue → minta refresh hard / DevTools console
-- `dispatched` tapi `reported_failed` → bridge/printer issue → minta IP profile screenshot
-- `dispatched` + `reported_success` → working ✅
+Run: `npx tsc --noEmit`
+Expected: 0 errors.
 
-- [ ] **Step 4: Iterate kalau ada masalah**
+- [ ] **Step 4: Manual flow check (kalau ada dev environment yang accessible)**
 
-Common issues + hotfix:
-- iWare reject command tertentu → trim ESC/POS subset di `lib/escpos.ts`, redeploy
-- URL scheme variant tidak workable → switch ke variant lain (mis. `rawbt:base64` simple form tanpa profile param) di `lib/print-intent.ts`, simpan variant di env
+1. `npm run dev`
+2. Login → home → banner "Print agent belum jalan" muncul (karena no agent heartbeat)
+3. Scan nota → confirm → toast "Nota tersimpan, N print job dikirim ke agent" (no actual print, expected)
+4. Visit `/transactions/[id]` → ReprintCard rendered, tombol enabled sesuai kategori
+5. Klik "Cetak Dapur" → toast "Job cetak dapur dikirim ke agent"
+6. Visit `/setup/printer/debug` → pending jobs ter-list, no agent online
 
-- [ ] **Step 5: Final commit (kalau ada hotfix)**
-
-```bash
-git add <changed files>
-git commit -m "fix(print): <specific fix based on owner feedback>"
-```
+- [ ] **Step 5: No commit (verification task)**
 
 ---
 
 ## Final review checklist
 
-Sebelum mark fitur complete, cek:
-
-- [ ] Semua test passed: `npm run test`
-- [ ] Lint clean: `npm run lint`
-- [ ] Migration applied di prod Supabase
-- [ ] Owner confirmed visual print hasil di kertas thermal asli benar (header, daily_seq, items, note, cut)
-- [ ] Reprint flow works dari detail page
-- [ ] Banner status responsive di home (state changes setelah test)
-- [ ] Diagnostic page accessible & data populated
-- [ ] `docs/tasks.md` section 🖨️ Print — mark "Print struk digital" sebagai dipisah jadi fitur lain (atau update label), karena fitur ini bukan struk untuk pelanggan — ini kitchen ticket
-- [ ] Update `docs/tasks.md` add new completed item "Print nota dapur & minuman via RawBT bridge"
+- [ ] All 18 tasks complete
+- [ ] `npm run test` green
+- [ ] `npm run lint` clean
+- [ ] `npx tsc --noEmit` clean
+- [ ] Migration 0005 applied ke remote Supabase via MCP
+- [ ] Branch `feat/print-nota` ready for review/merge
+- [ ] `docs/superpowers/specs/2026-06-23-print-nota-design.md` updated (Spec A done)
+- [ ] `docs/logging.md` updated (print queue events)
+- [ ] Print Agent design (Spec B) — separate brainstorming next
