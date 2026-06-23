@@ -281,9 +281,12 @@ Default rekomendasi: Opsi B (lebih reliable, queryable, gampang test). Trade-off
 
 ### 9.1 Reality check
 
-Dev TIDAK punya akses ke printer iWare. Owner gak paham IT. Konsekuensi:
-- **Spike di hardware** = guided remote test oleh owner via WhatsApp setelah deploy ke preview/prod
-- **Logging extensive** = wajib, dev diagnose dari Supabase logs + screenshot owner
+Dev TIDAK punya akses ke printer iWare beneran. Owner gak paham IT. **Tapi dev punya HP Android + PC Arch Linux** — bisa setup printer emulator di PC untuk validate integrasi end-to-end (browser → RawBT → "printer") tanpa hardware iWare. Yang TIDAK bisa di-validate tanpa hardware asli: rendering di kertas thermal, lebar 58/80mm, iWare-specific quirks, paper-out behavior. Itu final verification oleh owner.
+
+Konsekuensi:
+- **Dev self-test** = pakai setup §9.5 (HP Android dev + 2 Node TCP listener di PC sebagai printer emulator). Validate logic, intent dispatch, ESC/POS rendering visual via PNG preview.
+- **Owner-guided test** = final hardware verification post-deploy (rendering di kertas thermal asli, iWare quirks)
+- **Logging extensive** = wajib, dev diagnose remote dari Vercel logs + screenshot owner
 - **Diagnostic UI owner-friendly** = section `/setup/printer/debug` (lihat §6.6)
 - **Build everything assuming Plan A** lalu deploy. Plan B switch tersedia via env flag tanpa rebuild
 
@@ -312,10 +315,85 @@ Dev TIDAK punya akses ke printer iWare. Owner gak paham IT. Konsekuensi:
 - `PATCH /api/transactions/[id]` confirm → `daily_seq` ter-set, unique per business-day WIB
 - `POST /api/print/log` → wide-event emit, payload valid, requires auth
 
-### 9.5 Owner-guided E2E (post-deploy)
+### 9.5 Dev self-test dengan printer emulator (pre-owner deploy)
 
-Setelah feature deployed ke preview/prod, dev kirim panduan WA ke owner:
-1. Install RawBT, setup 2 profile
+Setup yang dev pakai untuk validate end-to-end (browser → RawBT → "printer") TANPA printer iWare:
+
+**Komponen:**
+- **HP Android dev** dengan RawBT installed (sideload APK atau via Play Store)
+- **PC dev (Arch + Hyprland)** menjalankan 2 instance Node TCP listener sebagai "printer emulator" — satu untuk dapur (port 9100), satu untuk minuman (port 9101)
+- HP & PC di WiFi yang sama
+- App di-deploy ke Vercel preview, diakses dari Chrome di HP Android
+
+**Script printer emulator (`scripts/printer-emulator.js`):**
+```js
+import net from 'node:net';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const PORT = parseInt(process.argv[2] || '9100', 10);
+const LABEL = process.argv[3] || 'dapur';
+const OUT_DIR = `tmp/print-emulator/${LABEL}`;
+fs.mkdirSync(OUT_DIR, { recursive: true });
+
+const server = net.createServer((socket) => {
+  const chunks = [];
+  socket.on('data', (chunk) => chunks.push(chunk));
+  socket.on('end', () => {
+    const buffer = Buffer.concat(chunks);
+    const filename = path.join(OUT_DIR, `print-${Date.now()}.bin`);
+    fs.writeFileSync(filename, buffer);
+    // ASCII preview: strip ESC/POS commands & print readable text
+    const asciiPreview = buffer.toString('latin1').replace(/[\x00-\x1f\x80-\xff]/g, '');
+    console.log(`✓ [${LABEL}] ${buffer.length} bytes → ${filename}`);
+    console.log(`--- preview ---\n${asciiPreview}\n---------------`);
+  });
+});
+server.listen(PORT, '0.0.0.0', () => console.log(`[${LABEL}] listening on :${PORT}`));
+```
+
+Jalanin paralel:
+```bash
+node scripts/printer-emulator.js 9100 dapur &
+node scripts/printer-emulator.js 9101 minuman &
+```
+
+**Konfigurasi RawBT di HP Android dev:**
+- Profile "Dapur" → IP: `<PC LAN IP>` port `9100`
+- Profile "Minuman" → IP: `<PC LAN IP>` port `9101`
+
+**Flow test:**
+1. Buka preview URL di Chrome HP, login, scan nota dummy
+2. Klik "Simpan & Cetak" → trigger intent ke RawBT
+3. RawBT forward bytes ke PC LAN IP:9100/9101
+4. Script di PC dump bytes ke file + ASCII preview di terminal
+5. (Opsional) render PNG visual via tool `escpos-tools` (PHP) atau `receiptline` (npm) — install salah satu kalau butuh visual yang lebih akurat dari ASCII
+
+**Yang ter-validate via dev self-test:**
+- ✅ ESC/POS bytes generation correct (visual via PNG / ASCII)
+- ✅ Intent URL syntax dispatchable dari Chrome ke RawBT
+- ✅ Multi-profile RawBT routing (verify yg 9100 hanya dapur, 9101 hanya minuman) — **ini resolve risiko spike utama dari §10 Plan A**
+- ✅ Layout output (line wrap, kategori split, edge cases nama/meja kosong)
+- ✅ Reprint flow
+- ✅ Status state machine (modal Ya/Tidak)
+
+**Yang TIDAK ter-validate (perlu owner test):**
+- ❌ Rendering aktual di kertas thermal 58/80mm
+- ❌ iWare-specific quirks (kalau ada command yang gak di-support)
+- ❌ Behavior printer offline/kertas habis
+- ❌ Speed/latency di printer real
+
+**Catatan firewall:**
+PC Arch perlu allow inbound :9100/:9101 di interface WiFi:
+```bash
+# Kalau pakai ufw:
+sudo ufw allow from <wifi-subnet>/24 to any port 9100,9101 proto tcp
+```
+
+### 9.6 Owner-guided E2E (final hardware verification)
+
+Setelah dev self-test (§9.5) hijau, deploy ke prod, dev kirim panduan WA ke owner:
+1. Install RawBT, setup 2 profile dengan IP printer iWare asli
 2. Buka `/setup/printer`, klik tes — screenshot result
 3. Scan nota beneran, klik "Simpan & Cetak" — observe printer
 4. Detail tx, klik reprint — observe printer
@@ -326,7 +404,7 @@ Dev paralel monitor Vercel logs untuk event `print.*`. Diagnose:
 - Ada `print.dispatched` tapi `reported_failed` → bridge/printer issue; minta IP confirmation, RawBT setting screenshot
 - Ada `print.dispatched` dan `reported_success` → working ✅
 
-### 9.6 Plan B switch protocol
+### 9.7 Plan B switch protocol
 
 Kalau setelah debugging Plan A gak workable:
 1. Dev set env `PAK_PON_PRINTER_MODE=ip_direct`
@@ -340,14 +418,15 @@ Detail Plan B di-defer ke implementation plan kalau perlu, atau bikin spec tamba
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| RawBT multi-profile URL scheme gak support | Medium | High | Owner-guided test post-deploy; Plan B siap di-switch via env |
-| iWare printer reject ESC/POS lanjutan | Low | Medium | Subset minimal command |
-| URL scheme syntax salah → silent fail di owner | Medium | High | Diagnostic page; env-switchable variants; logging extensive |
+| RawBT multi-profile URL scheme gak support | Low (di-validate dev self-test §9.5 sebelum owner test) | High | Dev self-test resolve; Plan B siap di-switch via env kalau confirmed gak workable |
+| iWare printer reject ESC/POS lanjutan | Low | Medium | Subset minimal command; kalau muncul saat owner test, adjust command set |
+| URL scheme syntax salah → silent fail di owner | Low (resolved di dev self-test) | High | Dev self-test pakai HP Android + RawBT real; diagnostic page; env-switchable variants |
 | Owner skip setup, lupa, complain | Medium | Low | Banner persistent merah |
 | Owner gak ngerti tutorial | Medium | Medium | Screenshot/embed gambar; WA support dev |
 | Dev gak bisa diagnose dari jauh | Medium | High | Wide-event ke semua step + diagnostic page screenshot-able |
 | localStorage cleared di tab | Low | Low | Auto-recovery banner |
 | Race condition `daily_seq` | Low | Medium | DB transaction lock |
+| iWare-specific quirks gak ketahuan sampai owner test | Medium | Medium | Owner-guided E2E §9.6; logging extensive untuk diagnose; bisa hotfix subset ESC/POS command |
 
 ## 11. Out of scope
 
@@ -378,6 +457,7 @@ Detail Plan B di-defer ke implementation plan kalau perlu, atau bikin spec tamba
 - `app/(app)/transactions/[id]/page.tsx` (MOD) — tambah ReprintCard
 - `app/(app)/page.tsx` (MOD) — embed PrinterStatusBanner
 - `public/setup-printer/*` (NEW) — screenshot panduan
+- `scripts/printer-emulator.js` (NEW) — TCP listener untuk dev self-test §9.5
 - `docs/logging.md` (MOD) — dokumentasi event `print.*` baru
 
 ## 13. Open questions deferred ke implementation plan
