@@ -4,6 +4,11 @@ export type MenuRef = {
   price: number;
 };
 
+export type Alternative = {
+  menu_name: string;
+  confidence: number;
+};
+
 export type ExistingItem = {
   id: string;
   menu_id: string;
@@ -19,6 +24,8 @@ export type RequestedItem = {
   qty: number;
   notes: string | null;
   sort_order: number;
+  confidence?: number | null;
+  alternatives?: Alternative[];
 };
 
 export type ItemRow = {
@@ -28,6 +35,8 @@ export type ItemRow = {
   qty: number;
   notes: string | null;
   sort_order: number;
+  confidence: number | null;
+  alternatives: Alternative[] | null;
 };
 
 export type ReplaceItemsResult = {
@@ -40,9 +49,7 @@ export type ReplaceItemsResult = {
  * Untuk setiap requested item:
  * - Kalau punya `id` yang cocok dengan existing → preserve `unit_price_snapshot` lama
  * - Kalau no `id` atau id tidak cocok → snapshot harga sekarang dari menus
- *
- * Item existing yang tidak disebut di requested = effective delete (dilakukan dengan
- * DELETE all + INSERT new di caller).
+ * - confidence + alternatives di-passthrough apa adanya (default null kalau tidak dikirim)
  *
  * Throw kalau ada requested item dengan menu_id yang tidak ada di menus.
  */
@@ -70,6 +77,8 @@ export function computeReplaceItems(input: {
       qty: req.qty,
       notes: req.notes,
       sort_order: req.sort_order,
+      confidence: req.confidence ?? null,
+      alternatives: req.alternatives ?? null,
     };
   });
 
