@@ -55,6 +55,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // — TAMBAHAN: cleanup print_queue done/failed > 7 hari —
+    const { count: queueDeletedCount, error: queueDeleteErr } = await supabase
+      .from('print_queue')
+      .delete({ count: 'exact' })
+      .in('status', ['done', 'failed'])
+      .lt('created_at', cutoff);
+    if (queueDeleteErr) {
+      evt.warn(`print_queue cleanup error: ${queueDeleteErr.message}`);
+    } else {
+      evt.set('print_queue_deleted', queueDeletedCount ?? 0);
+    }
+
     tagStatus(evt, 200);
     return NextResponse.json({ deleted_count: ids.length });
   } catch (err) {

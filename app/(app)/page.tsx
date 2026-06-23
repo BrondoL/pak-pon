@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { HomeTiles } from '@/components/home-tiles';
+import { PrinterStatusBanner } from '@/components/printer-status-banner';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { currentBusinessDate, businessDayRange } from '@/lib/date';
 import { formatRp } from '@/lib/currency';
@@ -42,6 +43,7 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8 md:space-y-10">
+      <PrinterStatusBanner />
       <div className="max-w-2xl">
         <p className="font-body text-[11px] font-medium uppercase tracking-[0.22em] text-clay">
           Shift · {dateLabel}

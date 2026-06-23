@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
+import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
 
 type Transaction = {
   id: string;
@@ -19,6 +20,60 @@ type Transaction = {
   table_no: string | null;
   created_at: string;
 };
+
+type PrinterTarget = 'dapur' | 'minuman';
+
+type ItemForQueue = {
+  qty: number;
+  menu_name_snapshot: string;
+  menu_category: string;
+  notes: string | null;
+};
+
+function splitItems(items: ItemForQueue[]) {
+  const dapur: ItemForQueue[] = [];
+  const minuman: ItemForQueue[] = [];
+  for (const it of items) {
+    if (it.menu_category === 'minuman') minuman.push(it);
+    else if (it.menu_category === 'makanan' || it.menu_category === 'nasi') dapur.push(it);
+  }
+  return { dapur, minuman };
+}
+
+async function submitPrintJob(args: {
+  tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null };
+  target: PrinterTarget;
+  items: ItemForQueue[];
+}): Promise<boolean> {
+  const bytes = renderTicket({
+    target: args.target,
+    daily_seq: args.tx.daily_seq ?? 0,
+    created_at: new Date(args.tx.created_at),
+    customer_name: args.tx.customer_name,
+    table_no: args.tx.table_no,
+    items: args.items.map((i) => ({
+      qty: i.qty,
+      name: i.menu_name_snapshot,
+      note: i.notes,
+    })),
+  });
+  const bytes_b64 = uint8ToBase64(bytes);
+  try {
+    const res = await fetch('/api/print/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tx_id: args.tx.id,
+        target: args.target,
+        trigger: 'auto',
+        bytes_b64,
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 export function NotaReviewForm({
   transaction,
@@ -94,9 +149,52 @@ export function NotaReviewForm({
         const data: { error?: string } = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'patch-failed');
       }
-      toast.success('Nota tersimpan', {
-        description: 'Transaksi sudah masuk laporan harian.',
+      const data = await res.json() as {
+        transaction: {
+          id: string;
+          daily_seq: number | null;
+          created_at: string;
+          customer_name: string | null;
+          table_no: string | null;
+        };
+        items: Array<{ id: string; menu_id: string; menu_name_snapshot: string; qty: number; notes: string | null }>;
+      };
+
+      // Lookup category dari `menus` prop pakai menu_id
+      const itemsForQueue: ItemForQueue[] = data.items.map((it) => {
+        const menu = menus.find((m) => m.id === it.menu_id);
+        return {
+          qty: it.qty,
+          menu_name_snapshot: it.menu_name_snapshot,
+          menu_category: menu?.category ?? 'makanan',
+          notes: it.notes,
+        };
       });
+      const split = splitItems(itemsForQueue);
+      const submitJobs: Promise<{ target: PrinterTarget; ok: boolean }>[] = [];
+      if (split.dapur.length > 0) {
+        submitJobs.push(
+          submitPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur }).then((ok) => ({ target: 'dapur', ok }))
+        );
+      }
+      if (split.minuman.length > 0) {
+        submitJobs.push(
+          submitPrintJob({ tx: data.transaction, target: 'minuman', items: split.minuman }).then((ok) => ({ target: 'minuman', ok }))
+        );
+      }
+      const results = await Promise.all(submitJobs);
+      const succeeded = results.filter((r) => r.ok).map((r) => r.target);
+      const failed = results.filter((r) => !r.ok).map((r) => r.target);
+
+      if (failed.length === 0 && succeeded.length > 0) {
+        toast.success(`Nota tersimpan, ${succeeded.length} print job dikirim ke agent`);
+      } else if (failed.length > 0) {
+        toast.success('Nota tersimpan');
+        toast.error(`Gagal kirim print job ke: ${failed.join(', ')}. Coba reprint manual dari halaman detail.`);
+      } else {
+        toast.success('Nota tersimpan');
+      }
+
       startTransition(() => {
         router.push('/');
       });
@@ -233,7 +331,7 @@ export function NotaReviewForm({
               disabled={pending || items.length === 0}
               className="flex-1"
             >
-              {pending ? 'Menyimpan…' : '✓ Konfirmasi'}
+              {pending ? 'Menyimpan…' : '✓ Simpan & Cetak'}
             </Button>
           </div>
         </div>

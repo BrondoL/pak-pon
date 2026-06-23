@@ -1,469 +1,450 @@
-# Print Nota Dapur & Minuman — Design Spec
+# Print Nota — Web Refactor (Queue Paradigm) — Design Spec
 
-**Date:** 2026-06-23
+**Date:** 2026-06-23 (revised same day after live-test failure on Android — original RawBT-intent approach abandoned)
 **Status:** Approved (brainstorming phase complete, ready for implementation plan)
-**Depends on:** `0001_schema.sql` (kolom `customer_name`, `table_no`, `menus.category` sudah ada). Selaras dengan `2026-06-21-shift-cutoff-design.md` untuk logika business-day cutoff WIB.
+**Scope:** Web-side only. Print Agent Android app di-spec terpisah (Spec B, akan dibuat setelah Spec A done).
+**Depends on:** Migration `0004_print_nota.sql` (`transactions.daily_seq`), `lib/escpos.ts`, `lib/daily-seq.ts`.
 
-## 1. Latar belakang
+## 1. Latar belakang & alasan pivot
 
-Owner punya 2 thermal printer iWare (LAN, port standar 9100 ESC/POS). Sebelumnya pakai Luna POS native Android — di Luna, print otomatis ke 2 printer (dapur + minuman) setelah order. Sekarang owner pindah ke web app Pak Pon, tapi belum ada fitur print → dapur masih harus baca nota tulisan tangan & minuman dibuat manual berdasarkan teriakan kasir. Pain: lambat saat ramai, salah baca tulisan, lupa item.
+### Awal (gagal di production)
 
-Goal: setelah kasir confirm scan nota, app otomatis cetak 2 struk paralel — satu ke printer dapur (item kategori `makanan` + `nasi`) dan satu ke printer minuman (item kategori `minuman`). Plus reprint manual di halaman detail transaksi.
+Spec sebelumnya pakai pendekatan **Android Intent URL ke RawBT bridge app**: web app generate ESC/POS bytes, encode base64, kirim via `intent://print/#Intent;scheme=rawbt;...;S.profile=Dapur;...;end` ke Android Chrome → RawBT pick up → print ke LAN printer.
 
-## 2. Kendala fundamental (tech context)
+Implementation selesai (Tasks 1-18 di plan lama), 97/97 tests pass, deploy ke preview, tapi **live test di HP Android Samsung dengan RawBT installed: zero UI feedback, tidak ada print**. Banner status di home page bahkan tidak muncul di HP (works di desktop). Setelah research:
 
-Web app Pak Pon di-host di Vercel (cloud). Printer di LAN warung di belakang NAT — Vercel TIDAK BISA reach printer. Browser di tab Android TIDAK BISA open raw TCP socket ke port 9100 printer (web security restriction). Ini beda dengan Luna POS yang native Android — bisa langsung socket.
+1. **URL format SALAH** — pendekatan `intent://...#Intent;...;S.payload=BASE64;end` bukan format yang RawBT registered untuk handle. RawBT documentation + community example (`qhoirulanwar/ionic4-print-rawbt`) pakai format simpler `rawbt:base64,<data>`. URL format diperbaiki dalam commit `caf562e`.
+2. **RawBT tidak support multi-printer per request via URL** — RawBT cuma punya 1 default printer. URL tidak bisa pilih profile. Multi-printer dapur+minuman simultan: TIDAK MUNGKIN dengan RawBT URL scheme.
+3. **Banner gak muncul di HP** — separate issue dari intent URL. Diagnosa belum dilakukan karena pivot total.
 
-**Solusi: pakai bridge app di tab Android.** Web app generate ESC/POS bytes → trigger intent URL → bridge app (RawBT — gratis, populer di POS Indonesia) terima → forward via TCP ke printer LAN yang sudah dikonfig.
+Konklusi: arsitektur "browser → intent URL → RawBT → printer" tidak workable untuk requirement multi-printer + reliability.
 
-**Kendala kedua: dev tidak punya akses hardware.** Owner yang test. Owner tidak paham IT. Konsekuensi: app harus shipped dengan **logging extensive** + **diagnostic UI owner-friendly** supaya dev bisa diagnose remote dari Supabase logs + screenshot WhatsApp dari owner.
+### Pivot
+
+User propose & approve: **arsitektur "Print Agent" — web sebagai producer print job, mobile app sebagai consumer.**
+
+- Web app POST job ke `print_queue` table di Supabase
+- Print Agent Android app (separate, Spec B) subscribe ke realtime channel `print_queue`
+- Agent terima job → identify target (dapur/minuman) → kirim ESC/POS via TCP socket ke IP printer yang sesuai
+- Agent report back status via UPDATE `print_queue.status`
+
+Manfaat: multi-printer trivial (agent tau IP per target), reliable (queue-based dengan retry), backend-driven (gak terpengaruh quirk Android Chrome × RawBT × hydration).
+
+## 2. Scope split
+
+Pivot ini di-split jadi 2 spec terpisah:
+
+- **Spec A (dokumen ini)**: Web Refactor → Queue paradigm. Web POST job, render UI, baca status.
+- **Spec B (separate file, akan dibuat berikutnya)**: Print Agent Android App — foreground service, Supabase Realtime subscribe, TCP print, history view + manual reprint.
+
+Spec A bisa shipped dulu — queue accumulates pending jobs. Agent (Spec B) consume saat sudah ready.
 
 ## 3. Decisions ringkas
 
 | # | Decision | Reason |
 |---|---|---|
-| Q1 | Trigger: **auto-print saat confirm** + reprint manual di detail | Owner request; reprint untuk safety net |
-| Q2 | Konten: header + tanggal/jam + nomor antrian + nama (opsional) + meja (opsional) + items (qty + nama + note) | Mirror nota fisik; field optional skip line kalau kosong |
-| Q3 | Routing item: `category='minuman'` → printer minuman; `category in ('makanan','nasi')` → printer dapur | Field `menus.category` sudah ada |
-| Q4 | Tech approach: **RawBT bridge app** (Plan A); fallback **IP-direct via settings** (Plan B) | Balance effort vs UX, didukung ekosistem |
-| Q5 | Konfigurasi printer di RawBT (profile name), bukan di app — Plan A | Loose coupling; owner ganti printer tanpa redeploy |
-| Q6 | Print logic 100% client-side (browser) | Server tidak bisa reach printer LAN |
-| Q7 | Status printer per-device (localStorage), bukan shared di DB | Status sangat lokal (tergantung tab + WiFi) |
-| Q8 | Nomor antrian: `transactions.daily_seq int`, reset harian basis WIB cutoff | Stable untuk reprint |
-| Q9 | Notif status: banner home — merah (not_configured/failed), kuning (>24h stale), hidden (success ≤24h) | Visible tanpa noisy |
-| Q10 | Tutorial setup: page `/setup/printer` dengan step + tombol test | Owner self-service |
-| Q11 | Fire-and-forget intent — gak tunggu callback success/fail | URL scheme tidak punya callback; konfirmasi manual via modal |
-| Q12 | Logging: extend wide-event pattern (`docs/logging.md`); semua print event ke server | Dev diagnose remote tanpa akses tab |
+| Q1 | Job delivery: **Supabase Realtime** (built-in, free tier cukup: 200 concurrent, 2M msg/bulan) | Lower latency, $0 cost, infra simple |
+| Q2 | Auth agent: **owner login** (same Supabase auth as web) | Konsisten dgn 1-account warung pattern |
+| Q3 | Retry on print fail: **single try, no auto-retry, mark failed in DB** | Simple, manual retry visible at owner level |
+| Q4 | Cleanup approach: **atomic refactor** (replace in place, delete unused, single PR) | End state clean, owner gak butuh A/B test |
+| Q5 | Bytes_b64 inline di queue row | Agent jadi dumb pipe, gak perlu port escpos ke Kotlin |
+| Q6 | Auto-cleanup queue: extend existing cron, delete done/failed >7 hari | Konsisten dgn retention pattern |
+| Q7 | Banner status: simple binary (online hidden / offline red) | YAGNI — no yellow stale state |
+| Q8 | Heartbeat interval: 30 detik | Balance freshness vs Supabase write rate |
+| Q9 | Agent offline threshold: 2 menit since last heartbeat | Tolerate brief network blips |
 
 ## 4. Architecture & data flow
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Tab Android Samsung (browser Chrome)                        │
+┌─────────────────────────────────────────────────────────────┐
+│                    [Supabase backend]                        │
 │                                                              │
-│  ┌────────────────────┐    ┌───────────────────────┐         │
-│  │  Next.js web app   │    │  RawBT (Android app)  │         │
-│  │  /scan, /transac…  │    │  - profile "Dapur"    │         │
-│  │  /setup/printer    │    │  - profile "Minuman"  │         │
-│  │                    │    │                       │         │
-│  │  Generate ESC/POS  │───▶│  Forward via TCP:9100 │         │
-│  │  Trigger intent    │    └───────┬──────────┬────┘         │
-│  └─────────┬──────────┘            │          │              │
-│            │                       ▼          ▼              │
-└────────────┼─────────────┬─────────────┬──────────┬──────────┘
-             │             │ LAN         │ LAN      │
-             │ HTTPS       │             │          │
-             ▼             ▼             ▼          ▼
-   ┌───────────────┐ ┌──────────────┐ ┌─────────────────┐
-   │  Vercel       │ │ Supabase     │ │ Printer iWare   │
-   │  (data + log) │ │ (DB)         │ │ Dapur / Minuman │
-   └───────────────┘ └──────────────┘ └─────────────────┘
+│  ┌─────────────────────────┐  ┌────────────────────────┐    │
+│  │  print_queue table      │  │  agent_heartbeats      │    │
+│  │  - id, tx_id, target    │  │  - agent_label         │    │
+│  │  - bytes_b64, status    │  │  - last_seen_at        │    │
+│  │  - failure_reason       │  └────────────────────────┘    │
+│  └─────────────────────────┘                                 │
+│              │                                                │
+│              ▼                                                │
+│  ┌─────────────────────────┐                                 │
+│  │  Realtime channel       │                                 │
+│  │  on print_queue INSERT  │                                 │
+│  └─────────────────────────┘                                 │
+└──┬──────────────────────────┬──────────────────────────────┘
+   │ POST /api/print/queue   │ subscribe realtime (Spec B)
+   │ GET recent              │ PATCH status (Spec B)
+   │ POST retry              │ UPSERT heartbeat (Spec B)
+   ▼                         ▼
+[Web app]              [Print Agent — Spec B]
+- Scan + confirm        - Foreground service Kotlin/Flutter
+- Test print            - Subscribe Realtime
+- Reprint               - TCP socket ke IP printer
+- Banner agent status     dapur ATAU minuman
+- Debug page              berdasarkan target field
+- POST jobs ke queue    - PATCH status
+                        - UPSERT heartbeat tiap 30s
 ```
 
-- App TIDAK simpan IP printer (Plan A). App kirim parameter `profile=Dapur|Minuman` ke RawBT, RawBT lookup IP dari profile-nya.
-- Plan B fallback: app simpan IP per target di tabel `settings`, pass IP via URL scheme ke RawBT.
+**Key principles:**
+1. Web app gak peduli printer — cuma POST job ke queue
+2. Agent gak peduli source — cuma consume queue
+3. Multi-printer routing dilakukan di agent (agent tau IP per target)
+4. Status feedback via Supabase Realtime — web bisa optionally subscribe untuk live update
+5. Heartbeat = indicator agent online — banner & debug page baca ini
 
 ## 5. Data model
 
-### 5.1 Migration baru — `0004_print_nota.sql`
+### 5.1 Migration baru — `0005_print_queue.sql`
 
 ```sql
--- daily_seq: nomor antrian harian per transaksi, reset basis business-day WIB
-ALTER TABLE transactions ADD COLUMN daily_seq int;
+-- 0005_print_queue.sql — print job queue + agent heartbeat
 
--- Lookup harian (untuk generate next seq dan reprint)
-CREATE INDEX transactions_daily_seq_idx
-  ON transactions (
-    ((created_at AT TIME ZONE 'Asia/Jakarta')::date),
-    daily_seq
-  );
+-- Drop print_events (replaced by print_queue + wide-event logger)
+DROP TABLE IF EXISTS print_events;
+
+-- 1. print_queue — job queue, agent consume from here
+CREATE TABLE print_queue (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- tx_id nullable: test print jobs (trigger='test') tidak terkait transaksi
+  tx_id           uuid REFERENCES transactions(id) ON DELETE CASCADE,
+  target          text NOT NULL CHECK (target IN ('dapur', 'minuman')),
+  trigger         text NOT NULL CHECK (trigger IN ('auto', 'reprint', 'test')),
+  bytes_b64       text NOT NULL,
+  status          text NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'printing', 'done', 'failed')),
+  failure_reason  text,
+  created_by      uuid REFERENCES auth.users(id),
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  picked_up_at    timestamptz,
+  completed_at    timestamptz
+);
+
+CREATE INDEX print_queue_status_created_idx
+  ON print_queue (status, created_at)
+  WHERE status IN ('pending', 'printing');
+
+CREATE INDEX print_queue_recent_idx
+  ON print_queue (created_at DESC);
+
+ALTER TABLE print_queue ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "auth read print_queue" ON print_queue
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "auth insert print_queue" ON print_queue
+  FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "auth update print_queue" ON print_queue
+  FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+-- 2. agent_heartbeats — track agent online status
+CREATE TABLE agent_heartbeats (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_label     text NOT NULL UNIQUE,
+  last_seen_at    timestamptz NOT NULL DEFAULT now(),
+  agent_version   text,
+  device_info     text
+);
+
+CREATE INDEX agent_heartbeats_recent_idx
+  ON agent_heartbeats (last_seen_at DESC);
+
+ALTER TABLE agent_heartbeats ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "auth read agent_heartbeats" ON agent_heartbeats
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "auth insert agent_heartbeats" ON agent_heartbeats
+  FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "auth update agent_heartbeats" ON agent_heartbeats
+  FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+-- 3. Enable realtime on print_queue
+ALTER PUBLICATION supabase_realtime ADD TABLE print_queue;
 ```
 
-Field nullable: transaksi `pending_review` belum punya seq, baru ter-set saat status berubah ke `confirmed` di PATCH endpoint. Basis tanggal harus selaras dengan business-day cutoff di `2026-06-21-shift-cutoff-design.md` (akan dibaca saat implementasi plan).
-
-**Race condition handling:** 2 PATCH bersamaan bisa generate `daily_seq` duplicate. Mitigasi yang dipilih: lock baris terkait via `SELECT ... FOR UPDATE` di awal PATCH transaction, lalu `COALESCE(MAX(daily_seq), 0) + 1` filter business-day. Implementasi konkret di plan.
-
-### 5.2 Client state — `localStorage`
-
-Key: `pak_pon_printer_status`
-
-```ts
-type PrinterStatusState = 'success' | 'failed' | 'not_configured';
-type PrinterStatus = {
-  state: PrinterStatusState;
-  last_check: string;        // ISO timestamp
-  last_outcome_note?: string; // optional: "test print 14:32", "auto print tx #0042"
-};
-type PrinterStatusMap = {
-  dapur: PrinterStatus;
-  minuman: PrinterStatus;
-};
-```
-
-Default kalau belum ada di localStorage: keduanya `not_configured`, `last_check=null`.
-
-### 5.3 Wide-event types (extend `docs/logging.md`)
-
-Event yang di-emit via `POST /api/print/log` (client → server):
-
-| Event | Field tambahan |
-|---|---|
-| `print.dispatched` | `tx_id`, `daily_seq`, `target` (dapur\|minuman), `trigger` (auto\|reprint\|test), `items_count`, `url_scheme_variant`, `user_agent` |
-| `print.reported_success` | `tx_id`, `target`, `trigger` |
-| `print.reported_failed` | `tx_id`, `target`, `trigger`, `failure_note` (opsional dari user) |
-
-Selain itu, PATCH `/api/transactions/[id]` saat confirm sudah ada wide-event existing — di-extend dengan field `daily_seq` yang ter-generate.
-
-### 5.4 Tidak ada (sengaja)
-
-- ❌ Table `print_jobs` — wide-event sudah cukup audit
-- ❌ Kolom `transactions.printed_at` — derive dari log
-- ❌ Table `printers` config — IP di RawBT (Plan A) atau settings table (Plan B)
-
-## 6. UI / UX flow
-
-### 6.1 Touchpoint 1 — Setup pertama kali (`/setup/printer`)
-
-Page baru, step-by-step:
-
-1. **Install RawBT** (link Play Store, screenshot)
-2. **Buat profile "Dapur"** — buka RawBT → Settings → Printers → Add → Type: Network → Name: `Dapur` → IP: (input owner) → Port: 9100 → Save
-3. **Buat profile "Minuman"** — sama, beda IP, name `Minuman`
-4. **Test koneksi** — 2 button: `Tes Printer Dapur` & `Tes Printer Minuman`
-5. **Selesai** — tombol "Selesai" → redirect home, banner hilang
-
-Embed screenshot/gambar di `public/setup-printer/` untuk panduan visual.
-
-### 6.2 Touchpoint 2 — Home banner status
-
-Component `<PrinterStatusBanner />`:
-
-| State (keduanya digabung worst-state) | Tampilan | Aksi |
-|---|---|---|
-| `not_configured` | Banner merah, persistent | Tombol "Setup printer" → `/setup/printer` |
-| `failed` | Banner merah, persistent | Tombol "Tes ulang" → trigger test modal |
-| `success` tapi `last_check > 24h` | Banner kuning kecil | Tombol "Tes printer" |
-| `success` dan `last_check <= 24h` | Hidden | — |
-
-### 6.3 Touchpoint 3 — Scan flow (modifikasi)
-
-`/scan/review` page — tombol existing **"Simpan"** → rename **"Simpan & Cetak"**:
-
-1. PATCH `/api/transactions/[id]` dengan items final → server set `status=confirmed`, `confirmed_at=now()`, `daily_seq=<next>`
-2. Response 200 dengan transaction lengkap (termasuk daily_seq)
-3. Client: tentukan target printer berdasarkan kategori items
-4. Trigger intent URL ke RawBT untuk tiap target **secara sequential dengan jeda ~300ms** antar target (RawBT belum tentu handle 2 intent burst dengan baik; sequential lebih predictable, latency total masih sub-1s)
-5. POST `/api/print/log` event `print.dispatched` × N
-6. Update `localStorage` state heuristic (intent dispatched without error → `success`)
-7. Toast: "Transaksi tersimpan, mencetak ke dapur & minuman..."
-8. Redirect ke `/transactions`
-
-**Edge UX:**
-- Kalau `printer_status` belum `success` untuk target yang dibutuhkan → tetap save, toast warning: "Transaksi tersimpan tapi printer belum di-setup. Pergi ke setup?" + tombol → `/setup/printer`
-- Kalau cuma 1 kategori (semua minuman atau semua makanan) → cuma trigger 1 printer
-- Kalau confirm gagal (PATCH error) → tidak trigger print apapun
-
-### 6.4 Touchpoint 4 — Detail page reprint
-
-`/transactions/[id]` — tambah card di bawah card existing:
+### 5.2 Status state machine
 
 ```
-┌─ Cetak Ulang ─────────────────────┐
-│ Terakhir auto-print: 14:32 ✓      │
-│                                   │
-│ [Cetak Dapur]   [Cetak Minuman]   │
-│        [Cetak Keduanya]           │
-└───────────────────────────────────┘
+pending ─(agent pick up)──→ printing ─(success)──→ done
+   │                            │
+   │                            └─(error)──→ failed
+   └─(agent never picks up)─→ stays pending (banner warning kalau >5 min stuck)
 ```
 
-- Tombol target spesifik di-disable kalau gak ada item kategori relevan (mis. semua minuman → "Cetak Dapur" disabled)
-- Tap tombol → trigger intent → modal "Berhasil dicetak? [✓ Ya] [✗ Tidak]" → POST log
+### 5.3 Cleanup retention
 
-### 6.5 Touchpoint 5 — Test printer flow
+Extend existing cron `/api/cron/cleanup`:
+- Delete `print_queue` rows dengan `status IN ('done', 'failed') AND created_at < now() - interval '7 days'`
+- Konsisten dgn retention pattern transaksi (soft-delete >7 hari hard-delete)
 
-Reused di `/setup/printer` dan banner. Modal `<TestPrintDialog />`:
+### 5.4 Data size estimate
 
-```
-Cetak tes printer DAPUR
-─────────────────────────
-Pastikan kertas terpasang di printer dapur,
-lalu tekan tombol di bawah.
+- `bytes_b64` per row: ~500-2000 chars (ESC/POS kitchen ticket)
+- Volume: ~50 jobs/hari × 2 targets = 100 rows/hari
+- After 7-day retention: max ~700 rows ~1.4 MB
+- Supabase free tier 500 MB: aman jauh
 
-         [Cetak Tes Sekarang]
+## 6. API endpoints
 
-(setelah tap)
+### 6.1 `POST /api/print/queue` — submit job
 
-Apakah kertas keluar dengan tulisan
-"Pak Pon - Tes Print Dapur - 14:32"?
-
-   [✓ Berhasil]   [✗ Gagal]
-```
-
-- "Berhasil" → `localStorage.dapur.state = 'success'`, POST `print.reported_success`, close modal
-- "Gagal" → expand modal: optional textarea "Apa yang terjadi?" (kertas gak keluar, error, dst) + 2 tombol: **[Coba Lagi]** (re-trigger intent, kembali ke pertanyaan) atau **[Tutup]** (set `state = 'failed'`, POST `print.reported_failed` dengan `failure_note`, close)
-
-### 6.6 Touchpoint 6 — Diagnostic page (`/setup/printer/debug`)
-
-Hidden page (gak ada di nav, akses via URL langsung). Tujuan: dev kasih owner instruksi via WA "buka URL ini, screenshot, kirim ke saya".
-
-Isi:
-- Current `localStorage` state — JSON dump
-- Last 20 print event dari `POST /api/print/log/recent` (sama user)
-- Manual test panel: pilih target + URL scheme variant + tombol fire
-- Toggle URL scheme variant (untuk Plan B switch, lihat §8)
-
-## 7. Error handling & state
-
-### 7.1 Error register
-
-| # | Skenario | Detectable? | Mitigasi |
-|---|---|---|---|
-| 1 | RawBT belum install | ❌ (silent fail) | `not_configured` default → banner → tutorial |
-| 2 | Printer offline / kabel lepas | ❌ | Modal "Berhasil?" → reprint button |
-| 3 | Kertas habis | ❌ | Reprint setelah ganti kertas |
-| 4 | RawBT crash mid-print | ❌ | Reprint button |
-| 5 | Network down saat PATCH confirm | ✅ HTTP error | Toast existing, print NOT triggered |
-| 6 | iWare reject ESC/POS command lanjutan | ❌ (swallow) | Pakai subset minimal: init, text, line feed, cut, bold, double-size |
-| 7 | Race `daily_seq` duplicate | ✅ unique constraint | DB transaction + retry; selaras shift-cutoff |
-| 8 | localStorage cleared | ✅ data hilang | Auto-recovery: banner muncul → user re-test |
-| 9 | 1 printer sukses, 1 gagal | ❌ no callback | Reprint per target di detail |
-| 10 | URL scheme mismatch / RawBT version | ❌ silent | Diagnostic page; env-switchable variants |
-| 11 | Multi-profile RawBT gak support | **Spike unknown** | Plan B: switch ke IP-direct via settings table (env flag) |
-| 12 | Owner salah ketik IP / nama profile | ❌ | Test print flow catches it; banner kuning |
-
-### 7.2 State management
-
-| State | Tempat | Lifetime |
-|---|---|---|
-| `transactions.daily_seq` | Supabase | Persistent, set 1× saat confirm |
-| `pak_pon_printer_status` per target | localStorage (per device) | Persistent sampai cleared |
-| Print event log | Wide-event JSON di Vercel logs + (kalau Opsi B §8.2 dipilih) tabel `print_events` di Supabase | Vercel ~7 hari, tabel persistent |
-| Toast / modal | React state | Per interaction |
-
-### 7.3 Yang sengaja NOT handled
-
-- ❌ Realtime "printer connected ✓" indicator (impossible di browser)
-- ❌ Print queue retry otomatis di background (warung kecil, manual cukup)
-- ❌ Print buffer offline (app butuh online untuk save dulu)
-
-## 8. API endpoint baru
-
-### 8.1 `POST /api/print/log`
-
-Body:
+**Body** (Zod validated):
 ```ts
 {
-  tx_id: string,            // UUID
-  daily_seq: number | null, // null untuk event type 'test'
+  tx_id: string | null,            // null for test prints
   target: 'dapur' | 'minuman',
   trigger: 'auto' | 'reprint' | 'test',
-  outcome: 'dispatched' | 'reported_success' | 'reported_failed',
-  failure_note?: string,
-  url_scheme_variant?: string, // mis. 'rawbt-v1', 'intent-android'
-  user_agent?: string
+  bytes_b64: string,               // ESC/POS bytes base64
 }
 ```
 
-Auth: required (sama dengan endpoint lain).
-Side effect: emit wide-event via `newEvent('POST /api/print/log')`, no DB write. Return `204 No Content`.
+**Behavior:**
+- Auth required (Supabase session)
+- Insert row dengan `status='pending'`, `created_by=user.id`
+- Realtime channel auto-push INSERT
+- Return `201 { job_id }` immediately
 
-### 8.2 `GET /api/print/log/recent`
+### 6.2 `GET /api/print/queue/recent`
 
-Query: `?limit=20`
+**Query:** `?limit=20&status=all|pending|done|failed`
 
-Returns: array of recent print event (dispatched/success/failed) untuk dipakai di diagnostic page. Implementation choice ditentukan di plan:
-- **Opsi A:** query Vercel logs API (kalau tersedia di plan owner)
-- **Opsi B:** persist subset event ke tabel `print_events` baru di Supabase
+**Behavior:**
+- Auth required
+- Return rows ordered by `created_at DESC`, exclude `bytes_b64` (untuk response size)
 
-Default rekomendasi: Opsi B (lebih reliable, queryable, gampang test). Trade-off: tambah tabel kecil. Diputuskan di implementation plan.
+**Returns:** `200 { jobs: [{ id, tx_id, target, trigger, status, failure_reason, created_at, completed_at }] }`
 
-## 9. Testing strategy
+### 6.3 `POST /api/print/queue/[id]/retry`
 
-### 9.1 Reality check
+**Behavior:**
+- Auth required
+- If `status='failed'` → set `status='pending'`, clear `failure_reason`, `completed_at`. Realtime push.
+- Else: 409
 
-Dev TIDAK punya akses ke printer iWare beneran. Owner gak paham IT. **Tapi dev punya HP Android + PC Arch Linux** — bisa setup printer emulator di PC untuk validate integrasi end-to-end (browser → RawBT → "printer") tanpa hardware iWare. Yang TIDAK bisa di-validate tanpa hardware asli: rendering di kertas thermal, lebar 58/80mm, iWare-specific quirks, paper-out behavior. Itu final verification oleh owner.
+**Returns:** `200 { job }` atau `409`
 
-Konsekuensi:
-- **Dev self-test** = pakai setup §9.5 (HP Android dev + 2 Node TCP listener di PC sebagai printer emulator). Validate logic, intent dispatch, ESC/POS rendering visual via PNG preview.
-- **Owner-guided test** = final hardware verification post-deploy (rendering di kertas thermal asli, iWare quirks)
-- **Logging extensive** = wajib, dev diagnose remote dari Vercel logs + screenshot owner
-- **Diagnostic UI owner-friendly** = section `/setup/printer/debug` (lihat §6.6)
-- **Build everything assuming Plan A** lalu deploy. Plan B switch tersedia via env flag tanpa rebuild
+### 6.4 `POST /api/print/queue/[id]/cancel`
 
-### 9.2 Unit tests (Vitest)
+**Behavior:**
+- Auth required
+- If `status='pending'` → set `status='failed'`, `failure_reason='cancelled by user'`
+- Else: 409
 
-- **`lib/escpos.ts`** — generator ESC/POS bytes
-  - Golden snapshot: render kitchen ticket dengan mix items → bytes match expected
-  - Edge: note kosong, meja kosong, nama kosong, all-minuman, all-makanan
-- **`lib/daily-seq.ts`** — generator nomor antrian
-  - Race scenario: 2 concurrent PATCH simulasi → 2 nomor unik (atau test trigger jelas berbeda)
-  - Cutoff WIB: tx jam 23:30 WIB → seq tertentu, tx jam 00:30 WIB hari berikut → seq reset
-- **`lib/print-intent.ts`** — intent URL builder
-  - Build URL untuk dapur dengan items makanan/nasi → URL valid, base64 sesuai
-  - Build URL untuk minuman dengan items minuman → URL valid
-  - Skip target tanpa item
-  - Toggle URL scheme variant via env
+**Returns:** `200 { job }` atau `409`
 
-### 9.3 Component tests (RTL)
+### 6.5 `GET /api/agent/heartbeat`
 
-- `<PrinterStatusBanner />` — 4 state visualisasi & CTA
-- `<ReprintCard />` — disabled state kalau gak ada kategori relevan
-- `<TestPrintDialog />` — flow Ya/Tidak/Coba lagi + localStorage update
+**Behavior:**
+- Auth required
+- Return all `agent_heartbeats` rows
+- Consumer (banner) compute "online" jika `last_seen_at > now() - 2 min`
 
-### 9.4 Integration tests (Vitest + MSW atau Supabase test client)
+**Returns:** `200 { agents: [{ agent_label, last_seen_at, agent_version }] }`
 
-- `PATCH /api/transactions/[id]` confirm → `daily_seq` ter-set, unique per business-day WIB
-- `POST /api/print/log` → wide-event emit, payload valid, requires auth
+### 6.6 Agent endpoints (documented here, implemented in Spec B)
 
-### 9.5 Dev self-test dengan printer emulator (pre-owner deploy)
+- `POST /api/agent/heartbeat` — UPSERT by agent_label
+- `PATCH /api/print/queue/[id]` — update status pending→printing→done/failed
 
-Setup yang dev pakai untuk validate end-to-end (browser → RawBT → "printer") TANPA printer iWare:
+### 6.7 Deleted endpoints
 
-**Komponen:**
-- **HP Android dev** dengan RawBT installed (sideload APK atau via Play Store)
-- **PC dev (Arch + Hyprland)** menjalankan 2 instance Node TCP listener sebagai "printer emulator" — satu untuk dapur (port 9100), satu untuk minuman (port 9101)
-- HP & PC di WiFi yang sama
-- App di-deploy ke Vercel preview, diakses dari Chrome di HP Android
+- `POST /api/print/log` (lama) → DELETED
+- `GET /api/print/log/recent` (lama) → DELETED
 
-**Script printer emulator (`scripts/printer-emulator.js`):**
-```js
-import net from 'node:net';
-import fs from 'node:fs';
-import path from 'node:path';
+## 7. Web UI refactor
 
-const PORT = parseInt(process.argv[2] || '9100', 10);
-const LABEL = process.argv[3] || 'dapur';
-const OUT_DIR = `tmp/print-emulator/${LABEL}`;
-fs.mkdirSync(OUT_DIR, { recursive: true });
+### 7.1 `components/nota-review-form.tsx` (auto-print)
 
-const server = net.createServer((socket) => {
-  const chunks = [];
-  socket.on('data', (chunk) => chunks.push(chunk));
-  socket.on('end', () => {
-    const buffer = Buffer.concat(chunks);
-    const filename = path.join(OUT_DIR, `print-${Date.now()}.bin`);
-    fs.writeFileSync(filename, buffer);
-    // ASCII preview: strip ESC/POS commands & print readable text
-    const asciiPreview = buffer.toString('latin1').replace(/[\x00-\x1f\x80-\xff]/g, '');
-    console.log(`✓ [${LABEL}] ${buffer.length} bytes → ${filename}`);
-    console.log(`--- preview ---\n${asciiPreview}\n---------------`);
-  });
-});
-server.listen(PORT, '0.0.0.0', () => console.log(`[${LABEL}] listening on :${PORT}`));
-```
+After PATCH confirm success, replace existing intent-URL trigger dengan:
+- `splitItemsByTarget(items)` → list targets dengan items
+- Per target: `renderTicket(...)` → `uint8ToBase64(...)` → `fetch('/api/print/queue', POST, { tx_id, target, trigger:'auto', bytes_b64 })`
+- Promise.all submit semua targets paralel
+- Toast: "Nota tersimpan, N print job dikirim ke agent"
+- Redirect ke `/transactions` (existing)
 
-Jalanin paralel:
-```bash
-node scripts/printer-emulator.js 9100 dapur &
-node scripts/printer-emulator.js 9101 minuman &
-```
+Button text: tetap **"✓ Simpan & Cetak"**.
 
-**Konfigurasi RawBT di HP Android dev:**
-- Profile "Dapur" → IP: `<PC LAN IP>` port `9100`
-- Profile "Minuman" → IP: `<PC LAN IP>` port `9101`
+### 7.2 `components/reprint-card.tsx`
 
-**Flow test:**
-1. Buka preview URL di Chrome HP, login, scan nota dummy
-2. Klik "Simpan & Cetak" → trigger intent ke RawBT
-3. RawBT forward bytes ke PC LAN IP:9100/9101
-4. Script di PC dump bytes ke file + ASCII preview di terminal
-5. (Opsional) render PNG visual via tool `escpos-tools` (PHP) atau `receiptline` (npm) — install salah satu kalau butuh visual yang lebih akurat dari ASCII
+UI: 3 button (Cetak Dapur, Cetak Minuman, Cetak Keduanya) dengan disabled state per kategori availability.
 
-**Yang ter-validate via dev self-test:**
-- ✅ ESC/POS bytes generation correct (visual via PNG / ASCII)
-- ✅ Intent URL syntax dispatchable dari Chrome ke RawBT
-- ✅ Multi-profile RawBT routing (verify yg 9100 hanya dapur, 9101 hanya minuman) — **ini resolve risiko spike utama dari §10 Plan A**
-- ✅ Layout output (line wrap, kategori split, edge cases nama/meja kosong)
-- ✅ Reprint flow
-- ✅ Status state machine (modal Ya/Tidak)
+Action handler: POST ke `/api/print/queue` (target + bytes_b64), tampilkan loading per button, toast success/error berdasarkan HTTP response.
 
-**Yang TIDAK ter-validate (perlu owner test):**
-- ❌ Rendering aktual di kertas thermal 58/80mm
-- ❌ iWare-specific quirks (kalau ada command yang gak di-support)
-- ❌ Behavior printer offline/kertas habis
-- ❌ Speed/latency di printer real
+Tidak ada modal "Apakah berhasil?" — itu agent yang report status.
 
-**Catatan firewall:**
-PC Arch perlu allow inbound :9100/:9101 di interface WiFi:
-```bash
-# Kalau pakai ufw:
-sudo ufw allow from <wifi-subnet>/24 to any port 9100,9101 proto tcp
-```
+Optional: subscribe Supabase Realtime ke print_queue updates untuk tampilkan live status badge.
 
-### 9.6 Owner-guided E2E (final hardware verification)
+### 7.3 `components/test-print-dialog.tsx`
 
-Setelah dev self-test (§9.5) hijau, deploy ke prod, dev kirim panduan WA ke owner:
-1. Install RawBT, setup 2 profile dengan IP printer iWare asli
-2. Buka `/setup/printer`, klik tes — screenshot result
-3. Scan nota beneran, klik "Simpan & Cetak" — observe printer
-4. Detail tx, klik reprint — observe printer
-5. Buka `/setup/printer/debug`, screenshot kirim ke dev
+State machine (6 phase):
+- `idle` — show "Cetak Tes Sekarang" button
+- `submitting` — spinner "Mengirim..."
+- `awaiting_agent` — show "Job dikirim. Tunggu agent process..." dengan optional realtime status subscription
+- `done` (job.status='done' from realtime/poll) — green check "Berhasil!" + auto close
+- `failed` (job.status='failed') — red "Gagal: {reason}" + retry button
+- `timeout` (>5 min in awaiting_agent without update) — "Agent gak respond" + retry button
 
-Dev paralel monitor Vercel logs untuk event `print.*`. Diagnose:
-- Tidak ada event `print.dispatched` → JS error di client; minta owner buka console
-- Ada `print.dispatched` tapi `reported_failed` → bridge/printer issue; minta IP confirmation, RawBT setting screenshot
-- Ada `print.dispatched` dan `reported_success` → working ✅
+Phase transitions: idle → submitting (on tap) → awaiting_agent (POST success) → done/failed (realtime update) atau timeout (5 min timer).
 
-### 9.7 Plan B switch protocol
+### 7.4 `components/printer-status-banner.tsx`
 
-Kalau setelah debugging Plan A gak workable:
-1. Dev set env `PAK_PON_PRINTER_MODE=ip_direct`
-2. Tambah halaman admin sederhana `/setup/printer/ip` (kasi input IP dapur + IP minuman, simpan di `settings` table)
-3. Client logic switch ke variant baru, kirim IP langsung di URL scheme
-4. Re-test dengan owner
+Fetch `/api/agent/heartbeat` di mount + optional realtime subscription.
+- 0 agent online → red banner "Print agent belum jalan" + link `/setup/printer`
+- ≥1 agent online → hidden
 
-Detail Plan B di-defer ke implementation plan kalau perlu, atau bikin spec tambahan.
+### 7.5 `app/(app)/setup/printer/page.tsx`
 
-## 10. Risk register
+Refactor jadi placeholder:
+- Title "Setup Print Agent"
+- Penjelasan singkat: web app butuh agent app berjalan di tab Android untuk print
+- Link untuk download APK (placeholder URL — diisi setelah Spec B implementation done)
+- Reference: lihat Spec B docs untuk panduan teknis
+
+### 7.6 `app/(app)/setup/printer/debug/page.tsx`
+
+3 section:
+1. **Agent status** — list agent_heartbeats, badge online/offline
+2. **Pending queue** — rows status='pending'/'printing'
+3. **Recent jobs** — last 20 rows done/failed, with retry button per failed
+
+Update via realtime subscription kalau ada perubahan.
+
+## 8. Cleanup checklist
+
+**DELETE:**
+- `lib/print-intent.ts`
+- `lib/print-intent.test.ts`
+- `lib/printer-status.ts`
+- `lib/printer-status.test.ts`
+- `app/api/print/log/route.ts`
+- `app/api/print/log/_schema.ts`
+- `app/api/print/log/_schema.test.ts`
+- `app/api/print/log/recent/route.ts`
+
+**REFACTOR:**
+- `components/nota-review-form.tsx`
+- `components/reprint-card.tsx`
+- `components/reprint-card.test.tsx` (update assertions untuk new flow)
+- `components/test-print-dialog.tsx`
+- `components/test-print-dialog.test.tsx`
+- `components/printer-status-banner.tsx`
+- `components/printer-status-banner.test.tsx`
+- `app/(app)/setup/printer/page.tsx` (placeholder content)
+- `app/(app)/setup/printer/debug/page.tsx`
+- `app/api/cron/cleanup/route.ts` (extend dengan print_queue delete)
+- `docs/logging.md` (event types baru)
+
+**KEEP:**
+- `lib/escpos.ts` + test (still generates bytes)
+- `lib/daily-seq.ts` + test (still used by PATCH confirm)
+- `lib/date.ts` (existing helpers)
+- `lib/logger.ts` (wide-event pattern)
+- `app/api/transactions/[id]/route.ts` (PATCH set daily_seq tetap)
+- `scripts/printer-emulator.js` (masih useful untuk Spec B dev testing — agent dapur dapat IP emulator alih-alih IP printer real)
+- Migration `0004_print_nota.sql` (`transactions.daily_seq` column kept; only `print_events` table dropped via new migration 0005)
+- `vitest.setup.ts` localStorage polyfill (mungkin masih dipakai test lain)
+
+**ADD:**
+- `supabase/migrations/0005_print_queue.sql`
+- Helper `uint8ToBase64`: extract to `lib/escpos.ts` (paling related) atau new `lib/base64.ts`
+- `app/api/print/queue/route.ts` + `_schema.{ts,test.ts}`
+- `app/api/print/queue/recent/route.ts`
+- `app/api/print/queue/[id]/retry/route.ts`
+- `app/api/print/queue/[id]/cancel/route.ts`
+- `app/api/agent/heartbeat/route.ts`
+
+## 9. Error handling
+
+| # | Skenario | Detection | Mitigation |
+|---|---|---|---|
+| 1 | POST /api/print/queue gagal (network) | HTTP error | Toast error, transaksi tetap saved |
+| 2 | DB insert gagal | HTTP 500 | Toast error, manual retry via reprint button |
+| 3 | Agent gak running saat POST | Tidak detect saat insert | Job pending, banner warning, owner cek agent |
+| 4 | Agent picks up tapi printer offline | Agent reports failed | Detail page tampil failure_reason + retry button |
+| 5 | Agent crash mid-print | Job stuck `printing` | UI timeout 5 min → treat as failed, allow retry |
+| 6 | Realtime drop | Agent reconnect (Spec B) | Auto-reconnect. Pending jobs queue, processed saat reconnect |
+| 7 | bytes_b64 corrupted in transit | Agent decode error | status='failed', reason='invalid_payload', retry akan re-render |
+| 8 | Duplicate submission (double-click) | Tidak prevented | Agent print 2x — acceptable di low volume warung |
+| 9 | DB bloat | Cron cleanup | Delete done/failed >7 hari |
+| 10 | Heartbeat lag tapi agent hidup | last_seen_at fresh | UI tampilkan "last seen X minutes ago" untuk konteks |
+
+## 10. Testing strategy
+
+### 10.1 Unit (Vitest)
+
+- `lib/escpos.ts` — existing tests kept
+- `lib/daily-seq.ts` — existing tests kept
+- Helper `uint8ToBase64` — 2-3 tests for round-trip + edge cases
+
+### 10.2 Component (RTL)
+
+- `<PrinterStatusBanner />` — mock fetch heartbeat, render online/offline state
+- `<TestPrintDialog />` — mock fetch POST queue, verify body shape + state transitions
+- `<ReprintCard />` — mock fetch, verify buttons + disabled + submitting state
+
+### 10.3 Schema (Vitest)
+
+- `POST /api/print/queue` body Zod validation tests
+
+### 10.4 Integration / Manual
+
+- Apply migration locally → verify Realtime broadcast bekerja via Supabase Studio
+- POST /api/print/queue → row appears in print_queue
+- Mark row status='done' manually → optional realtime subscriber on UI side updates
+
+### 10.5 E2E (deferred to Spec B implementation)
+
+End-to-end agent ↔ queue ↔ printer flow tested setelah agent dibangun.
+
+## 11. Migration sequence
+
+1. Apply DB migration `0005_print_queue.sql` (drop print_events, create print_queue & agent_heartbeats, enable realtime)
+2. Atomic refactor PR (single branch / merge):
+   - Add new endpoints + schemas
+   - Add helper uint8ToBase64
+   - Refactor 4 components
+   - Refactor 2 pages
+   - Delete unused files (lib/print-intent, lib/printer-status, /api/print/log)
+   - Extend cron cleanup
+   - Update docs/logging.md
+3. Run full test suite (Vitest) — expected: tests untuk components updated to new flow
+4. Deploy ke Vercel preview
+5. Manual verification: POST /api/print/queue via DevTools, see row in Supabase Studio
+6. Merge ke master, deploy production
+7. Web Phase 1 selesai — queue accumulates pending jobs, no printing yet
+8. Start Spec B (Print Agent) brainstorming + implementation
+
+## 12. Open questions deferred to Spec B
+
+- Print Agent language (Kotlin vs Flutter vs Java) — user open ke Kotlin
+- Foreground service implementation detail
+- Agent UI scope (login, settings, status, history print)
+- APK distribution mechanism (sideload via Drive direct link)
+- Multi-printer routing logic di agent
+- Agent retry behavior on transient errors
+- Heartbeat freq & reconnect strategy
+- Agent settings storage (Android Keystore for credentials)
+
+## 13. Out of scope (Spec A)
+
+- ❌ Print Agent Android app implementation (Spec B)
+- ❌ Multi-warung config
+- ❌ Print struk customer (separate backlog)
+- ❌ Capacitor wrap fallback
+- ❌ iOS support
+- ❌ WebSocket fallback if Supabase Realtime down
+- ❌ Print job priority queue
+- ❌ Bulk print operations
+
+## 14. Risk register
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| RawBT multi-profile URL scheme gak support | Low (di-validate dev self-test §9.5 sebelum owner test) | High | Dev self-test resolve; Plan B siap di-switch via env kalau confirmed gak workable |
-| iWare printer reject ESC/POS lanjutan | Low | Medium | Subset minimal command; kalau muncul saat owner test, adjust command set |
-| URL scheme syntax salah → silent fail di owner | Low (resolved di dev self-test) | High | Dev self-test pakai HP Android + RawBT real; diagnostic page; env-switchable variants |
-| Owner skip setup, lupa, complain | Medium | Low | Banner persistent merah |
-| Owner gak ngerti tutorial | Medium | Medium | Screenshot/embed gambar; WA support dev |
-| Dev gak bisa diagnose dari jauh | Medium | High | Wide-event ke semua step + diagnostic page screenshot-able |
-| localStorage cleared di tab | Low | Low | Auto-recovery banner |
-| Race condition `daily_seq` | Low | Medium | DB transaction lock |
-| iWare-specific quirks gak ketahuan sampai owner test | Medium | Medium | Owner-guided E2E §9.6; logging extensive untuk diagnose; bisa hotfix subset ESC/POS command |
-
-## 11. Out of scope
-
-- ❌ Bluetooth thermal printer fallback
-- ❌ Cloud print queue / offline mode
-- ❌ Print struk PDF untuk pelanggan (separate backlog: `docs/tasks.md` §🖨️ Print)
-- ❌ Multi-warung config
-- ❌ Custom layout per printer
-- ❌ Auto-detect printer / mDNS discovery
-- ❌ Print logo bitmap (subset ESC/POS minimal)
-
-## 12. File touchpoints (estimasi)
-
-- `supabase/migrations/0004_print_nota.sql` (NEW)
-- `lib/escpos.ts` (NEW) — ESC/POS bytes generator
-- `lib/print-intent.ts` (NEW) — URL scheme builder, env-switchable variants
-- `lib/daily-seq.ts` (NEW) — nomor antrian generator (helper untuk PATCH route)
-- `lib/printer-status.ts` (NEW) — localStorage helper
-- `components/PrinterStatusBanner.tsx` (NEW)
-- `components/ReprintCard.tsx` (NEW)
-- `components/TestPrintDialog.tsx` (NEW)
-- `app/(app)/setup/printer/page.tsx` (NEW) — tutorial
-- `app/(app)/setup/printer/debug/page.tsx` (NEW) — diagnostic
-- `app/api/print/log/route.ts` (NEW) — POST log endpoint
-- `app/api/print/log/recent/route.ts` (NEW) — GET recent endpoint
-- `app/api/transactions/[id]/route.ts` (MOD) — set `daily_seq` saat confirm
-- `app/(app)/scan/review/page.tsx` (MOD) — rename tombol, trigger print
-- `app/(app)/transactions/[id]/page.tsx` (MOD) — tambah ReprintCard
-- `app/(app)/page.tsx` (MOD) — embed PrinterStatusBanner
-- `public/setup-printer/*` (NEW) — screenshot panduan
-- `scripts/printer-emulator.js` (NEW) — TCP listener untuk dev self-test §9.5
-- `docs/logging.md` (MOD) — dokumentasi event `print.*` baru
-
-## 13. Open questions deferred ke implementation plan
-
-- Exact ESC/POS layout (font size, line width 32/48 char untuk 58mm/80mm)
-- Exact URL scheme syntax RawBT (resolve via spike post-deploy)
-- Format default URL scheme variant: `rawbt:` vs `intent://` Android intent
-- Mekanisme query recent log (Vercel logs API, atau persist subset di tabel)
-- UI styling — selaras dengan migration shadcn (`2026-06-21-shadcn-migration-design.md`) jika sudah landed
+| Supabase Realtime free tier hit | Low | Medium | Monitor, upgrade if needed |
+| Agent app belum ready → queue stuck pending | Medium | High | Phase 1 web only deploy — owner aware no printing yet |
+| Auto-cleanup salah delete | Low | Medium | Test carefully first weeks |
+| Realtime push lambat | Low | Medium | Agent polling fallback bisa ditambah di Spec B |
+| User confused karena print "tidak terjadi" sebelum agent | Medium | Medium | Banner clear: "Agent belum jalan" |

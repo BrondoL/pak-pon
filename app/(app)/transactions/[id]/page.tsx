@@ -17,7 +17,7 @@ export default async function TransactionPage({
 
   const { data: tx } = await supabase
     .from('transactions')
-    .select('id, status, handwritten_total, customer_name, table_no, created_at, scan_image_path')
+    .select('id, status, handwritten_total, customer_name, table_no, created_at, scan_image_path, daily_seq')
     .eq('id', id)
     .is('deleted_at', null)
     .single();
@@ -25,7 +25,7 @@ export default async function TransactionPage({
 
   const { data: items } = await supabase
     .from('transaction_items')
-    .select('id, menu_name_snapshot, unit_price_snapshot, qty, notes, sort_order')
+    .select('id, menu_name_snapshot, unit_price_snapshot, qty, notes, sort_order, menus(category)')
     .eq('transaction_id', id)
     .order('sort_order');
 
@@ -46,8 +46,26 @@ export default async function TransactionPage({
         customer_name: tx.customer_name,
         table_no: tx.table_no,
         created_at: tx.created_at,
+        daily_seq: tx.daily_seq ?? null,
       }}
-      items={items ?? []}
+      items={(items ?? []).map((it) => {
+        const rawMenus = (it as { menus?: unknown }).menus;
+        let category: string | null = null;
+        if (Array.isArray(rawMenus)) {
+          const first = rawMenus[0] as { category?: string } | undefined;
+          category = first?.category ?? null;
+        } else if (rawMenus && typeof rawMenus === 'object') {
+          category = (rawMenus as { category?: string }).category ?? null;
+        }
+        return {
+          id: it.id,
+          menu_name_snapshot: it.menu_name_snapshot,
+          unit_price_snapshot: it.unit_price_snapshot,
+          qty: it.qty,
+          notes: it.notes,
+          menu_category: category,
+        };
+      })}
       scanUrl={scanUrl}
     />
   );

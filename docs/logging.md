@@ -156,3 +156,45 @@ Di Vercel: log otomatis ter-parse sebagai JSON di dashboard Functions → Logs.
   error & slow request)
 - Kalau perlu trace antar request (cth: scan → review → confirm sebagai 1 flow),
   tambah `trace_id` yang dibawa di header `X-Trace-Id`
+
+## Print queue events
+
+Endpoint `POST /api/print/queue` accepts print job dari web client, insert row di `print_queue` table. Supabase Realtime push INSERT events ke Print Agent (Spec B) yang subscribe. Agent process job, PATCH status menuju `done` atau `failed`.
+
+### POST /api/print/queue fields
+
+- `user_id` (uuid) — yang submit job
+- `tx_id` (uuid \| null) — transaksi terkait; null untuk test print
+- `target` (`dapur` \| `minuman`) — printer mana
+- `trigger` (`auto` \| `reprint` \| `test`) — sumber print
+- `bytes_size` (int) — length of bytes_b64 (untuk monitor payload size)
+- `job_id` (uuid) — ID print_queue row yang dibuat (set saat status 201)
+
+### GET /api/print/queue/recent fields
+
+- `limit` (int) — limit parameter (clamped 1-100)
+- `filter_status` (string \| null) — filter param kalau dipakai
+- `rows_count` (int) — jumlah rows returned
+
+### POST /api/print/queue/[id]/retry fields
+
+- `job_id` — id dari path
+- `previous_status` — status sebelum retry
+- `new_status` — status setelah retry (always 'pending' kalau sukses)
+
+### POST /api/print/queue/[id]/cancel fields
+
+Sama dengan retry, tapi `new_status='failed'`, `failure_reason='cancelled by user'`.
+
+### GET /api/agent/heartbeat fields
+
+- `agents_count` — jumlah agent rows
+- `online_count` — jumlah agent dengan `last_seen_at > now() - 2 min`
+
+### Diagnose flow
+
+Dev cek Vercel logs:
+- POST /api/print/queue dengan status 500 → check `error` field untuk DB issue
+- POST /api/print/queue dengan status 400 → check `validation_errors` (schema mismatch)
+- Job stuck `pending` di `print_queue` → agent gak running (cek heartbeat) atau realtime push gagal
+- Job stuck `printing` >5 min → agent crash mid-print
