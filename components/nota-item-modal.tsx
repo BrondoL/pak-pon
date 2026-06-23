@@ -49,12 +49,16 @@ export function NotaItemModal({
 
   function handleSave() {
     if (!selectedMenu || qty < 1) return;
+    // Snapshot follows the selected menu: if kasir picked a different menu mid-edit,
+    // the name + price MUST update. Only preserve old snapshot when menu hasn't changed
+    // (keeps historical price if the menu's master price drifted since first scan).
+    const menuChanged = !initial?.id || initial.menu_id !== selectedMenu.id;
     onSave({
       id: initial?.id,
       _localId: initial?._localId ?? crypto.randomUUID(),
       menu_id: selectedMenu.id,
-      menu_name_snapshot: initial?.menu_name_snapshot ?? selectedMenu.name,
-      unit_price_snapshot: initial?.id ? initial.unit_price_snapshot : selectedMenu.price,
+      menu_name_snapshot: menuChanged ? selectedMenu.name : initial.menu_name_snapshot,
+      unit_price_snapshot: menuChanged ? selectedMenu.price : initial.unit_price_snapshot,
       qty,
       notes: notes.trim() === '' ? null : notes,
       sort_order: initial?.sort_order ?? 0,

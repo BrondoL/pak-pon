@@ -40,20 +40,31 @@ function truncate(s: string, n = 400): string {
   return s.length > n ? s.slice(0, n) + `… [+${s.length - n} chars]` : s;
 }
 
+export type ScanOptions = {
+  // 'flash-then-pro' (default): try Flash, fall back to Pro on failure/empty.
+  // 'pro-only': skip Flash entirely (used by rescan when kasir asks for a more careful re-read).
+  strategy?: 'flash-then-pro' | 'pro-only';
+};
+
 /**
  * OCR sebuah foto nota. Function ini PURE OF SIDE EFFECTS — tidak console.log.
  * Caller dapat seluruh meta (attempts, errors, durations) dan decide apa yang
  * mau di-include di request log.
  *
+ * Default strategy ('flash-then-pro'):
  * - Try PRIMARY_MODEL (Flash) dulu.
  * - Kalau gagal atau hasil kosong, retry dengan FALLBACK_MODEL (Pro).
- * - Never throws. Kalau semua gagal → return EMPTY_RESULT dengan final_model=null.
+ * Pro-only strategy: skip Flash, go straight to Pro (used by rescan).
+ *
+ * Never throws. Kalau semua gagal → return EMPTY_RESULT dengan final_model=null.
  */
 export async function scanNota(
   base64Image: string,
   mimeType: string,
-  menus: MenuRef[]
+  menus: MenuRef[],
+  options: ScanOptions = {}
 ): Promise<ScanNotaResult> {
+  const strategy = options.strategy ?? 'flash-then-pro';
   const schema = buildScanSchema(menus);
   const menuRefText = buildMenuRefText(menus);
   const attempts: ScanAttempt[] = [];
@@ -121,6 +132,14 @@ export async function scanNota(
     attempt.handwritten_total = parsed.data.handwritten_total;
     attempts.push(attempt);
     return parsed.data;
+  }
+
+  if (strategy === 'pro-only') {
+    const proResult = await callModel(FALLBACK_MODEL);
+    return {
+      result: proResult ?? EMPTY_RESULT,
+      meta: { attempts, final_model: proResult ? FALLBACK_MODEL : null, fell_back: false },
+    };
   }
 
   // Try primary

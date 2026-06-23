@@ -100,6 +100,7 @@ export function NotaReviewForm({
   const [handwrittenTotal, setHandwrittenTotal] = useState<number | null>(transaction.handwritten_total);
   const [thousandsDismissed, setThousandsDismissed] = useState(false);
   const [thousandsApplying, setThousandsApplying] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
 
   const menusByName = useMemo(
     () => new Map(menus.map((m) => [m.name, m])),
@@ -161,6 +162,30 @@ export function NotaReviewForm({
       )
     );
     toast.success(`Diganti ke ${newMenu.name}`);
+  }
+
+  async function handleRescan() {
+    const ok = window.confirm(
+      'Rescan akan ganti SEMUA item dengan hasil scan baru (pakai model Pro, lebih teliti tapi lebih lambat). Edit manual yang sudah dilakukan akan hilang. Lanjut?'
+    );
+    if (!ok) return;
+    setRescanning(true);
+    try {
+      const res = await fetch(`/api/transactions/${transaction.id}/rescan`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const data: { error?: string } = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'rescan-failed');
+      }
+      toast.success('Rescan selesai — memuat ulang halaman…');
+      // Hard reload to re-fetch server-rendered data with fresh items/header
+      window.location.reload();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'rescan-failed';
+      toast.error(`Gagal rescan: ${message}. Coba lagi.`);
+      setRescanning(false);
+    }
   }
 
   async function applyThousands() {
@@ -288,7 +313,7 @@ export function NotaReviewForm({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         {scanUrl && (
-          <div className="lg:sticky lg:top-4 lg:self-start">
+          <div className="lg:sticky lg:top-4 lg:self-start space-y-3">
             <Card variant="paper" className="overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -297,6 +322,15 @@ export function NotaReviewForm({
                 className="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
               />
             </Card>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleRescan}
+              disabled={rescanning || pending || thousandsApplying}
+              className="w-full"
+            >
+              {rescanning ? '🔄 Rescanning dengan Pro…' : '🔄 Rescan dengan Pro'}
+            </Button>
           </div>
         )}
 
@@ -402,13 +436,13 @@ export function NotaReviewForm({
             <Button
               variant="secondary"
               onClick={() => router.push('/')}
-              disabled={pending}
+              disabled={pending || rescanning}
             >
               Batal
             </Button>
             <Button
               onClick={handleConfirm}
-              disabled={pending || thousandsApplying || items.length === 0}
+              disabled={pending || thousandsApplying || rescanning || items.length === 0}
               className="flex-1"
             >
               {pending ? 'Menyimpan…' : '✓ Simpan & Cetak'}
