@@ -23,24 +23,36 @@ type Transaction = {
   created_at: string;
 };
 
-async function postPrintLog(args: {
+// Navigation-resilient log POST. sendBeacon survives the Android intent
+// teardown that follows `window.location.href = url`. Falls back to
+// keepalive fetch for environments without sendBeacon (e.g., jsdom).
+function postPrintLogBeacon(args: {
   tx_id: string;
   daily_seq: number | null;
   target: PrinterTarget;
   outcome: 'dispatched';
 }) {
-  try {
-    await fetch('/api/print/log', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...args,
-        trigger: 'auto',
-        url_scheme_variant: 'rawbt-intent-v1',
-        user_agent: navigator.userAgent,
-      }),
-    });
-  } catch { /* swallow */ }
+  const body = JSON.stringify({
+    ...args,
+    trigger: 'auto' as const,
+    url_scheme_variant: 'rawbt-intent-v1',
+    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  });
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    try {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon('/api/print/log', blob);
+      return;
+    } catch {
+      // fall through to fetch fallback
+    }
+  }
+  fetch('/api/print/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {});
 }
 
 function triggerAutoPrint(
@@ -71,13 +83,15 @@ function triggerAutoPrint(
         profile: target === 'dapur' ? 'Dapur' : 'Minuman',
         bytes,
       });
-      window.location.href = url;
-      postPrintLog({
+      // Beacon BEFORE navigation so the dispatched event is flushed
+      // even when the Android intent tears down the page.
+      postPrintLogBeacon({
         tx_id: confirmedTx.id,
         daily_seq: confirmedTx.daily_seq,
         target,
         outcome: 'dispatched',
       });
+      window.location.href = url;
       setPrinterStatus(target, {
         state: 'success',
         last_check: new Date().toISOString(),

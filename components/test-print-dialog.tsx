@@ -25,29 +25,39 @@ function fireTestIntent(target: PrinterTarget) {
   window.location.href = url;
 }
 
-async function postLog(payload: {
+// Navigation-resilient log POST. sendBeacon survives the Android intent
+// teardown that follows `window.location.href = url`. Falls back to
+// keepalive fetch for environments without sendBeacon (e.g., jsdom).
+function postPrintLogBeacon(payload: {
   target: PrinterTarget;
   outcome: 'dispatched' | 'reported_success' | 'reported_failed';
   failure_note?: string;
 }) {
-  try {
-    await fetch('/api/print/log', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tx_id: null, // test print gak terkait tx
-        daily_seq: null,
-        target: payload.target,
-        trigger: 'test',
-        outcome: payload.outcome,
-        failure_note: payload.failure_note,
-        url_scheme_variant: 'rawbt-intent-v1',
-        user_agent: navigator.userAgent,
-      }),
-    });
-  } catch {
-    // Best-effort logging, swallow
+  const body = JSON.stringify({
+    tx_id: null, // test print gak terkait tx
+    daily_seq: null,
+    target: payload.target,
+    trigger: 'test' as const,
+    outcome: payload.outcome,
+    failure_note: payload.failure_note,
+    url_scheme_variant: 'rawbt-intent-v1',
+    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  });
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    try {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon('/api/print/log', blob);
+      return;
+    } catch {
+      // fall through to fetch fallback
+    }
   }
+  fetch('/api/print/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {});
 }
 
 export function TestPrintDialog({
@@ -61,8 +71,9 @@ export function TestPrintDialog({
   const [failureNote, setFailureNote] = useState('');
 
   function handleFire() {
+    // Beacon BEFORE navigation so it survives Android intent teardown.
+    postPrintLogBeacon({ target, outcome: 'dispatched' });
     fireTestIntent(target);
-    postLog({ target, outcome: 'dispatched' });
     setPhase('awaiting_confirm');
   }
 
@@ -72,7 +83,7 @@ export function TestPrintDialog({
       last_check: new Date().toISOString(),
       last_outcome_note: 'test print success',
     });
-    postLog({ target, outcome: 'reported_success' });
+    postPrintLogBeacon({ target, outcome: 'reported_success' });
     onClose();
   }
 
@@ -81,8 +92,8 @@ export function TestPrintDialog({
   }
 
   function handleRetry() {
+    postPrintLogBeacon({ target, outcome: 'dispatched' });
     fireTestIntent(target);
-    postLog({ target, outcome: 'dispatched' });
     setPhase('awaiting_confirm');
     setFailureNote('');
   }
@@ -93,7 +104,7 @@ export function TestPrintDialog({
       last_check: new Date().toISOString(),
       last_outcome_note: failureNote || 'test print failed',
     });
-    postLog({ target, outcome: 'reported_failed', failure_note: failureNote || undefined });
+    postPrintLogBeacon({ target, outcome: 'reported_failed', failure_note: failureNote || undefined });
     onClose();
   }
 
@@ -101,9 +112,9 @@ export function TestPrintDialog({
 
   if (phase === 'idle') {
     return (
-      <div className="space-y-3 rounded-md border bg-card p-4">
-        <h3 className="font-medium">Cetak tes printer {label}</h3>
-        <p className="text-sm text-muted-foreground">
+      <div className="space-y-3 rounded-md border border-clay-soft bg-paper-soft p-4">
+        <h3 className="font-medium text-coal">Cetak tes printer {label}</h3>
+        <p className="text-sm text-coal-soft">
           Pastikan kertas terpasang, lalu tekan tombol di bawah.
         </p>
         <button
@@ -118,21 +129,21 @@ export function TestPrintDialog({
 
   if (phase === 'awaiting_confirm') {
     return (
-      <div className="space-y-3 rounded-md border bg-card p-4">
-        <h3 className="font-medium">Apakah kertas keluar?</h3>
-        <p className="text-sm text-muted-foreground">
+      <div className="space-y-3 rounded-md border border-clay-soft bg-paper-soft p-4">
+        <h3 className="font-medium text-coal">Apakah kertas keluar?</h3>
+        <p className="text-sm text-coal-soft">
           Bertuliskan &quot;TES PRINTER {label}&quot;
         </p>
         <div className="flex gap-2">
           <button
             onClick={handleSuccess}
-            className="flex-1 rounded-md bg-green-600 px-4 py-2 text-white"
+            className="flex-1 rounded-md bg-leaf px-4 py-2 text-white"
           >
             ✓ Berhasil
           </button>
           <button
             onClick={handleFailedClicked}
-            className="flex-1 rounded-md border border-red-300 px-4 py-2 text-red-700"
+            className="flex-1 rounded-md border border-brick-soft px-4 py-2 text-brick"
           >
             ✗ Gagal
           </button>
@@ -142,22 +153,22 @@ export function TestPrintDialog({
   }
 
   return (
-    <div className="space-y-3 rounded-md border bg-card p-4">
-      <h3 className="font-medium">Apa yang terjadi?</h3>
+    <div className="space-y-3 rounded-md border border-clay-soft bg-paper-soft p-4">
+      <h3 className="font-medium text-coal">Apa yang terjadi?</h3>
       <textarea
         value={failureNote}
         onChange={(e) => setFailureNote(e.target.value)}
         placeholder="Kertas tidak keluar, error, dll (opsional)"
-        className="w-full rounded-md border p-2 text-sm"
+        className="w-full rounded-md border border-clay-soft p-2 text-sm text-coal"
         rows={3}
       />
       <div className="flex gap-2">
-        <button onClick={handleRetry} className="flex-1 rounded-md border px-4 py-2">
+        <button onClick={handleRetry} className="flex-1 rounded-md border border-clay-soft px-4 py-2 text-coal">
           Coba Lagi
         </button>
         <button
           onClick={handleCloseAsFailed}
-          className="flex-1 rounded-md bg-red-600 px-4 py-2 text-white"
+          className="flex-1 rounded-md bg-brick px-4 py-2 text-white"
         >
           Tutup
         </button>

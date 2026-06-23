@@ -16,7 +16,13 @@ describe('<TestPrintDialog />', () => {
       writable: true,
       configurable: true,
     });
-    // Mock fetch for /api/print/log
+    // sendBeacon is the navigation-resilient log path — mock it for jsdom.
+    Object.defineProperty(navigator, 'sendBeacon', {
+      value: vi.fn(() => true),
+      writable: true,
+      configurable: true,
+    });
+    // Mock fetch fallback for /api/print/log
     global.fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))) as unknown as typeof fetch;
   });
 

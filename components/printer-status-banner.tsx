@@ -55,13 +55,13 @@ export function PrinterStatusBanner() {
     return (
       <div
         data-testid="printer-banner"
-        className="mx-4 my-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900"
+        className="mx-4 my-2 rounded-md border border-brick-soft bg-brick-faint p-3 text-sm text-brick-dark"
       >
         <div className="flex items-center justify-between gap-2">
           <span>{msg}</span>
           <Link
             href="/setup/printer"
-            className="rounded bg-red-600 px-3 py-1 text-xs font-medium text-white"
+            className="rounded bg-brick px-3 py-1 text-xs font-medium text-white"
           >
             Setup printer
           </Link>
@@ -73,7 +73,7 @@ export function PrinterStatusBanner() {
   return (
     <div
       data-testid="printer-banner"
-      className="mx-4 my-2 rounded-md border border-yellow-300 bg-yellow-50 p-2 text-xs text-yellow-900"
+      className="mx-4 my-2 rounded-md border border-clay-soft bg-mustard-faint p-2 text-xs text-gold-dark"
     >
       <div className="flex items-center justify-between gap-2">
         <span>Sudah lama tidak dites — coba tes printer?</span>

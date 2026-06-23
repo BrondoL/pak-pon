@@ -5,7 +5,7 @@ import { getPrinterStatus, type PrinterStatusMap } from '@/lib/printer-status';
 
 type PrintEvent = {
   id: string;
-  tx_id: string;
+  tx_id: string | null;
   daily_seq: number | null;
   target: 'dapur' | 'minuman';
   trigger: 'auto' | 'reprint' | 'test';
@@ -40,23 +40,23 @@ export default function PrinterDebugPage() {
 
       <section className="space-y-2">
         <h2 className="text-lg font-medium">Status (localStorage)</h2>
-        <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto">
+        <pre className="rounded-md bg-clay-mist p-3 text-xs overflow-x-auto text-coal">
 {JSON.stringify(status, null, 2)}
         </pre>
       </section>
 
       <section className="space-y-2">
         <h2 className="text-lg font-medium">Recent print events (server)</h2>
-        {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
-        {error && <p className="text-sm text-red-600">Error: {error}</p>}
+        {loading && <p className="text-sm text-coal-soft">Loading...</p>}
+        {error && <p className="text-sm text-brick">Error: {error}</p>}
         {!loading && !error && events.length === 0 && (
-          <p className="text-sm text-muted-foreground">Belum ada event.</p>
+          <p className="text-sm text-coal-soft">Belum ada event.</p>
         )}
         {!loading && events.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b">
+                <tr className="border-b border-clay-soft">
                   <th className="text-left p-2">Time</th>
                   <th className="text-left p-2">Target</th>
                   <th className="text-left p-2">Trigger</th>
@@ -66,7 +66,7 @@ export default function PrinterDebugPage() {
               </thead>
               <tbody>
                 {events.map((e) => (
-                  <tr key={e.id} className="border-b">
+                  <tr key={e.id} className="border-b border-clay-soft">
                     <td className="p-2">{new Date(e.created_at).toLocaleString('id-ID')}</td>
                     <td className="p-2">{e.target}</td>
                     <td className="p-2">{e.trigger}</td>
@@ -80,9 +80,9 @@ export default function PrinterDebugPage() {
         )}
       </section>
 
-      <section className="space-y-2 pt-4 border-t">
+      <section className="space-y-2 pt-4 border-t border-clay-soft">
         <h2 className="text-lg font-medium">User Agent</h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-coal-soft">
           {typeof window !== 'undefined' ? window.navigator.userAgent : '(SSR)'}
         </p>
       </section>

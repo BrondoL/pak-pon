@@ -17,27 +17,37 @@ function profileForTarget(target: PrinterTarget): string {
   return target === 'dapur' ? 'Dapur' : 'Minuman';
 }
 
-async function postLog(payload: {
-  tx_id: string;
+// Navigation-resilient log POST. sendBeacon survives the Android intent
+// teardown that follows `window.location.href = url`. Falls back to
+// keepalive fetch for environments without sendBeacon (e.g., jsdom).
+function postPrintLogBeacon(payload: {
+  tx_id: string | null;
   daily_seq: number | null;
   target: PrinterTarget;
+  trigger: 'auto' | 'reprint' | 'test';
   outcome: 'dispatched' | 'reported_success' | 'reported_failed';
-  trigger: 'reprint';
   failure_note?: string;
 }) {
-  try {
-    await fetch('/api/print/log', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...payload,
-        url_scheme_variant: 'rawbt-intent-v1',
-        user_agent: navigator.userAgent,
-      }),
-    });
-  } catch {
-    // best-effort
+  const body = JSON.stringify({
+    ...payload,
+    url_scheme_variant: 'rawbt-intent-v1',
+    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  });
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    try {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon('/api/print/log', blob);
+      return;
+    } catch {
+      // fall through to fetch fallback
+    }
   }
+  fetch('/api/print/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {});
 }
 
 export function ReprintCard({
@@ -47,7 +57,10 @@ export function ReprintCard({
   transaction: TxBase;
   items: TransactionItemForPrint[];
 }) {
-  const [pending, setPending] = useState<PrinterTarget | null>(null);
+  // Queue of targets awaiting user confirmation. After firing each intent
+  // we push the target; user confirm shifts the head. This lets
+  // "Cetak Keduanya" sequentially confirm dapur THEN minuman.
+  const [pendingQueue, setPendingQueue] = useState<PrinterTarget[]>([]);
   const split = splitItemsByTarget(items);
   const hasDapur = split.dapur.length > 0;
   const hasMinuman = split.minuman.length > 0;
@@ -68,15 +81,17 @@ export function ReprintCard({
       })),
     });
     const url = buildRawBtIntentUrl({ profile: profileForTarget(target), bytes });
-    window.location.href = url;
-    postLog({
+    // Enqueue the beacon BEFORE navigation so the request is flushed
+    // even when the Android intent tears down the page.
+    postPrintLogBeacon({
       tx_id: transaction.id,
       daily_seq: transaction.daily_seq,
       target,
       trigger: 'reprint',
       outcome: 'dispatched',
     });
-    setPending(target);
+    setPendingQueue((q) => [...q, target]);
+    window.location.href = url;
   }
 
   function fireBoth() {
@@ -88,49 +103,52 @@ export function ReprintCard({
   }
 
   function confirmSuccess() {
-    if (!pending) return;
-    setPrinterStatus(pending, {
+    const target = pendingQueue[0];
+    if (!target) return;
+    setPrinterStatus(target, {
       state: 'success',
       last_check: new Date().toISOString(),
-      last_outcome_note: `reprint ${pending}`,
+      last_outcome_note: `reprint ${target}`,
     });
-    postLog({
+    postPrintLogBeacon({
       tx_id: transaction.id,
       daily_seq: transaction.daily_seq,
-      target: pending,
+      target,
       trigger: 'reprint',
       outcome: 'reported_success',
     });
-    setPending(null);
+    setPendingQueue((q) => q.slice(1));
   }
 
   function confirmFailed() {
-    if (!pending) return;
-    setPrinterStatus(pending, {
+    const target = pendingQueue[0];
+    if (!target) return;
+    setPrinterStatus(target, {
       state: 'failed',
       last_check: new Date().toISOString(),
-      last_outcome_note: `reprint ${pending} failed`,
+      last_outcome_note: `reprint ${target} failed`,
     });
-    postLog({
+    postPrintLogBeacon({
       tx_id: transaction.id,
       daily_seq: transaction.daily_seq,
-      target: pending,
+      target,
       trigger: 'reprint',
       outcome: 'reported_failed',
     });
-    setPending(null);
+    setPendingQueue((q) => q.slice(1));
   }
 
-  if (pending) {
+  if (pendingQueue.length > 0) {
+    const current = pendingQueue[0];
     return (
-      <div className="rounded-md border bg-card p-4 space-y-3">
-        <h3 className="font-medium">Cetak ulang ke {pending.toUpperCase()}</h3>
-        <p className="text-sm">Apakah kertas keluar?</p>
+      <div className="rounded-md border border-clay-soft bg-paper-soft p-4 space-y-3">
+        <h3 className="font-medium text-coal">Cetak ulang ke {current.toUpperCase()}</h3>
+        <p className="text-sm text-coal-soft">Apakah kertas keluar?</p>
         <div className="flex gap-2">
-          <button onClick={confirmSuccess} className="flex-1 rounded-md bg-green-600 px-4 py-2 text-white">
+          <button onClick={confirmSuccess} className="flex-1 rounded-md bg-leaf px-4 py-2 text-white">
             ✓ Berhasil
           </button>
-          <button onClick={confirmFailed} className="flex-1 rounded-md border border-red-300 px-4 py-2 text-red-700">
+          <button onClick={confirmFailed} className="flex-1 rounded-md border border-brick-soft px-4 py-2 text-brick">
             ✗ Gagal
           </button>
         </div>
@@ -139,20 +157,20 @@ export function ReprintCard({
   }
 
   return (
-    <div className="rounded-md border bg-card p-4 space-y-3">
-      <h3 className="font-medium">Cetak ulang</h3>
+    <div className="rounded-md border border-clay-soft bg-paper-soft p-4 space-y-3">
+      <h3 className="font-medium text-coal">Cetak ulang</h3>
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => fireFor('dapur')}
           disabled={!hasDapur}
-          className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+          className="rounded-md border border-clay-soft px-3 py-2 text-sm text-coal disabled:opacity-50"
         >
           Cetak Dapur
         </button>
         <button
           onClick={() => fireFor('minuman')}
           disabled={!hasMinuman}
-          className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+          className="rounded-md border border-clay-soft px-3 py-2 text-sm text-coal disabled:opacity-50"
         >
           Cetak Minuman
         </button>

@@ -12,7 +12,7 @@ export default function SetupPrinterPage() {
 
       <section className="space-y-3">
         <h2 className="text-lg font-medium">1. Install aplikasi RawBT</h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-coal-soft">
           RawBT adalah aplikasi gratis untuk Android yang menyambungkan web app ini ke printer thermal LAN.
         </p>
         <a
@@ -50,13 +50,13 @@ export default function SetupPrinterPage() {
           <div className="flex gap-2">
             <button
               onClick={() => setActiveTest('dapur')}
-              className="flex-1 rounded-md border px-4 py-2"
+              className="flex-1 rounded-md border border-clay-soft px-4 py-2 text-coal"
             >
               Tes Printer Dapur
             </button>
             <button
               onClick={() => setActiveTest('minuman')}
-              className="flex-1 rounded-md border px-4 py-2"
+              className="flex-1 rounded-md border border-clay-soft px-4 py-2 text-coal"
             >
               Tes Printer Minuman
             </button>
@@ -70,9 +70,9 @@ export default function SetupPrinterPage() {
         )}
       </section>
 
-      <section className="space-y-3 pt-4 border-t">
+      <section className="space-y-3 pt-4 border-t border-clay-soft">
         <h2 className="text-lg font-medium">Bermasalah?</h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-coal-soft">
           Cek halaman diagnostic untuk lihat history print event.
         </p>
         <a href="/setup/printer/debug" className="text-sm underline">

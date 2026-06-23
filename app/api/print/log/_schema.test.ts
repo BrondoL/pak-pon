@@ -3,7 +3,7 @@ import { PrintLogSchema } from './_schema';
 
 describe('PrintLogSchema', () => {
   const valid = {
-    tx_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    tx_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     daily_seq: 42,
     target: 'dapur',
     trigger: 'auto',
