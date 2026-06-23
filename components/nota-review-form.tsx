@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
 import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
+import type { ThousandsHint } from '@/lib/total-parser';
 
 type Transaction = {
   id: string;
@@ -80,11 +81,13 @@ export function NotaReviewForm({
   initialItems,
   menus,
   scanUrl,
+  suggestThousands,
 }: {
   transaction: Transaction;
   initialItems: Omit<NotaItem, '_localId'>[];
   menus: MenuOption[];
   scanUrl: string | null;
+  suggestThousands: ThousandsHint;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<NotaItem[]>(
@@ -96,14 +99,26 @@ export function NotaReviewForm({
   const [adding, setAdding] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [handwrittenTotal, setHandwrittenTotal] = useState<number | null>(transaction.handwritten_total);
+  const [thousandsDismissed, setThousandsDismissed] = useState(false);
+  const [thousandsApplying, setThousandsApplying] = useState(false);
+
+  const menusByName = useMemo(
+    () => new Map(menus.map((m) => [m.name, m])),
+    [menus]
+  );
 
   const computedSum = items.reduce(
     (acc, it) => acc + it.unit_price_snapshot * it.qty,
     0
   );
-  const mismatch =
-    !!transaction.handwritten_total &&
-    transaction.handwritten_total !== computedSum;
+  const mismatch = !!handwrittenTotal && handwrittenTotal !== computedSum;
+
+  const showThousandsBanner =
+    suggestThousands.suggest &&
+    !thousandsDismissed &&
+    handwrittenTotal !== null &&
+    handwrittenTotal < 1000;
 
   function upsertItem(item: NotaItem) {
     setItems((prev) => {
@@ -125,6 +140,47 @@ export function NotaReviewForm({
     setEditing(null);
   }
 
+  function swapMenu(localId: string, newMenu: MenuOption) {
+    setItems((prev) =>
+      prev.map((it) =>
+        it._localId === localId
+          ? {
+              ...it,
+              menu_id: newMenu.id,
+              menu_name_snapshot: newMenu.name,
+              unit_price_snapshot: newMenu.price,
+              confidence: null,
+              alternatives: [],
+            }
+          : it
+      )
+    );
+    toast.success(`Diganti ke ${newMenu.name}`);
+  }
+
+  async function applyThousands() {
+    if (!suggestThousands.suggest) return;
+    const newTotal = suggestThousands.suggested_total;
+    setThousandsApplying(true);
+    try {
+      const res = await fetch(`/api/transactions/${transaction.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handwritten_total: newTotal }),
+      });
+      if (!res.ok) {
+        throw new Error('patch-failed');
+      }
+      setHandwrittenTotal(newTotal);
+      setThousandsDismissed(true);
+      toast.success(`Total disesuaikan ke ${formatRp(newTotal)}`);
+    } catch {
+      toast.error('Gagal update total. Coba lagi.');
+    } finally {
+      setThousandsApplying(false);
+    }
+  }
+
   async function handleConfirm() {
     setSubmitError(null);
     const payload = {
@@ -137,6 +193,8 @@ export function NotaReviewForm({
         qty: it.qty,
         notes: it.notes,
         sort_order: idx,
+        confidence: it.confidence,
+        alternatives: it.alternatives ?? [],
       })),
     };
     try {
@@ -160,7 +218,6 @@ export function NotaReviewForm({
         items: Array<{ id: string; menu_id: string; menu_name_snapshot: string; qty: number; notes: string | null }>;
       };
 
-      // Lookup category dari `menus` prop pakai menu_id
       const itemsForQueue: ItemForQueue[] = data.items.map((it) => {
         const menu = menus.find((m) => m.id === it.menu_id);
         return {
@@ -220,12 +277,11 @@ export function NotaReviewForm({
           Periksa <span className="italic">nota</span>
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-coal-soft">
-          Pastikan item dan jumlah sudah benar. Klik ✏️ untuk edit, 🗑️ untuk hapus.
+          Pastikan item dan jumlah sudah benar. Item kuning/merah perlu lebih teliti. Klik chip alternatif untuk ganti menu cepat.
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        {/* Left: foto nota (sticky on lg+) */}
         {scanUrl && (
           <div className="lg:sticky lg:top-4 lg:self-start">
             <Card variant="paper" className="overflow-hidden">
@@ -239,7 +295,6 @@ export function NotaReviewForm({
           </div>
         )}
 
-        {/* Right: form */}
         <div className="space-y-6">
           <Card variant="paper" className="p-5">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -266,14 +321,32 @@ export function NotaReviewForm({
             </div>
           </Card>
 
+          {showThousandsBanner && suggestThousands.suggest && (
+            <div
+              className="rounded-md border border-mustard/40 bg-mustard-faint px-4 py-3 text-sm text-coal"
+              role="alert"
+            >
+              💡 Total tertulis <strong>{formatRp(handwrittenTotal!)}</strong>.
+              Mungkin maksudnya <strong>{formatRp(suggestThousands.suggested_total)}</strong>?
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" onClick={applyThousands} disabled={thousandsApplying}>
+                  {thousandsApplying ? 'Menyimpan…' : `Pakai ${formatRp(suggestThousands.suggested_total)}`}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setThousandsDismissed(true)}>
+                  Tetap {formatRp(handwrittenTotal!)}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {mismatch && (
             <div
               className="rounded-md border border-mustard/40 bg-mustard-faint px-4 py-3 text-sm text-coal"
               role="alert"
             >
-              ⚠️ Total tulisan tangan {formatRp(transaction.handwritten_total!)} berbeda
+              ⚠️ Total tulisan tangan {formatRp(handwrittenTotal!)} berbeda
               dari perhitungan item {formatRp(computedSum)}. Selisih{' '}
-              <strong>{formatRp(Math.abs(transaction.handwritten_total! - computedSum))}</strong>.
+              <strong>{formatRp(Math.abs(handwrittenTotal! - computedSum))}</strong>.
               Periksa lagi sebelum menyimpan.
             </div>
           )}
@@ -289,8 +362,10 @@ export function NotaReviewForm({
                 <NotaItemRow
                   key={it._localId}
                   item={it}
+                  menusByName={menusByName}
                   onEdit={() => setEditing(it)}
                   onDelete={() => removeItem(it._localId)}
+                  onSwapMenu={swapMenu}
                 />
               ))}
             </ul>
