@@ -58,6 +58,8 @@ export function NotaItemModal({
       qty,
       notes: notes.trim() === '' ? null : notes,
       sort_order: initial?.sort_order ?? 0,
+      confidence: null,
+      alternatives: [],
     });
   }
 

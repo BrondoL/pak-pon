@@ -3,6 +3,11 @@
 import { Button } from '@/components/ui/button';
 import { formatRp } from '@/lib/currency';
 
+export type Alternative = {
+  menu_name: string;
+  confidence: number;
+};
+
 export type NotaItem = {
   id?: string;
   menu_id: string;
@@ -11,6 +16,8 @@ export type NotaItem = {
   qty: number;
   notes: string | null;
   sort_order: number;
+  confidence: number | null;
+  alternatives: Alternative[] | null;
   _localId: string;
 };
 
