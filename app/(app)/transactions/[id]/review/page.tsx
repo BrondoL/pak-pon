@@ -2,7 +2,6 @@ import { notFound } from 'next/navigation';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { NotaReviewForm } from '@/components/nota-review-form';
 import type { MenuOption } from '@/components/nota-item-modal';
-import { detectThousandsMissing } from '@/lib/total-parser';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,12 +46,6 @@ export default async function ReviewPage({
     scanUrl = signed?.signedUrl ?? null;
   }
 
-  const computedSum = (items ?? []).reduce(
-    (acc, it) => acc + it.qty * it.unit_price_snapshot,
-    0
-  );
-  const suggestThousands = detectThousandsMissing(tx.handwritten_total, computedSum);
-
   return (
     <NotaReviewForm
       transaction={{
@@ -66,7 +59,6 @@ export default async function ReviewPage({
       initialItems={items ?? []}
       menus={menus}
       scanUrl={scanUrl}
-      suggestThousands={suggestThousands}
     />
   );
 }

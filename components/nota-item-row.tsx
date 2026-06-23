@@ -2,12 +2,10 @@
 
 import { Button } from '@/components/ui/button';
 import { formatRp } from '@/lib/currency';
+import type { Alternative } from '@/lib/transactions';
 import type { MenuOption } from './nota-item-modal';
 
-export type Alternative = {
-  menu_name: string;
-  confidence: number;
-};
+export type { Alternative };
 
 export type NotaItem = {
   id?: string;

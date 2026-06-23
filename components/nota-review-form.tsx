@@ -11,7 +11,7 @@ import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
 import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
-import type { ThousandsHint } from '@/lib/total-parser';
+import { detectThousandsMissing } from '@/lib/total-parser';
 
 type Transaction = {
   id: string;
@@ -81,13 +81,11 @@ export function NotaReviewForm({
   initialItems,
   menus,
   scanUrl,
-  suggestThousands,
 }: {
   transaction: Transaction;
   initialItems: Omit<NotaItem, '_localId'>[];
   menus: MenuOption[];
   scanUrl: string | null;
-  suggestThousands: ThousandsHint;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<NotaItem[]>(
@@ -113,6 +111,13 @@ export function NotaReviewForm({
     0
   );
   const mismatch = !!handwrittenTotal && handwrittenTotal !== computedSum;
+
+  // Recompute every render so banner reacts to live item edits, not just
+  // the server-rendered snapshot.
+  const suggestThousands = useMemo(
+    () => detectThousandsMissing(handwrittenTotal, computedSum),
+    [handwrittenTotal, computedSum]
+  );
 
   const showThousandsBanner =
     suggestThousands.suggest &&
@@ -403,7 +408,7 @@ export function NotaReviewForm({
             </Button>
             <Button
               onClick={handleConfirm}
-              disabled={pending || items.length === 0}
+              disabled={pending || thousandsApplying || items.length === 0}
               className="flex-1"
             >
               {pending ? 'Menyimpan…' : '✓ Simpan & Cetak'}
