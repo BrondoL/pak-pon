@@ -63,7 +63,11 @@ export function NotaItemRow({
       menusByName.has(alt.menu_name)
   );
 
-  const showAlts = tier !== null && validAlts.length > 0;
+  // Show alts whenever AI bothered to suggest them — even on high-confidence items.
+  // Rationale: AI's self-reported confidence is unreliable on look-alike pairs
+  // (goreng/bakar). If AI noticed an alt is plausible, surfacing it is cheap and
+  // gives kasir a one-click correction option.
+  const showAlts = validAlts.length > 0;
 
   return (
     <li className={['px-5 py-3.5', tierClass?.row ?? ''].join(' ')}>

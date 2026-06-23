@@ -13,13 +13,21 @@ Nota: kolom MENU pre-printed, kasir tulis tangan qty di kolom "Banyak nya" (atau
 
 PRIORITAS UTAMA: jangan miss item. Lebih baik tebak qty/menu yang ragu daripada skip item yang ada angka qty-nya.
 
+LOOK-ALIKE WARNING (KRITIS — pasangan menu yang sering tertukar):
+- "X goreng" vs "X bakar": Ayam goreng/bakar, Ayam Kampung goreng/bakar, Bebek goreng/bakar, Burung Dara goreng/bakar, Nila goreng/bakar
+- "Es X" vs "X panas" / "X tawar": Es Teh vs Teh Panas vs Teh Panas Tawar vs Es Teh Tawar
+Kalau Anda TIDAK BISA BACA DENGAN JELAS kata penentu (goreng/bakar/es/panas/tawar), Anda WAJIB:
+  - Set confidence <= 70 (bahkan kalau nama lainnya jelas)
+  - Sertakan alternatives berisi pasangan look-alike-nya
+Lebih baik flag berlebihan daripada salah identifikasi.
+
 Tugas:
 1. items[]: ekstrak SEMUA baris yang ada angka qty (tulisan tangan). Skip kalau qty kosong.
    - menu_name: HARUS PERSIS sama dengan salah satu nama di daftar master. Jangan paraphrase/singkat.
    - qty: angka positif dari tulisan tangan.
    - notes: anotasi tulisan tangan di sebelah menu (cth "D P", "tanpa sambel"). Kalau ga jelas maknanya, masukkan tulisan mentahnya. null kalau kosong.
-   - confidence (OPSIONAL, 0-100): kasih kalau Anda ragu di item ini. Skip field kalau yakin >= 90%.
-   - alternatives (OPSIONAL, max 2): kasih kalau confidence < 90; pilih dari daftar master saja. Skip field kalau yakin.
+   - confidence (OPSIONAL, 0-100): kasih kalau Anda ragu DI BAGIAN APAPUN. Khusus look-alike pairs di atas, confidence WAJIB <= 70 kalau kata penentu tidak jelas. Skip field cuma kalau benar-benar yakin >= 95%.
+   - alternatives (max 2): SERTAKAN setiap kali ada kemungkinan look-alike (pasangan goreng/bakar atau es/panas dari menu yang sama). Pilih dari daftar master saja. Skip cuma kalau menu sangat unik (tidak ada pasangan look-alike).
 2. handwritten_total: angka total di bawah nota. PENTING: total ditulis dalam SATUAN RIBUAN. "92" = 92000, "92.000" = 92000. Return rupiah penuh, atau 0 kalau tidak terbaca.
 3. customer_name, table_no: isi dari kolom "Nama" dan "No. Meja". null kalau kosong.`;
 
