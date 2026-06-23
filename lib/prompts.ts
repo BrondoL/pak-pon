@@ -56,7 +56,8 @@ export function buildScanSchema(menus: MenuRef[]) {
         alternatives: z.array(
           z.object({
             menu_name: menuNameSchema,
-            confidence: confidenceSchema,
+            // Optional — Gemini sometimes omits per-alt confidence. UI doesn't display it.
+            confidence: confidenceSchema.optional(),
           })
         ).max(2),
       })

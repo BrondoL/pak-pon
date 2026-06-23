@@ -6,7 +6,7 @@ export type MenuRef = {
 
 export type Alternative = {
   menu_name: string;
-  confidence: number;
+  confidence?: number;
 };
 
 export type ExistingItem = {

@@ -64,6 +64,8 @@ export async function scanNota(
 
     let response;
     try {
+      // Flash supports thinkingBudget: 0 (fast mode). Pro 2.5 rejects budget 0 — it requires thinking.
+      const isFlash = model.includes('flash');
       response = await client.models.generateContent({
         model,
         contents: [
@@ -77,7 +79,7 @@ export async function scanNota(
         ],
         config: {
           responseMimeType: 'application/json',
-          thinkingConfig: { thinkingBudget: 0 },
+          ...(isFlash ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
         },
       });
     } catch (err) {

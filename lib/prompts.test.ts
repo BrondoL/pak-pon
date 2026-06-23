@@ -118,6 +118,23 @@ describe('buildScanSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts alternative without confidence (Gemini sometimes omits it)', () => {
+    const schema = buildScanSchema(sampleMenus);
+    const result = schema.safeParse({
+      items: [{
+        menu_name: 'Pecel Lele',
+        qty: 1,
+        notes: null,
+        confidence: 85,
+        alternatives: [{ menu_name: 'Es Teh' }],
+      }],
+      handwritten_total: 0,
+      customer_name: null,
+      table_no: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('rejects alternative with menu_name not in master list', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({

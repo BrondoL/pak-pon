@@ -12,7 +12,7 @@ const NOT_FOUND_CODE = 'PGRST116';
 
 const AlternativeSchema = z.object({
   menu_name: z.string(),
-  confidence: z.number().int().min(0).max(100),
+  confidence: z.number().int().min(0).max(100).optional(),
 });
 
 const PatchSchema = z.object({
