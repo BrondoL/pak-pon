@@ -128,3 +128,15 @@ export function renderTicket(input: TicketInput): Uint8Array {
 
   return concat(...parts);
 }
+
+/**
+ * Convert Uint8Array ke base64 string. Browser-safe (no Node Buffer).
+ * Cocok untuk encode ESC/POS bytes ke text yang aman dikirim via JSON/URL.
+ */
+export function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}

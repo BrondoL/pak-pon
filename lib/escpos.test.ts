@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderTicket, type TicketInput } from './escpos';
+import { renderTicket, uint8ToBase64, type TicketInput } from './escpos';
 
 const baseInput: TicketInput = {
   target: 'dapur',
@@ -65,5 +65,23 @@ describe('renderTicket', () => {
     const last5 = Array.from(bytes.slice(-5));
     expect(last5).toContain(0x1d);
     expect(last5).toContain(0x56);
+  });
+});
+
+describe('uint8ToBase64', () => {
+  it('encodes empty array as empty string', () => {
+    expect(uint8ToBase64(new Uint8Array([]))).toBe('');
+  });
+
+  it('encodes simple ASCII bytes', () => {
+    expect(uint8ToBase64(new Uint8Array([0x48, 0x49]))).toBe('SEk=');
+  });
+
+  it('encodes ESC/POS control bytes round-trip', () => {
+    expect(uint8ToBase64(new Uint8Array([0x1b, 0x40, 0x48, 0x49]))).toBe('G0BISQ==');
+  });
+
+  it('encodes high-byte (>0x7f) correctly', () => {
+    expect(uint8ToBase64(new Uint8Array([0xff]))).toBe('/w==');
   });
 });
