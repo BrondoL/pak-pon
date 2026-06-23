@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRawBtIntentUrl, splitItemsByTarget } from './print-intent';
+import { buildRawBtIntentUrl, splitItemsByTarget, type TransactionItemForPrint } from './print-intent';
 
 describe('buildRawBtIntentUrl', () => {
   const dummyBytes = new Uint8Array([0x1b, 0x40, 0x48, 0x49]); // "HI" with init
@@ -28,7 +28,7 @@ describe('buildRawBtIntentUrl', () => {
 });
 
 describe('splitItemsByTarget', () => {
-  const items = [
+  const items: TransactionItemForPrint[] = [
     { id: '1', menu_name_snapshot: 'Ayam Goreng', menu_category: 'makanan', qty: 2, notes: null },
     { id: '2', menu_name_snapshot: 'Nasi Putih', menu_category: 'nasi', qty: 1, notes: null },
     { id: '3', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', qty: 1, notes: null },
@@ -49,7 +49,7 @@ describe('splitItemsByTarget', () => {
   it('returns empty array for target without items', () => {
     const { dapur, minuman } = splitItemsByTarget([
       { id: '1', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', qty: 1, notes: null },
-    ]);
+    ] satisfies TransactionItemForPrint[]);
     expect(dapur).toEqual([]);
     expect(minuman).toHaveLength(1);
   });
