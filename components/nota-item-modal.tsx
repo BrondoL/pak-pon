@@ -21,6 +21,13 @@ export type MenuOption = {
   price: number;
 };
 
+const CATEGORY_ORDER: MenuOption['category'][] = ['makanan', 'nasi', 'minuman'];
+const CATEGORY_LABEL: Record<MenuOption['category'], string> = {
+  makanan: '🍛 Makanan',
+  nasi: '🍚 Nasi',
+  minuman: '🥤 Minuman',
+};
+
 export function NotaItemModal({
   initial,
   menus,
@@ -44,6 +51,13 @@ export function NotaItemModal({
     if (!s) return menus;
     return menus.filter((m) => m.name.toLowerCase().includes(s));
   }, [search, menus]);
+
+  const groupedMenus = useMemo(() => {
+    return CATEGORY_ORDER.map((cat) => ({
+      category: cat,
+      items: filteredMenus.filter((m) => m.category === cat),
+    })).filter((g) => g.items.length > 0);
+  }, [filteredMenus]);
 
   const selectedMenu = menus.find((m) => m.id === menuId);
 
@@ -91,27 +105,34 @@ export function NotaItemModal({
             />
           </div>
 
-          <div className="max-h-48 overflow-y-auto rounded-md border border-clay-soft">
-            {filteredMenus.length === 0 && (
+          <div className="max-h-64 overflow-y-auto rounded-md border border-clay-soft">
+            {groupedMenus.length === 0 && (
               <p className="px-3 py-4 text-center text-sm text-clay">Tidak ada menu cocok.</p>
             )}
-            {filteredMenus.map((m) => {
-              const active = m.id === menuId;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setMenuId(m.id)}
-                  className={[
-                    'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors',
-                    active ? 'bg-gold-faint text-coal' : 'hover:bg-cream',
-                  ].join(' ')}
-                >
-                  <span>{m.name}</span>
-                  <span className="text-clay">{formatRp(m.price)}</span>
-                </button>
-              );
-            })}
+            {groupedMenus.map((group) => (
+              <div key={group.category}>
+                <div className="sticky top-0 z-10 border-b border-clay-soft/60 bg-cream px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-clay">
+                  {CATEGORY_LABEL[group.category]}
+                </div>
+                {group.items.map((m) => {
+                  const active = m.id === menuId;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMenuId(m.id)}
+                      className={[
+                        'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors',
+                        active ? 'bg-gold-faint text-coal' : 'hover:bg-cream',
+                      ].join(' ')}
+                    >
+                      <span>{m.name}</span>
+                      <span className="text-clay">{formatRp(m.price)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
 
           <div>
