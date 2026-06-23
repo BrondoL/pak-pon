@@ -1,12 +1,14 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { currentBusinessDate } from '@/lib/date';
+
+const SEARCH_DEBOUNCE_MS = 400;
 
 export function DateFilter() {
   const router = useRouter();
@@ -17,6 +19,32 @@ export function DateFilter() {
   const dateTo = sp.get('date_to') ?? dateFrom;
   const q = sp.get('q') ?? '';
   const status = sp.get('status') ?? '';
+
+  // Local mirror of `q` so the input stays responsive while typing;
+  // the URL (and thus server query) is only updated after debounce.
+  // Sync from external URL changes via the "adjusting state on prop change"
+  // pattern (https://react.dev/learn/you-might-not-need-an-effect).
+  const [qLocal, setQLocal] = useState(q);
+  const [prevQ, setPrevQ] = useState(q);
+  if (q !== prevQ) {
+    setPrevQ(q);
+    setQLocal(q);
+  }
+
+  // Debounce: push qLocal to URL only after user pauses typing.
+  useEffect(() => {
+    if (qLocal === q) return;
+    const timer = setTimeout(() => {
+      const next = new URLSearchParams(sp.toString());
+      if (qLocal === '') next.delete('q');
+      else next.set('q', qLocal);
+      next.delete('page');
+      startTransition(() => {
+        router.replace(`?${next.toString()}`);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [qLocal, q, sp, router]);
 
   function update(key: string, value: string) {
     const next = new URLSearchParams(sp.toString());
@@ -66,9 +94,9 @@ export function DateFilter() {
           <Label htmlFor="q">Cari nama</Label>
           <Input
             id="q"
-            value={q}
+            value={qLocal}
             placeholder="cth: Pak Budi"
-            onChange={(e) => update('q', e.target.value)}
+            onChange={(e) => setQLocal(e.target.value)}
             className="mt-2"
           />
         </div>
