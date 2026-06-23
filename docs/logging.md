@@ -156,3 +156,28 @@ Di Vercel: log otomatis ter-parse sebagai JSON di dashboard Functions → Logs.
   error & slow request)
 - Kalau perlu trace antar request (cth: scan → review → confirm sebagai 1 flow),
   tambah `trace_id` yang dibawa di header `X-Trace-Id`
+
+## Print events
+
+Endpoint `POST /api/print/log` (client-triggered) menerima payload print event dan emit wide-event. Selain itu juga di-persist ke tabel `print_events` untuk diagnostic page.
+
+### Event fields (selain field standar request)
+
+- `tx_id` (uuid \| null) — transaksi terkait; null untuk test print.
+- `daily_seq` (int \| null) — nomor antrian saat dicetak; null kalau test print.
+- `target` (`dapur` \| `minuman`) — printer mana
+- `trigger` (`auto` \| `reprint` \| `test`) — sumber print
+- `outcome` (`dispatched` \| `reported_success` \| `reported_failed`) — status
+  - `dispatched`: intent URL sukses di-fire (gak ada error JS, bukan bukti printer cetak)
+  - `reported_success`: user manual lapor "Berhasil" di modal
+  - `reported_failed`: user manual lapor "Gagal"
+- `failure_note` (string?) — catatan user kalau gagal
+- `url_scheme_variant` (string?) — variant URL scheme (mis. `rawbt-intent-v1`), berguna kalau ada migrasi format intent
+- `user_agent` (string?) — UA browser HP kasir untuk diagnose compat issues
+
+### Diagnose flow
+
+Dev cek Vercel logs untuk pattern:
+- Tidak ada `print.dispatched` → JS error di client; minta owner buka Chrome DevTools console screenshot
+- `print.dispatched` tapi `reported_failed` → bridge/printer issue; cek `failure_note`, minta IP profile RawBT screenshot
+- `print.dispatched` dan `reported_success` → working ✅
