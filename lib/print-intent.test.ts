@@ -4,26 +4,22 @@ import { buildRawBtIntentUrl, splitItemsByTarget, type TransactionItemForPrint }
 describe('buildRawBtIntentUrl', () => {
   const dummyBytes = new Uint8Array([0x1b, 0x40, 0x48, 0x49]); // "HI" with init
 
-  it('builds intent URL with profile name & base64 payload', () => {
+  it('builds rawbt: URL with base64 payload', () => {
     const url = buildRawBtIntentUrl({ profile: 'Dapur', bytes: dummyBytes });
-    expect(url).toMatch(/^intent:\/\//);
-    expect(url).toContain('scheme=rawbt');
-    expect(url).toContain('S.profile=Dapur');
-    expect(url).toContain('S.payload=');
-    expect(url).toContain('end');
+    expect(url).toMatch(/^rawbt:base64,/);
   });
 
-  it('encodes bytes as base64 in payload', () => {
+  it('encodes bytes as base64 after scheme prefix', () => {
     const url = buildRawBtIntentUrl({ profile: 'Dapur', bytes: dummyBytes });
     // base64 of [0x1b, 0x40, 0x48, 0x49] = "G0BISQ=="
-    expect(url).toContain('S.payload=G0BISQ=='); // raw, no url-encoding (see buildRawBtIntentUrl)
+    expect(url).toBe('rawbt:base64,G0BISQ==');
   });
 
-  it('different profiles produce different URLs', () => {
+  it('produces identical URLs regardless of profile name (profile not in URL)', () => {
+    // RawBT uses default printer set in its own settings; URL cannot pick a profile.
     const a = buildRawBtIntentUrl({ profile: 'Dapur', bytes: dummyBytes });
     const b = buildRawBtIntentUrl({ profile: 'Minuman', bytes: dummyBytes });
-    expect(a).not.toBe(b);
-    expect(b).toContain('S.profile=Minuman');
+    expect(a).toBe(b);
   });
 });
 

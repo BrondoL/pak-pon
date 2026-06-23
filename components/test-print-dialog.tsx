@@ -73,8 +73,11 @@ export function TestPrintDialog({
   function handleFire() {
     // Beacon BEFORE navigation so it survives Android intent teardown.
     postPrintLogBeacon({ target, outcome: 'dispatched' });
-    fireTestIntent(target);
+    // Update state FIRST so React commits "Apakah kertas keluar?" view
+    // before Android hands the page off to RawBT. Defer navigation by a
+    // microtask + small timeout so the render cycle completes first.
     setPhase('awaiting_confirm');
+    setTimeout(() => fireTestIntent(target), 50);
   }
 
   function handleSuccess() {
@@ -93,9 +96,9 @@ export function TestPrintDialog({
 
   function handleRetry() {
     postPrintLogBeacon({ target, outcome: 'dispatched' });
-    fireTestIntent(target);
     setPhase('awaiting_confirm');
     setFailureNote('');
+    setTimeout(() => fireTestIntent(target), 50);
   }
 
   function handleCloseAsFailed() {

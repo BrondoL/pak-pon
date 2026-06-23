@@ -1,16 +1,22 @@
 /**
- * Build Android intent URL untuk trigger RawBT print job.
+ * Build URL untuk trigger RawBT print job di Android Chrome.
  *
- * Format default (Plan A — multi-profile via name):
- *   intent://print/#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.profile=Dapur;S.payload=<base64>;end
+ * Format yang dipakai (verified dari rawbt.ru + community examples):
+ *   rawbt:base64,<base64-data>
  *
- * RawBT terima intent, lookup profile by name dari setting-nya, kirim payload via TCP:9100.
+ * Cara kerja: Android Chrome lihat scheme `rawbt:`, route ke RawBT app
+ * (yang register handler untuk scheme ini), RawBT decode base64 → kirim
+ * ESC/POS ke printer default yang sudah di-setup di RawBT.
  *
- * Plan B (env flag PAK_PON_PRINTER_MODE=ip_direct, future, gak diimplementasi di plan ini):
- *   intent://...;S.ip=192.168.1.50;I.port=9100;S.payload=<base64>;end
+ * BATASAN PENTING:
+ * - RawBT cuma support 1 default printer per app. URL TIDAK BISA pilih
+ *   printer target — semua print job ke printer default RawBT.
+ * - Untuk multi-printer (dapur + minuman simultan), butuh approach lain
+ *   (Plan B: WebSocket server, Capacitor wrap, atau 2 tab dengan 2 RawBT
+ *   profile default berbeda).
+ * - `profile` parameter di-accept untuk kompatibilitas signature, tapi
+ *   tidak digunakan dalam URL saat ini (logged untuk diagnostic).
  */
-
-const RAWBT_PACKAGE = 'ru.a402d.rawbtprinter';
 
 export type PrintTarget = 'dapur' | 'minuman';
 
@@ -40,14 +46,11 @@ function uint8ToBase64(bytes: Uint8Array): string {
 }
 
 export function buildRawBtIntentUrl(args: {
-  profile: string;
+  profile: string; // kompat — tidak dipakai dalam URL (RawBT default printer)
   bytes: Uint8Array;
 }): string {
   const payloadB64 = uint8ToBase64(args.bytes);
-  const encodedProfile = encodeURIComponent(args.profile);
-  // Base64 chars (A-Z a-z 0-9 + / =) don't conflict with `;` separator and
-  // Intent.parseUri() reads S.key=value literally (no percent-decoding).
-  return `intent://print/#Intent;scheme=rawbt;package=${RAWBT_PACKAGE};S.profile=${encodedProfile};S.payload=${payloadB64};end`;
+  return `rawbt:base64,${payloadB64}`;
 }
 
 /**

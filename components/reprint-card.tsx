@@ -90,8 +90,11 @@ export function ReprintCard({
       trigger: 'reprint',
       outcome: 'dispatched',
     });
+    // Update React state FIRST so "Cetak ulang ke X — Apakah berhasil?"
+    // renders before Android hands off to RawBT. Defer the actual
+    // navigation by 50ms so the commit cycle completes.
     setPendingQueue((q) => [...q, target]);
-    window.location.href = url;
+    setTimeout(() => { window.location.href = url; }, 50);
   }
 
   function fireBoth() {
