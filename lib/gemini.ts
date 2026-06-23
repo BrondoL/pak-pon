@@ -1,9 +1,11 @@
 import { GoogleGenAI } from '@google/genai';
 import { buildScanSchema, buildMenuRefText, OCR_SYSTEM_PROMPT, type MenuRef, type ScanResult } from './prompts';
 
-// Primary: Flash for speed/cost. Fallback: Pro for harder handwriting OCR.
-const PRIMARY_MODEL = 'gemini-2.5-flash';
-const FALLBACK_MODEL = 'gemini-2.5-pro';
+// Primary: Pro for accuracy on faint handwriting. Fallback: Flash only on quota/error
+// (cheaper but misses items more often). Latency overhead of Pro (~5-8s vs ~3s) is
+// worth it for the kasir who otherwise has to manually fix missed items.
+const PRIMARY_MODEL = 'gemini-2.5-pro';
+const FALLBACK_MODEL = 'gemini-2.5-flash';
 
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
@@ -41,9 +43,10 @@ function truncate(s: string, n = 400): string {
 }
 
 export type ScanOptions = {
-  // 'flash-then-pro' (default): try Flash, fall back to Pro on failure/empty.
-  // 'pro-only': skip Flash entirely (used by rescan when kasir asks for a more careful re-read).
-  strategy?: 'flash-then-pro' | 'pro-only';
+  // 'with-fallback' (default): try PRIMARY_MODEL, fall back to FALLBACK_MODEL on failure/empty.
+  // 'primary-only': skip fallback entirely (used by rescan — kasir wants the careful re-read,
+  // no point falling back to a less accurate model).
+  strategy?: 'with-fallback' | 'primary-only';
 };
 
 /**
@@ -51,10 +54,10 @@ export type ScanOptions = {
  * Caller dapat seluruh meta (attempts, errors, durations) dan decide apa yang
  * mau di-include di request log.
  *
- * Default strategy ('flash-then-pro'):
- * - Try PRIMARY_MODEL (Flash) dulu.
- * - Kalau gagal atau hasil kosong, retry dengan FALLBACK_MODEL (Pro).
- * Pro-only strategy: skip Flash, go straight to Pro (used by rescan).
+ * Default strategy ('with-fallback'):
+ * - Try PRIMARY_MODEL (Pro) dulu.
+ * - Kalau gagal atau hasil kosong, retry dengan FALLBACK_MODEL (Flash, cheap last-resort).
+ * 'primary-only' strategy: cuma coba Pro, no fallback (rescan).
  *
  * Never throws. Kalau semua gagal → return EMPTY_RESULT dengan final_model=null.
  */
@@ -64,7 +67,7 @@ export async function scanNota(
   menus: MenuRef[],
   options: ScanOptions = {}
 ): Promise<ScanNotaResult> {
-  const strategy = options.strategy ?? 'flash-then-pro';
+  const strategy = options.strategy ?? 'with-fallback';
   const schema = buildScanSchema(menus);
   const menuRefText = buildMenuRefText(menus);
   const attempts: ScanAttempt[] = [];
@@ -134,11 +137,11 @@ export async function scanNota(
     return parsed.data;
   }
 
-  if (strategy === 'pro-only') {
-    const proResult = await callModel(FALLBACK_MODEL);
+  if (strategy === 'primary-only') {
+    const result = await callModel(PRIMARY_MODEL);
     return {
-      result: proResult ?? EMPTY_RESULT,
-      meta: { attempts, final_model: proResult ? FALLBACK_MODEL : null, fell_back: false },
+      result: result ?? EMPTY_RESULT,
+      meta: { attempts, final_model: result ? PRIMARY_MODEL : null, fell_back: false },
     };
   }
 

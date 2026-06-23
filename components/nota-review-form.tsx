@@ -337,22 +337,22 @@ export function NotaReviewForm({
                 render={<Button type="button" variant="secondary" />}
               >
                 {rescanning
-                  ? '🔄 Rescanning dengan Pro…'
+                  ? '🔄 Scan ulang…'
                   : transaction.rescanned_at
-                  ? '🔄 Rescan sudah dipakai (1x max)'
-                  : '🔄 Rescan dengan Pro'}
+                  ? '🔄 Scan ulang sudah dipakai (1x max)'
+                  : '🔄 Scan ulang'}
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Rescan nota dengan model Pro?</AlertDialogTitle>
+                  <AlertDialogTitle>Scan ulang nota?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Semua item dan total akan diganti dengan hasil scan baru. Edit manual yang sudah dilakukan akan hilang. Rescan hanya bisa dipakai <strong>1x</strong> per transaksi.
+                    Semua item dan total akan diganti dengan hasil scan baru. Edit manual yang sudah dilakukan akan hilang. Scan ulang hanya bisa dipakai <strong>1x</strong> per transaksi.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel disabled={rescanning}>Batal</AlertDialogCancel>
                   <AlertDialogAction onClick={handleRescan} disabled={rescanning}>
-                    {rescanning ? 'Rescanning…' : 'Ya, rescan'}
+                    {rescanning ? 'Memproses…' : 'Ya, scan ulang'}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

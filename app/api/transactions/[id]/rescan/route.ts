@@ -10,7 +10,8 @@ const NOT_FOUND_CODE = 'PGRST116';
 
 /**
  * Re-OCR an existing pending transaction using its stored scan image.
- * Uses Pro-only strategy (more careful re-read; skips Flash).
+ * Uses 'primary-only' strategy — same model as the initial scan, no fallback
+ * (falling back to the cheap model defeats the point of a careful re-read).
  * Replaces items + header fields (customer_name, table_no, handwritten_total).
  * Refuses on confirmed transactions (those are final).
  */
@@ -94,7 +95,7 @@ export async function POST(
       base64,
       imageBlob.type || 'image/jpeg',
       menus,
-      { strategy: 'pro-only' }
+      { strategy: 'primary-only' }
     );
     evt.merge({
       ocr_attempts: ocrMeta.attempts,
