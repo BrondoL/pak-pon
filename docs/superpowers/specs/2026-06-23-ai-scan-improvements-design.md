@@ -115,7 +115,7 @@ Logic:
 - Return `{ suggest: false }` kalau `handwritten_total` null/0 atau `computed_sum` 0
 - Return `{ suggest: false }` kalau `handwritten_total >= 1000`
 - `expanded = handwritten_total * 1000`
-- Return `{ suggest: true, suggested_total: expanded }` kalau `|expanded - computed_sum| / computed_sum <= 0.15`
+- Return `{ suggest: true, suggested_total: expanded }` kalau `|expanded - computed_sum| / expanded <= 0.15` (symmetric ±15% around the guess)
 - Else `{ suggest: false }`
 
 Test cases minimum: nilai null, nilai 0, nilai 92 dengan sum 90000 (suggest), nilai 92 dengan sum 5000 (no suggest — di luar tolerance), nilai 92000 (skip — sudah masuk akal), nilai 1500 (skip — >= 1000).
