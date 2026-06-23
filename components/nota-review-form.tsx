@@ -7,6 +7,17 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
@@ -166,10 +177,6 @@ export function NotaReviewForm({
   }
 
   async function handleRescan() {
-    const ok = window.confirm(
-      'Rescan akan ganti SEMUA item dengan hasil scan baru (pakai model Pro, lebih teliti tapi lebih lambat). Edit manual yang sudah dilakukan akan hilang. Lanjut?'
-    );
-    if (!ok) return;
     setRescanning(true);
     try {
       const res = await fetch(`/api/transactions/${transaction.id}/rescan`, {
@@ -323,20 +330,33 @@ export function NotaReviewForm({
                 className="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
               />
             </Card>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleRescan}
-              disabled={rescanning || pending || thousandsApplying || !!transaction.rescanned_at}
-              className="w-full"
-              title={transaction.rescanned_at ? 'Rescan hanya boleh 1x per transaksi' : undefined}
-            >
-              {rescanning
-                ? '🔄 Rescanning dengan Pro…'
-                : transaction.rescanned_at
-                ? '🔄 Rescan sudah dipakai (1x max)'
-                : '🔄 Rescan dengan Pro'}
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger
+                disabled={rescanning || pending || thousandsApplying || !!transaction.rescanned_at}
+                className="w-full"
+                render={<Button type="button" variant="secondary" />}
+              >
+                {rescanning
+                  ? '🔄 Rescanning dengan Pro…'
+                  : transaction.rescanned_at
+                  ? '🔄 Rescan sudah dipakai (1x max)'
+                  : '🔄 Rescan dengan Pro'}
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Rescan nota dengan model Pro?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Semua item dan total akan diganti dengan hasil scan baru. Edit manual yang sudah dilakukan akan hilang. Rescan hanya bisa dipakai <strong>1x</strong> per transaksi.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={rescanning}>Batal</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleRescan} disabled={rescanning}>
+                    {rescanning ? 'Rescanning…' : 'Ya, rescan'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         )}
 
