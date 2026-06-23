@@ -1,46 +1,51 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import { PrinterStatusBanner } from './printer-status-banner';
-import { STORAGE_KEY } from '@/lib/printer-status';
+
+const mockFetch = (response: unknown, status = 200) =>
+  vi.fn(() => Promise.resolve(new Response(JSON.stringify(response), { status })));
 
 describe('<PrinterStatusBanner />', () => {
   beforeEach(() => {
-    localStorage.clear();
+    vi.restoreAllMocks();
   });
 
-  it('renders red banner when both targets not_configured', () => {
+  it('renders red banner when no agents found', async () => {
+    global.fetch = mockFetch({ agents: [] }) as unknown as typeof fetch;
     render(<PrinterStatusBanner />);
-    expect(screen.getByText(/setup printer/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /setup printer/i })).toHaveAttribute('href', '/setup/printer');
+    await waitFor(() => {
+      expect(screen.getByText(/print agent belum jalan/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('link', { name: /setup/i })).toHaveAttribute('href', '/setup/printer');
   });
 
-  it('renders red banner when any target failed', () => {
-    const recentISO = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      dapur: { state: 'success', last_check: recentISO },
-      minuman: { state: 'failed', last_check: recentISO },
-    }));
+  it('renders red banner when all agents offline (stale heartbeat)', async () => {
+    const staleISO = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    global.fetch = mockFetch({
+      agents: [{ agent_label: 'main-tab', last_seen_at: staleISO, online: false }],
+    }) as unknown as typeof fetch;
     render(<PrinterStatusBanner />);
-    expect(screen.getByText(/printer minuman/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/print agent belum jalan/i)).toBeInTheDocument();
+    });
   });
 
-  it('renders nothing (or hidden) when both success within 24h', () => {
+  it('renders nothing when at least 1 agent online', async () => {
     const recentISO = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      dapur: { state: 'success', last_check: recentISO },
-      minuman: { state: 'success', last_check: recentISO },
-    }));
+    global.fetch = mockFetch({
+      agents: [{ agent_label: 'main-tab', last_seen_at: recentISO, online: true }],
+    }) as unknown as typeof fetch;
     const { container } = render(<PrinterStatusBanner />);
-    expect(container.querySelector('[data-testid="printer-banner"]')).toBeNull();
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="printer-banner"]')).toBeNull();
+    });
   });
 
-  it('renders yellow stale warning when success >24h ago', () => {
-    const staleISO = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      dapur: { state: 'success', last_check: staleISO },
-      minuman: { state: 'success', last_check: staleISO },
-    }));
-    render(<PrinterStatusBanner />);
-    expect(screen.getByText(/sudah lama tidak dites/i)).toBeInTheDocument();
+  it('handles fetch error gracefully (renders nothing)', async () => {
+    global.fetch = vi.fn(() => Promise.reject(new Error('network'))) as unknown as typeof fetch;
+    const { container } = render(<PrinterStatusBanner />);
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="printer-banner"]')).toBeNull();
+    });
   });
 });
