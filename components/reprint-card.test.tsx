@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ReprintCard } from './reprint-card';
-import type { TransactionItemForPrint } from '@/lib/print-intent';
+import type { TransactionItemForPrint } from './reprint-card';
 
 const txBase = {
-  id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  id: '11111111-1111-4111-8111-111111111111',
   daily_seq: 42,
   created_at: '2026-06-23T07:32:00.000Z',
   customer_name: 'Pak Budi',
@@ -23,22 +23,15 @@ const itemsMinumanOnly: TransactionItemForPrint[] = [
   { id: '1', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', qty: 1, notes: null },
 ];
 
+const mockFetchOk = () =>
+  vi.fn((..._args: [RequestInfo | URL, RequestInit?]) => {
+    void _args;
+    return Promise.resolve(new Response(JSON.stringify({ job_id: 'job-1' }), { status: 201 }));
+  });
+
 describe('<ReprintCard />', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.useRealTimers();
-    vi.spyOn(window, 'open').mockImplementation(() => null);
-    Object.defineProperty(window, 'location', {
-      value: { ...window.location, href: '' },
-      writable: true,
-    });
-    // sendBeacon is the navigation-resilient log path — mock it for jsdom.
-    Object.defineProperty(navigator, 'sendBeacon', {
-      value: vi.fn(() => true),
-      writable: true,
-      configurable: true,
-    });
-    global.fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))) as unknown as typeof fetch;
   });
 
   it('renders 3 buttons when both categories present', () => {
@@ -58,26 +51,29 @@ describe('<ReprintCard />', () => {
     expect(screen.getByRole('button', { name: /cetak dapur/i })).toBeDisabled();
   });
 
-  it('shows confirmation prompt after print', async () => {
+  it('POSTs job for single target with correct shape', async () => {
+    const fetchMock = mockFetchOk();
+    global.fetch = fetchMock as unknown as typeof fetch;
     const user = userEvent.setup();
     render(<ReprintCard transaction={txBase} items={itemsBoth} />);
     await user.click(screen.getByRole('button', { name: /cetak dapur/i }));
-    expect(screen.getByText(/berhasil/i)).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);
+    expect(body.target).toBe('dapur');
+    expect(body.trigger).toBe('reprint');
+    expect(body.tx_id).toBe(txBase.id);
+    expect(body.bytes_b64).toMatch(/^[A-Za-z0-9+/]+=*$/);
   });
 
-  it('queues both confirmations when "Cetak Keduanya" fired', async () => {
+  it('POSTs 2 jobs (dapur + minuman) when "Cetak Keduanya" clicked', async () => {
+    const fetchMock = mockFetchOk();
+    global.fetch = fetchMock as unknown as typeof fetch;
     const user = userEvent.setup();
     render(<ReprintCard transaction={txBase} items={itemsBoth} />);
     await user.click(screen.getByRole('button', { name: /cetak keduanya/i }));
-    // First target queued immediately (dapur)
-    expect(screen.getByText(/cetak ulang ke dapur/i)).toBeInTheDocument();
-    // Wait for the 300ms delayed minuman fire to enqueue
-    await new Promise((r) => setTimeout(r, 350));
-    // Confirm dapur — should advance queue to minuman
-    await user.click(screen.getByRole('button', { name: /berhasil/i }));
-    expect(screen.getByText(/cetak ulang ke minuman/i)).toBeInTheDocument();
-    // Confirm minuman — queue should empty, back to main panel
-    await user.click(screen.getByRole('button', { name: /berhasil/i }));
-    expect(screen.getByRole('button', { name: /cetak keduanya/i })).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const body0 = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);
+    const body1 = JSON.parse(fetchMock.mock.calls[1][1]!.body as string);
+    expect([body0.target, body1.target].sort()).toEqual(['dapur', 'minuman']);
   });
 });
