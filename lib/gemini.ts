@@ -1,12 +1,12 @@
 import { GoogleGenAI } from '@google/genai';
 import { buildScanSchema, buildMenuRefText, OCR_SYSTEM_PROMPT, type MenuRef, type ScanResult } from './prompts';
 
-// Fast model: cheap default for normal scans (~$0.0001/call, ~3s).
-// Careful model: slower + ~75x more expensive, used as fallback or via explicit rescan.
-// No LLM is perfect at this OCR task; both miss/confuse items occasionally. Strategy:
-// default to fast (cost-sensitive), let kasir trigger careful rescan when needed.
-const FAST_MODEL = 'gemini-2.5-flash';
-const CAREFUL_MODEL = 'gemini-2.5-pro';
+// Model selection — overridable via env (.env.local) for easy A/B without code change.
+// FAST_MODEL = primary scan target. CAREFUL_MODEL = auto-fallback + manual rescan.
+// Defaults reflect empirical accuracy on pak-pon notas (Jun 2026); update via env if cost
+// becomes a concern or a newer model proves better.
+const FAST_MODEL = process.env.GEMINI_FAST_MODEL ?? 'gemini-3.5-flash';
+const CAREFUL_MODEL = process.env.GEMINI_CAREFUL_MODEL ?? 'gemini-2.5-pro';
 
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
