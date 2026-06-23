@@ -2,13 +2,16 @@
   "name": "pak-pon",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "emulator:dapur": "node scripts/printer-emulator.js 9100 dapur",
+    "emulator:minuman": "node scripts/printer-emulator.js 9101 minuman"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
