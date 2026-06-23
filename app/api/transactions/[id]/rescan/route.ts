@@ -10,8 +10,8 @@ const NOT_FOUND_CODE = 'PGRST116';
 
 /**
  * Re-OCR an existing pending transaction using its stored scan image.
- * Uses 'primary-only' strategy — same model as the initial scan, no fallback
- * (falling back to the cheap model defeats the point of a careful re-read).
+ * Uses 'careful' mode — kasir-triggered escalation to the slower/pricier model
+ * when the fast scan got something wrong.
  * Replaces items + header fields (customer_name, table_no, handwritten_total).
  * Refuses on confirmed transactions (those are final).
  */
@@ -95,7 +95,7 @@ export async function POST(
       base64,
       imageBlob.type || 'image/jpeg',
       menus,
-      { strategy: 'primary-only' }
+      { mode: 'careful' }
     );
     evt.merge({
       ocr_attempts: ocrMeta.attempts,

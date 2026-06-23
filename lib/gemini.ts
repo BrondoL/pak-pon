@@ -1,11 +1,12 @@
 import { GoogleGenAI } from '@google/genai';
 import { buildScanSchema, buildMenuRefText, OCR_SYSTEM_PROMPT, type MenuRef, type ScanResult } from './prompts';
 
-// Primary: Pro for accuracy on faint handwriting. Fallback: Flash only on quota/error
-// (cheaper but misses items more often). Latency overhead of Pro (~5-8s vs ~3s) is
-// worth it for the kasir who otherwise has to manually fix missed items.
-const PRIMARY_MODEL = 'gemini-2.5-pro';
-const FALLBACK_MODEL = 'gemini-2.5-flash';
+// Fast model: cheap default for normal scans (~$0.0001/call, ~3s).
+// Careful model: slower + ~75x more expensive, used as fallback or via explicit rescan.
+// No LLM is perfect at this OCR task; both miss/confuse items occasionally. Strategy:
+// default to fast (cost-sensitive), let kasir trigger careful rescan when needed.
+const FAST_MODEL = 'gemini-2.5-flash';
+const CAREFUL_MODEL = 'gemini-2.5-pro';
 
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
@@ -43,10 +44,9 @@ function truncate(s: string, n = 400): string {
 }
 
 export type ScanOptions = {
-  // 'with-fallback' (default): try PRIMARY_MODEL, fall back to FALLBACK_MODEL on failure/empty.
-  // 'primary-only': skip fallback entirely (used by rescan — kasir wants the careful re-read,
-  // no point falling back to a less accurate model).
-  strategy?: 'with-fallback' | 'primary-only';
+  // 'fast' (default): try FAST_MODEL first, fall back to CAREFUL_MODEL on failure/empty.
+  // 'careful': skip fast model, use careful directly (kasir-triggered rescan).
+  mode?: 'fast' | 'careful';
 };
 
 /**
@@ -54,10 +54,10 @@ export type ScanOptions = {
  * Caller dapat seluruh meta (attempts, errors, durations) dan decide apa yang
  * mau di-include di request log.
  *
- * Default strategy ('with-fallback'):
- * - Try PRIMARY_MODEL (Pro) dulu.
- * - Kalau gagal atau hasil kosong, retry dengan FALLBACK_MODEL (Flash, cheap last-resort).
- * 'primary-only' strategy: cuma coba Pro, no fallback (rescan).
+ * Default mode ('fast'):
+ * - Try FAST_MODEL (Flash) dulu.
+ * - Kalau gagal/empty, retry dengan CAREFUL_MODEL (Pro).
+ * Mode 'careful': cuma coba Pro langsung, no fallback (rescan).
  *
  * Never throws. Kalau semua gagal → return EMPTY_RESULT dengan final_model=null.
  */
@@ -67,7 +67,7 @@ export async function scanNota(
   menus: MenuRef[],
   options: ScanOptions = {}
 ): Promise<ScanNotaResult> {
-  const strategy = options.strategy ?? 'with-fallback';
+  const mode = options.mode ?? 'fast';
   const schema = buildScanSchema(menus);
   const menuRefText = buildMenuRefText(menus);
   const attempts: ScanAttempt[] = [];
@@ -137,38 +137,38 @@ export async function scanNota(
     return parsed.data;
   }
 
-  if (strategy === 'primary-only') {
-    const result = await callModel(PRIMARY_MODEL);
+  if (mode === 'careful') {
+    const result = await callModel(CAREFUL_MODEL);
     return {
       result: result ?? EMPTY_RESULT,
-      meta: { attempts, final_model: result ? PRIMARY_MODEL : null, fell_back: false },
+      meta: { attempts, final_model: result ? CAREFUL_MODEL : null, fell_back: false },
     };
   }
 
-  // Try primary
-  const primaryResult = await callModel(PRIMARY_MODEL);
-  if (primaryResult && (primaryResult.items.length > 0 || primaryResult.handwritten_total > 0)) {
+  // Fast mode: try fast model first
+  const fastResult = await callModel(FAST_MODEL);
+  if (fastResult && (fastResult.items.length > 0 || fastResult.handwritten_total > 0)) {
     return {
-      result: primaryResult,
-      meta: { attempts, final_model: PRIMARY_MODEL, fell_back: false },
+      result: fastResult,
+      meta: { attempts, final_model: FAST_MODEL, fell_back: false },
     };
   }
 
-  // Primary either failed OR returned empty — try fallback
-  const fallbackResult = await callModel(FALLBACK_MODEL);
-  if (fallbackResult) {
+  // Fast either failed OR returned empty — escalate to careful
+  const carefulResult = await callModel(CAREFUL_MODEL);
+  if (carefulResult) {
     return {
-      result: fallbackResult,
-      meta: { attempts, final_model: FALLBACK_MODEL, fell_back: true },
+      result: carefulResult,
+      meta: { attempts, final_model: CAREFUL_MODEL, fell_back: true },
     };
   }
 
-  // Both failed completely. Prefer primary's empty result (might at least have customer/table) over EMPTY_RESULT.
+  // Both failed. Prefer fast's empty result (might at least have customer/table) over EMPTY_RESULT.
   return {
-    result: primaryResult ?? EMPTY_RESULT,
+    result: fastResult ?? EMPTY_RESULT,
     meta: {
       attempts,
-      final_model: primaryResult ? PRIMARY_MODEL : null,
+      final_model: fastResult ? FAST_MODEL : null,
       fell_back: true,
     },
   };

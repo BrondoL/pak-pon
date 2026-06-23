@@ -337,16 +337,16 @@ export function NotaReviewForm({
                 render={<Button type="button" variant="secondary" />}
               >
                 {rescanning
-                  ? '🔄 Scan ulang…'
+                  ? '🔄 Scan ulang dengan Pro…'
                   : transaction.rescanned_at
                   ? '🔄 Scan ulang sudah dipakai (1x max)'
-                  : '🔄 Scan ulang'}
+                  : '🔄 Scan ulang dengan Pro'}
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Scan ulang nota?</AlertDialogTitle>
+                  <AlertDialogTitle>Scan ulang dengan model Pro?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Semua item dan total akan diganti dengan hasil scan baru. Edit manual yang sudah dilakukan akan hilang. Scan ulang hanya bisa dipakai <strong>1x</strong> per transaksi.
+                    Pakai model yang lebih akurat tapi lebih lambat & lebih mahal. Semua item dan total akan diganti dengan hasil scan baru, edit manual yang sudah dilakukan akan hilang. Hanya bisa dipakai <strong>1x</strong> per transaksi.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
