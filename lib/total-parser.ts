@@ -13,7 +13,7 @@ export function detectThousandsMissing(
   handwritten_total: number | null,
   computed_sum: number
 ): ThousandsHint {
-  if (!handwritten_total || handwritten_total === 0) return { suggest: false };
+  if (!handwritten_total || handwritten_total <= 0) return { suggest: false };
   if (computed_sum === 0) return { suggest: false };
   if (handwritten_total >= RIBUAN_CUTOFF) return { suggest: false };
 

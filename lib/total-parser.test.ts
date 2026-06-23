@@ -49,4 +49,17 @@ describe('detectThousandsMissing', () => {
       suggested_total: 100000,
     });
   });
+
+  it('uses `expanded` as the denominator (not `computed_sum`) for tolerance', () => {
+    // With `/ expanded`: ratio = 13800/92000 = 0.15 → suggest
+    // With `/ computed_sum`: ratio = 13800/78200 ≈ 0.176 → no suggest
+    expect(detectThousandsMissing(92, 78200)).toEqual({
+      suggest: true,
+      suggested_total: 92000,
+    });
+  });
+
+  it('returns no-suggest for negative handwritten_total', () => {
+    expect(detectThousandsMissing(-92, 92000)).toEqual({ suggest: false });
+  });
 });

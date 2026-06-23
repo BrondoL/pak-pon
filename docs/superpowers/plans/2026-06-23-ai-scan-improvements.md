@@ -109,7 +109,7 @@ export function detectThousandsMissing(
   if (handwritten_total >= RIBUAN_CUTOFF) return { suggest: false };
 
   const expanded = handwritten_total * 1000;
-  const ratio = Math.abs(expanded - computed_sum) / computed_sum;
+  const ratio = Math.abs(expanded - computed_sum) / expanded;
   if (ratio <= TOLERANCE) {
     return { suggest: true, suggested_total: expanded };
   }
