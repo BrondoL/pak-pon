@@ -10,9 +10,7 @@ import { Label } from '@/components/ui/label';
 import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
-import { renderTicket } from '@/lib/escpos';
-import { buildRawBtIntentUrl, splitItemsByTarget, type TransactionItemForPrint } from '@/lib/print-intent';
-import { setPrinterStatus, type PrinterTarget } from '@/lib/printer-status';
+import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
 
 type Transaction = {
   id: string;
@@ -23,84 +21,58 @@ type Transaction = {
   created_at: string;
 };
 
-// Navigation-resilient log POST. sendBeacon survives the Android intent
-// teardown that follows `window.location.href = url`. Falls back to
-// keepalive fetch for environments without sendBeacon (e.g., jsdom).
-function postPrintLogBeacon(args: {
-  tx_id: string;
-  daily_seq: number | null;
-  target: PrinterTarget;
-  outcome: 'dispatched';
-}) {
-  const body = JSON.stringify({
-    ...args,
-    trigger: 'auto' as const,
-    url_scheme_variant: 'rawbt-intent-v1',
-    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
-  });
-  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-    try {
-      const blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon('/api/print/log', blob);
-      return;
-    } catch {
-      // fall through to fetch fallback
-    }
+type PrinterTarget = 'dapur' | 'minuman';
+
+type ItemForQueue = {
+  qty: number;
+  menu_name_snapshot: string;
+  menu_category: string;
+  notes: string | null;
+};
+
+function splitItems(items: ItemForQueue[]) {
+  const dapur: ItemForQueue[] = [];
+  const minuman: ItemForQueue[] = [];
+  for (const it of items) {
+    if (it.menu_category === 'minuman') minuman.push(it);
+    else if (it.menu_category === 'makanan' || it.menu_category === 'nasi') dapur.push(it);
   }
-  fetch('/api/print/log', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-    keepalive: true,
-  }).catch(() => {});
+  return { dapur, minuman };
 }
 
-function triggerAutoPrint(
-  confirmedTx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null },
-  itemsForPrint: TransactionItemForPrint[],
-): PrinterTarget[] {
-  const split = splitItemsByTarget(itemsForPrint);
-  const targets: PrinterTarget[] = [];
-  if (split.dapur.length > 0) targets.push('dapur');
-  if (split.minuman.length > 0) targets.push('minuman');
-
-  targets.forEach((target, idx) => {
-    setTimeout(() => {
-      const targetItems = target === 'dapur' ? split.dapur : split.minuman;
-      const bytes = renderTicket({
-        target,
-        daily_seq: confirmedTx.daily_seq ?? 0,
-        created_at: new Date(confirmedTx.created_at),
-        customer_name: confirmedTx.customer_name,
-        table_no: confirmedTx.table_no,
-        items: targetItems.map((i) => ({
-          qty: i.qty,
-          name: i.menu_name_snapshot,
-          note: i.notes,
-        })),
-      });
-      const url = buildRawBtIntentUrl({
-        profile: target === 'dapur' ? 'Dapur' : 'Minuman',
-        bytes,
-      });
-      // Beacon BEFORE navigation so the dispatched event is flushed
-      // even when the Android intent tears down the page.
-      postPrintLogBeacon({
-        tx_id: confirmedTx.id,
-        daily_seq: confirmedTx.daily_seq,
-        target,
-        outcome: 'dispatched',
-      });
-      window.location.href = url;
-      setPrinterStatus(target, {
-        state: 'success',
-        last_check: new Date().toISOString(),
-        last_outcome_note: 'auto print',
-      });
-    }, idx * 300);
+async function submitPrintJob(args: {
+  tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null };
+  target: PrinterTarget;
+  items: ItemForQueue[];
+}): Promise<boolean> {
+  const bytes = renderTicket({
+    target: args.target,
+    daily_seq: args.tx.daily_seq ?? 0,
+    created_at: new Date(args.tx.created_at),
+    customer_name: args.tx.customer_name,
+    table_no: args.tx.table_no,
+    items: args.items.map((i) => ({
+      qty: i.qty,
+      name: i.menu_name_snapshot,
+      note: i.notes,
+    })),
   });
-
-  return targets;
+  const bytes_b64 = uint8ToBase64(bytes);
+  try {
+    const res = await fetch('/api/print/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tx_id: args.tx.id,
+        target: args.target,
+        trigger: 'auto',
+        bytes_b64,
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function NotaReviewForm({
@@ -189,24 +161,39 @@ export function NotaReviewForm({
       };
 
       // Lookup category dari `menus` prop pakai menu_id
-      const itemsForPrint: TransactionItemForPrint[] = data.items.map((it) => {
+      const itemsForQueue: ItemForQueue[] = data.items.map((it) => {
         const menu = menus.find((m) => m.id === it.menu_id);
         return {
-          id: it.id,
-          menu_name_snapshot: it.menu_name_snapshot,
-          menu_category: (menu?.category ?? 'makanan') as TransactionItemForPrint['menu_category'],
           qty: it.qty,
+          menu_name_snapshot: it.menu_name_snapshot,
+          menu_category: menu?.category ?? 'makanan',
           notes: it.notes,
         };
       });
+      const split = splitItems(itemsForQueue);
+      const submitJobs: Promise<{ target: PrinterTarget; ok: boolean }>[] = [];
+      if (split.dapur.length > 0) {
+        submitJobs.push(
+          submitPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur }).then((ok) => ({ target: 'dapur', ok }))
+        );
+      }
+      if (split.minuman.length > 0) {
+        submitJobs.push(
+          submitPrintJob({ tx: data.transaction, target: 'minuman', items: split.minuman }).then((ok) => ({ target: 'minuman', ok }))
+        );
+      }
+      const results = await Promise.all(submitJobs);
+      const succeeded = results.filter((r) => r.ok).map((r) => r.target);
+      const failed = results.filter((r) => !r.ok).map((r) => r.target);
 
-      const printedTargets = triggerAutoPrint(data.transaction, itemsForPrint);
-
-      toast.success(
-        printedTargets.length > 0
-          ? `Nota tersimpan, mencetak ke ${printedTargets.join(' & ')}...`
-          : 'Nota tersimpan'
-      );
+      if (failed.length === 0 && succeeded.length > 0) {
+        toast.success(`Nota tersimpan, ${succeeded.length} print job dikirim ke agent`);
+      } else if (failed.length > 0) {
+        toast.success('Nota tersimpan');
+        toast.error(`Gagal kirim print job ke: ${failed.join(', ')}. Coba reprint manual dari halaman detail.`);
+      } else {
+        toast.success('Nota tersimpan');
+      }
 
       startTransition(() => {
         router.push('/');
