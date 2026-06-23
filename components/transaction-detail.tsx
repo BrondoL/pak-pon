@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { ReprintCard } from '@/components/reprint-card';
 import { formatRp } from '@/lib/currency';
 
 type Item = {
@@ -25,6 +26,7 @@ type Item = {
   unit_price_snapshot: number;
   qty: number;
   notes: string | null;
+  menu_category?: 'makanan' | 'nasi' | 'minuman' | string | null;
 };
 
 type Transaction = {
@@ -34,6 +36,7 @@ type Transaction = {
   customer_name: string | null;
   table_no: string | null;
   created_at: string;
+  daily_seq?: number | null;
 };
 
 const WIB = 'Asia/Jakarta';
@@ -234,6 +237,28 @@ export function TransactionDetail({
               </div>
             </div>
           </Card>
+
+          {transaction.status === 'confirmed' && (
+            <ReprintCard
+              transaction={{
+                id: transaction.id,
+                daily_seq: transaction.daily_seq ?? null,
+                created_at: transaction.created_at,
+                customer_name: transaction.customer_name,
+                table_no: transaction.table_no,
+              }}
+              items={items.map((it) => ({
+                id: it.id,
+                menu_name_snapshot: it.menu_name_snapshot,
+                menu_category: (it.menu_category ?? 'makanan') as
+                  | 'makanan'
+                  | 'nasi'
+                  | 'minuman',
+                qty: it.qty,
+                notes: it.notes,
+              }))}
+            />
+          )}
 
           {error && (
             <p

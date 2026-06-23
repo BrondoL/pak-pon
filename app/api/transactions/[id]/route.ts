@@ -60,7 +60,7 @@ export async function GET(
 
     const { data: items, error: itemsError } = await supabase
       .from('transaction_items')
-      .select('*')
+      .select('*, menus(category)')
       .eq('transaction_id', id)
       .order('sort_order');
     if (itemsError) {
