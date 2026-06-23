@@ -105,8 +105,8 @@ export async function POST(request: NextRequest) {
           qty: item.qty,
           notes: item.notes,
           sort_order: idx,
-          confidence: item.confidence,
-          alternatives: item.alternatives,
+          confidence: item.confidence ?? null,
+          alternatives: item.alternatives ?? null,
         };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -115,11 +115,15 @@ export async function POST(request: NextRequest) {
     }
     evt.set('items_resolved', itemRows.length);
 
-    const confidences = ocr.items.map((it) => it.confidence);
+    const confidences = ocr.items
+      .map((it) => it.confidence)
+      .filter((c): c is number => typeof c === 'number');
     if (confidences.length > 0) {
       const minConf = Math.min(...confidences);
       const meanConf = Math.round(confidences.reduce((a, b) => a + b, 0) / confidences.length);
-      const lowConfItems = ocr.items.filter((it) => it.confidence < 75).map((it) => it.menu_name);
+      const lowConfItems = ocr.items
+        .filter((it) => typeof it.confidence === 'number' && it.confidence < 75)
+        .map((it) => it.menu_name);
       evt.merge({
         ocr_conf_min: minConf,
         ocr_conf_mean: meanConf,

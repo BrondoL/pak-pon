@@ -9,17 +9,19 @@ export type MenuRef = {
 
 export const OCR_SYSTEM_PROMPT = `Anda adalah OCR untuk nota warung Pecel Lele Pak Pon.
 
-Format nota: kolom MENU sudah pre-printed di kertas nota dengan harga. Kasir mengisi tulisan tangan angka di kolom "Banyak nya" untuk setiap item yang dipesan, dan total di bawah nota.
+Nota: kolom MENU pre-printed, kasir tulis tangan qty di kolom "Banyak nya" (atau kadang di kolom paling kanan). Cek SEMUA baris, termasuk angka faint/pensil tipis.
 
-Tugas Anda:
-1. Ekstrak HANYA item yang punya angka qty (tulisan tangan) di sebelahnya. Abaikan baris menu yang qty-nya kosong.
-2. Anotasi tulisan tangan di sebelah nama menu (cth: "D P", "Dada", "tanpa sambel") masuk ke field "notes". Kalau ada tulisan tangan tapi maknanya tidak jelas, tetap masukkan tulisan mentahnya — jangan kosongkan.
-3. handwritten_total = angka total yang ditulis tangan di bagian bawah nota. PENTING: total ditulis dalam SATUAN RIBUAN RUPIAH. Kalau kasir tulis "92", baca sebagai 92000. Kalau "92.000" atau "92rb", juga 92000. Selalu return dalam rupiah penuh. Return 0 kalau tidak terbaca.
-4. customer_name dan table_no = isi dari kolom "Nama" dan "No. Meja" di atas nota — null kalau kosong.
-5. Untuk SETIAP item, kasih "confidence" (0-100): seberapa yakin Anda bahwa menu_name + qty + notes terbaca dengan benar. Pertimbangkan kejelasan tulisan tangan, ambiguitas vs menu lain, dan kemiripan visual.
-6. Untuk SETIAP item, kasih "alternatives" (array, maksimal 2): menu-menu lain dari daftar master yang punya kemungkinan benar (urutkan dari paling mungkin). Kosongkan kalau Anda sangat yakin (confidence >= 90).
+PRIORITAS UTAMA: jangan miss item. Lebih baik tebak qty/menu yang ragu daripada skip item yang ada angka qty-nya.
 
-PENTING: Field "menu_name" (dan setiap "menu_name" di alternatives) HARUS PERSIS sama dengan salah satu nama menu di daftar master di bawah. Jangan paraphrase, jangan terjemahkan, jangan singkat.`;
+Tugas:
+1. items[]: ekstrak SEMUA baris yang ada angka qty (tulisan tangan). Skip kalau qty kosong.
+   - menu_name: HARUS PERSIS sama dengan salah satu nama di daftar master. Jangan paraphrase/singkat.
+   - qty: angka positif dari tulisan tangan.
+   - notes: anotasi tulisan tangan di sebelah menu (cth "D P", "tanpa sambel"). Kalau ga jelas maknanya, masukkan tulisan mentahnya. null kalau kosong.
+   - confidence (OPSIONAL, 0-100): kasih kalau Anda ragu di item ini. Skip field kalau yakin >= 90%.
+   - alternatives (OPSIONAL, max 2): kasih kalau confidence < 90; pilih dari daftar master saja. Skip field kalau yakin.
+2. handwritten_total: angka total di bawah nota. PENTING: total ditulis dalam SATUAN RIBUAN. "92" = 92000, "92.000" = 92000. Return rupiah penuh, atau 0 kalau tidak terbaca.
+3. customer_name, table_no: isi dari kolom "Nama" dan "No. Meja". null kalau kosong.`;
 
 /**
  * Build the text portion that gives Gemini the menu master as reference.
@@ -52,14 +54,15 @@ export function buildScanSchema(menus: MenuRef[]) {
         menu_name: menuNameSchema,
         qty: z.number().int().positive(),
         notes: z.string().nullable(),
-        confidence: confidenceSchema,
+        // Both optional so AI can skip them on certain items without breaking schema.
+        // Trade: less attention budget on confidence reasoning → more on item detection.
+        confidence: confidenceSchema.optional(),
         alternatives: z.array(
           z.object({
             menu_name: menuNameSchema,
-            // Optional — Gemini sometimes omits per-alt confidence. UI doesn't display it.
             confidence: confidenceSchema.optional(),
           })
-        ).max(2),
+        ).max(2).optional(),
       })
     ),
     handwritten_total: z.number().int().nonnegative(),

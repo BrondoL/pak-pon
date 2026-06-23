@@ -12,11 +12,11 @@ describe('OCR_SYSTEM_PROMPT', () => {
     expect(OCR_SYSTEM_PROMPT.toLowerCase()).toContain('handwritten');
   });
 
-  it('instructs AI to return confidence per item', () => {
+  it('mentions confidence as an optional per-item field', () => {
     expect(OCR_SYSTEM_PROMPT.toLowerCase()).toContain('confidence');
   });
 
-  it('instructs AI to return alternatives per item', () => {
+  it('mentions alternatives as an optional per-item field', () => {
     expect(OCR_SYSTEM_PROMPT.toLowerCase()).toContain('alternatives');
   });
 
@@ -26,6 +26,10 @@ describe('OCR_SYSTEM_PROMPT', () => {
 
   it('instructs AI to keep raw notes when uncertain', () => {
     expect(OCR_SYSTEM_PROMPT.toLowerCase()).toContain('mentah');
+  });
+
+  it('prioritizes not missing items over per-item certainty', () => {
+    expect(OCR_SYSTEM_PROMPT.toLowerCase()).toContain('miss');
   });
 });
 
@@ -116,6 +120,17 @@ describe('buildScanSchema', () => {
       table_no: null,
     });
     expect(result.success).toBe(false);
+  });
+
+  it('accepts item without confidence or alternatives (both optional)', () => {
+    const schema = buildScanSchema(sampleMenus);
+    const result = schema.safeParse({
+      items: [{ menu_name: 'Pecel Lele', qty: 1, notes: null }],
+      handwritten_total: 0,
+      customer_name: null,
+      table_no: null,
+    });
+    expect(result.success).toBe(true);
   });
 
   it('accepts alternative without confidence (Gemini sometimes omits it)', () => {
