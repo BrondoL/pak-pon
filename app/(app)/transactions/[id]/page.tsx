@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { getPrinterSettings } from '@/lib/printer-settings-server';
 import { TransactionDetail } from '@/components/transaction-detail';
 
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,8 @@ export default async function TransactionPage({
     scanUrl = signed?.signedUrl ?? null;
   }
 
+  const printerSettings = await getPrinterSettings();
+
   return (
     <TransactionDetail
       transaction={{
@@ -67,6 +70,7 @@ export default async function TransactionPage({
         };
       })}
       scanUrl={scanUrl}
+      printerSettings={printerSettings}
     />
   );
 }

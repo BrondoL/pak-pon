@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
+import type { PrinterSettings } from '@/lib/printer-settings';
 
 export type MenuCategory = 'makanan' | 'nasi' | 'minuman';
 export type PrinterTarget = 'dapur' | 'minuman';
@@ -37,19 +38,23 @@ async function submitJob(args: {
   tx: TxBase;
   target: PrinterTarget;
   targetItems: TransactionItemForPrint[];
+  printerSettings: PrinterSettings;
 }): Promise<{ ok: boolean; error?: string }> {
-  const bytes = renderTicket({
-    target: args.target,
-    daily_seq: args.tx.daily_seq ?? 0,
-    created_at: new Date(args.tx.created_at),
-    customer_name: args.tx.customer_name,
-    table_no: args.tx.table_no,
-    items: args.targetItems.map((i) => ({
-      qty: i.qty,
-      name: i.menu_name_snapshot,
-      note: i.notes,
-    })),
-  });
+  const bytes = renderTicket(
+    {
+      target: args.target,
+      daily_seq: args.tx.daily_seq ?? 0,
+      created_at: new Date(args.tx.created_at),
+      customer_name: args.tx.customer_name,
+      table_no: args.tx.table_no,
+      items: args.targetItems.map((i) => ({
+        qty: i.qty,
+        name: i.menu_name_snapshot,
+        note: i.notes,
+      })),
+    },
+    args.printerSettings,
+  );
   const bytes_b64 = uint8ToBase64(bytes);
   try {
     const res = await fetch('/api/print/queue', {
@@ -75,9 +80,11 @@ async function submitJob(args: {
 export function ReprintCard({
   transaction,
   items,
+  printerSettings,
 }: {
   transaction: TxBase;
   items: TransactionItemForPrint[];
+  printerSettings: PrinterSettings;
 }) {
   const [submitting, setSubmitting] = useState<PrinterTarget | 'both' | null>(null);
   const split = splitByTarget(items);
@@ -87,7 +94,7 @@ export function ReprintCard({
   async function fireFor(target: PrinterTarget) {
     setSubmitting(target);
     const targetItems = target === 'dapur' ? split.dapur : split.minuman;
-    const result = await submitJob({ tx: transaction, target, targetItems });
+    const result = await submitJob({ tx: transaction, target, targetItems, printerSettings });
     setSubmitting(null);
     if (result.ok) {
       toast.success(`Job cetak ${target} dikirim ke agent`);
@@ -100,10 +107,10 @@ export function ReprintCard({
     setSubmitting('both');
     const jobs: Promise<{ ok: boolean; error?: string; target: PrinterTarget }>[] = [];
     if (hasDapur) {
-      jobs.push(submitJob({ tx: transaction, target: 'dapur', targetItems: split.dapur }).then((r) => ({ ...r, target: 'dapur' as const })));
+      jobs.push(submitJob({ tx: transaction, target: 'dapur', targetItems: split.dapur, printerSettings }).then((r) => ({ ...r, target: 'dapur' as const })));
     }
     if (hasMinuman) {
-      jobs.push(submitJob({ tx: transaction, target: 'minuman', targetItems: split.minuman }).then((r) => ({ ...r, target: 'minuman' as const })));
+      jobs.push(submitJob({ tx: transaction, target: 'minuman', targetItems: split.minuman, printerSettings }).then((r) => ({ ...r, target: 'minuman' as const })));
     }
     const results = await Promise.all(jobs);
     setSubmitting(null);

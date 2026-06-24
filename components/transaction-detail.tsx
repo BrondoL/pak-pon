@@ -18,7 +18,9 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { ReprintCard } from '@/components/reprint-card';
+import { ZoomableNotaImage } from '@/components/zoomable-nota-image';
 import { formatRp } from '@/lib/currency';
+import type { PrinterSettings } from '@/lib/printer-settings';
 
 type Item = {
   id: string;
@@ -63,10 +65,12 @@ export function TransactionDetail({
   transaction,
   items,
   scanUrl,
+  printerSettings,
 }: {
   transaction: Transaction;
   items: Item[];
   scanUrl: string | null;
+  printerSettings: PrinterSettings;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -160,11 +164,10 @@ export function TransactionDetail({
         {scanUrl && (
           <div className="lg:sticky lg:top-4 lg:self-start">
             <Card variant="paper" className="overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <ZoomableNotaImage
                 src={scanUrl}
                 alt="Foto nota"
-                className="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
+                imgClassName="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
               />
             </Card>
           </div>
@@ -257,6 +260,7 @@ export function TransactionDetail({
                 qty: it.qty,
                 notes: it.notes,
               }))}
+              printerSettings={printerSettings}
             />
           )}
 

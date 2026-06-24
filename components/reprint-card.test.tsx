@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ReprintCard } from './reprint-card';
 import type { TransactionItemForPrint } from './reprint-card';
+import { DEFAULT_PRINTER_SETTINGS } from '@/lib/printer-settings';
 
 const txBase = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -35,19 +36,19 @@ describe('<ReprintCard />', () => {
   });
 
   it('renders 3 buttons when both categories present', () => {
-    render(<ReprintCard transaction={txBase} items={itemsBoth} />);
+    render(<ReprintCard transaction={txBase} items={itemsBoth} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
     expect(screen.getByRole('button', { name: /cetak dapur/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /cetak minuman/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /cetak keduanya/i })).toBeEnabled();
   });
 
   it('disables minuman button when no minuman item', () => {
-    render(<ReprintCard transaction={txBase} items={itemsDapurOnly} />);
+    render(<ReprintCard transaction={txBase} items={itemsDapurOnly} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
     expect(screen.getByRole('button', { name: /cetak minuman/i })).toBeDisabled();
   });
 
   it('disables dapur button when no makanan/nasi item', () => {
-    render(<ReprintCard transaction={txBase} items={itemsMinumanOnly} />);
+    render(<ReprintCard transaction={txBase} items={itemsMinumanOnly} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
     expect(screen.getByRole('button', { name: /cetak dapur/i })).toBeDisabled();
   });
 
@@ -55,7 +56,7 @@ describe('<ReprintCard />', () => {
     const fetchMock = mockFetchOk();
     global.fetch = fetchMock as unknown as typeof fetch;
     const user = userEvent.setup();
-    render(<ReprintCard transaction={txBase} items={itemsBoth} />);
+    render(<ReprintCard transaction={txBase} items={itemsBoth} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
     await user.click(screen.getByRole('button', { name: /cetak dapur/i }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const body = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);
@@ -69,7 +70,7 @@ describe('<ReprintCard />', () => {
     const fetchMock = mockFetchOk();
     global.fetch = fetchMock as unknown as typeof fetch;
     const user = userEvent.setup();
-    render(<ReprintCard transaction={txBase} items={itemsBoth} />);
+    render(<ReprintCard transaction={txBase} items={itemsBoth} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
     await user.click(screen.getByRole('button', { name: /cetak keduanya/i }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const body0 = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);

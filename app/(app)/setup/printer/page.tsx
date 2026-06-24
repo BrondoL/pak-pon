@@ -89,6 +89,20 @@ export default function SetupPrinterPage() {
           Buka halaman diagnostic →
         </a>
       </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-medium text-coal">4. Format struk</h2>
+        <p className="text-sm text-coal-soft">
+          Atur lebar kertas, cut mode, beep buzzer, header tiket, dll. Settingnya
+          disimpan di web — agent ga perlu di-update.
+        </p>
+        <a
+          href="/setup/printer/settings"
+          className="inline-block text-sm underline text-coal"
+        >
+          Buka Setting Printer →
+        </a>
+      </section>
     </div>
   );
 }

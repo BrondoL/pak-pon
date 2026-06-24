@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('print_queue')
-      .select('id, tx_id, target, trigger, status, failure_reason, created_at, picked_up_at, completed_at')
+      .select('id, tx_id, target, trigger, status, failure_reason, created_at, picked_up_at, completed_at, agent_label, transactions(customer_name, table_no, daily_seq)')
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -44,9 +44,30 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    evt.set('rows_count', data?.length ?? 0);
+    const jobs = (data ?? []).map((row) => {
+      const rawTx = (row as { transactions?: unknown }).transactions;
+      const tx = Array.isArray(rawTx) ? rawTx[0] : rawTx;
+      const txTyped = tx as { customer_name?: string | null; table_no?: string | null; daily_seq?: number | null } | null | undefined;
+      return {
+        id: row.id,
+        tx_id: row.tx_id,
+        target: row.target,
+        trigger: row.trigger,
+        status: row.status,
+        failure_reason: row.failure_reason,
+        created_at: row.created_at,
+        picked_up_at: row.picked_up_at,
+        completed_at: row.completed_at,
+        agent_label: row.agent_label ?? null,
+        customer_name: txTyped?.customer_name ?? null,
+        table_no: txTyped?.table_no ?? null,
+        daily_seq: txTyped?.daily_seq ?? null,
+      };
+    });
+
+    evt.set('rows_count', jobs.length);
     tagStatus(evt, 200);
-    return NextResponse.json({ jobs: data ?? [] });
+    return NextResponse.json({ jobs });
   } catch (err) {
     tagStatus(evt, 500);
     evt.error(err);

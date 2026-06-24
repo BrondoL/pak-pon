@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { getPrinterSettings } from '@/lib/printer-settings-server';
 import { NotaReviewForm } from '@/components/nota-review-form';
 import type { MenuOption } from '@/components/nota-item-modal';
 
@@ -46,6 +47,8 @@ export default async function ReviewPage({
     scanUrl = signed?.signedUrl ?? null;
   }
 
+  const printerSettings = await getPrinterSettings();
+
   return (
     <NotaReviewForm
       transaction={{
@@ -60,6 +63,7 @@ export default async function ReviewPage({
       initialItems={items ?? []}
       menus={menus}
       scanUrl={scanUrl}
+      printerSettings={printerSettings}
     />
   );
 }

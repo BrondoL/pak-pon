@@ -22,7 +22,8 @@
       "Bash(grep *)",
       "Bash(rtk ls *)",
       "Bash(rtk grep *)",
-      "Bash(rtk read *)"
+      "Bash(rtk read *)",
+      "Bash(rtk find *)"
     ]
   },
   "enabledPlugins": {

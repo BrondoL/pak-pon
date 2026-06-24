@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -21,8 +21,10 @@ import {
 import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
+import { ZoomableNotaImage } from './zoomable-nota-image';
 import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
 import { detectThousandsMissing } from '@/lib/total-parser';
+import type { PrinterSettings } from '@/lib/printer-settings';
 
 type Transaction = {
   id: string;
@@ -57,19 +59,23 @@ async function submitPrintJob(args: {
   tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null };
   target: PrinterTarget;
   items: ItemForQueue[];
+  printerSettings: PrinterSettings;
 }): Promise<boolean> {
-  const bytes = renderTicket({
-    target: args.target,
-    daily_seq: args.tx.daily_seq ?? 0,
-    created_at: new Date(args.tx.created_at),
-    customer_name: args.tx.customer_name,
-    table_no: args.tx.table_no,
-    items: args.items.map((i) => ({
-      qty: i.qty,
-      name: i.menu_name_snapshot,
-      note: i.notes,
-    })),
-  });
+  const bytes = renderTicket(
+    {
+      target: args.target,
+      daily_seq: args.tx.daily_seq ?? 0,
+      created_at: new Date(args.tx.created_at),
+      customer_name: args.tx.customer_name,
+      table_no: args.tx.table_no,
+      items: args.items.map((i) => ({
+        qty: i.qty,
+        name: i.menu_name_snapshot,
+        note: i.notes,
+      })),
+    },
+    args.printerSettings,
+  );
   const bytes_b64 = uint8ToBase64(bytes);
   try {
     const res = await fetch('/api/print/queue', {
@@ -93,11 +99,13 @@ export function NotaReviewForm({
   initialItems,
   menus,
   scanUrl,
+  printerSettings,
 }: {
   transaction: Transaction;
   initialItems: Omit<NotaItem, '_localId'>[];
   menus: MenuOption[];
   scanUrl: string | null;
+  printerSettings: PrinterSettings;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<NotaItem[]>(
@@ -113,17 +121,6 @@ export function NotaReviewForm({
   const [thousandsDismissed, setThousandsDismissed] = useState(false);
   const [thousandsApplying, setThousandsApplying] = useState(false);
   const [rescanning, setRescanning] = useState(false);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-
-  // ESC closes the lightbox
-  useEffect(() => {
-    if (!lightboxOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setLightboxOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [lightboxOpen]);
 
   const menusByName = useMemo(
     () => new Map(menus.map((m) => [m.name, m])),
@@ -280,12 +277,12 @@ export function NotaReviewForm({
       const submitJobs: Promise<{ target: PrinterTarget; ok: boolean }>[] = [];
       if (split.dapur.length > 0) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur }).then((ok) => ({ target: 'dapur', ok }))
+          submitPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur, printerSettings }).then((ok) => ({ target: 'dapur', ok }))
         );
       }
       if (split.minuman.length > 0) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'minuman', items: split.minuman }).then((ok) => ({ target: 'minuman', ok }))
+          submitPrintJob({ tx: data.transaction, target: 'minuman', items: split.minuman, printerSettings }).then((ok) => ({ target: 'minuman', ok }))
         );
       }
       const results = await Promise.all(submitJobs);
@@ -334,19 +331,11 @@ export function NotaReviewForm({
         {scanUrl && (
           <div className="lg:sticky lg:top-4 lg:self-start space-y-3">
             <Card variant="paper" className="overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setLightboxOpen(true)}
-                aria-label="Perbesar foto nota"
-                className="block w-full cursor-zoom-in"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={scanUrl}
-                  alt="Foto nota"
-                  className="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
-                />
-              </button>
+              <ZoomableNotaImage
+                src={scanUrl}
+                alt="Foto nota"
+                imgClassName="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
+              />
             </Card>
             <AlertDialog>
               <AlertDialogTrigger
@@ -494,32 +483,6 @@ export function NotaReviewForm({
           </div>
         </div>
       </div>
-
-      {lightboxOpen && scanUrl && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Foto nota fullscreen"
-          onClick={() => setLightboxOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-coal/90 p-4 cursor-zoom-out"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={scanUrl}
-            alt="Foto nota fullscreen"
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-full max-w-full object-contain cursor-default"
-          />
-          <button
-            type="button"
-            aria-label="Tutup"
-            onClick={() => setLightboxOpen(false)}
-            className="fixed top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-paper/90 text-2xl text-coal shadow-md hover:bg-paper"
-          >
-            ×
-          </button>
-        </div>
-      )}
 
       {(editing || adding) && (
         <NotaItemModal
