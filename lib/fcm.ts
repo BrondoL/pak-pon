@@ -29,6 +29,18 @@ function adminApp(): App | null {
 export interface PushAgentArgs {
   /** FCM device tokens to push to. Empty array = no-op. */
   tokens: string[];
+  /**
+   * Inline job payload — sent in FCM data so the agent can process the
+   * print without needing a follow-up Supabase fetch. This sidesteps the
+   * "no pending jobs" race that happens when aggressive OEMs (HiOS) only
+   * give the unfrozen app ~5s and the SELECT misses the just-committed row.
+   */
+  job?: {
+    id: string;
+    target: 'dapur' | 'minuman';
+    trigger: 'auto' | 'reprint' | 'test';
+    bytes_b64: string;
+  };
 }
 
 export interface PushAgentResult {
@@ -60,10 +72,22 @@ export async function pushCheckQueue(args: PushAgentArgs): Promise<PushAgentResu
     return { ok: 0, failed: 0, invalidTokens: [] };
   }
 
+  // FCM data values must be strings. Build the payload conditionally so the
+  // legacy "check_queue" trigger still works if no job is attached.
+  const data: Record<string, string> = args.job
+    ? {
+        action: 'print_job',
+        job_id: args.job.id,
+        target: args.job.target,
+        trigger: args.job.trigger,
+        bytes_b64: args.job.bytes_b64,
+      }
+    : { action: 'check_queue' };
+
   const messaging = getMessaging(app);
   const res = await messaging.sendEachForMulticast({
     tokens: args.tokens,
-    data: { action: 'check_queue' },
+    data,
     android: {
       priority: 'high',
       ttl: 60 * 1000, // 1 minute — agent's catch-up handles delayed receipts

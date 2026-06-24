@@ -70,7 +70,17 @@ export async function POST(request: NextRequest) {
 
     if (targets.length > 0) {
       // Fire-and-forget — don't block the response on FCM delivery.
-      pushCheckQueue({ tokens: targets.map((t) => t.fcm_token) }).then(
+      // Pass job data inline so the agent doesn't need a follow-up SELECT
+      // (which races with commit visibility inside HiOS's 5s wake window).
+      pushCheckQueue({
+        tokens: targets.map((t) => t.fcm_token),
+        job: {
+          id: inserted.id,
+          target: payload.target,
+          trigger: payload.trigger,
+          bytes_b64: payload.bytes_b64,
+        },
+      }).then(
         async (r) => {
           console.log(`[fcm] push ok=${r.ok} failed=${r.failed}`);
           // Garbage-collect tokens that FCM rejected as unregistered/invalid.
