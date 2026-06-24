@@ -13,7 +13,7 @@ function buildTestPayload(target: Target): string {
     created_at: new Date(),
     customer_name: null,
     table_no: null,
-    items: [{ qty: 1, name: `TES PRINTER ${target.toUpperCase()}`, note: null }],
+    items: [{ qty: 1, name: `TES PRINTER ${target.toUpperCase()}`, unit_price: 0, note: null }],
   });
   return uint8ToBase64(bytes);
 }

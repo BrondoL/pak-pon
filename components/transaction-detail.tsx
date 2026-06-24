@@ -257,6 +257,7 @@ export function TransactionDetail({
                   | 'makanan'
                   | 'nasi'
                   | 'minuman',
+                unit_price_snapshot: it.unit_price_snapshot,
                 qty: it.qty,
                 notes: it.notes,
               }))}

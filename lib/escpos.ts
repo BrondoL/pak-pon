@@ -1,5 +1,5 @@
 /**
- * ESC/POS bytes generator untuk kitchen/bar ticket.
+ * ESC/POS bytes generator untuk customer-style receipt.
  *
  * Subset minimal command supaya compatible dengan banyak printer thermal:
  * - ESC @         (0x1B 0x40)        Init
@@ -29,6 +29,7 @@ export type TicketInput = {
   items: Array<{
     qty: number;
     name: string;
+    unit_price: number;
     note: string | null;
   }>;
 };
@@ -43,8 +44,6 @@ const ALIGN_CENTER = new Uint8Array([ESC, 0x61, 0x01]);
 const ALIGN_LEFT = new Uint8Array([ESC, 0x61, 0x00]);
 const BOLD_ON = new Uint8Array([ESC, 0x45, 0x01]);
 const BOLD_OFF = new Uint8Array([ESC, 0x45, 0x00]);
-const SIZE_DOUBLE = new Uint8Array([GS, 0x21, 0x11]);
-const SIZE_NORMAL = new Uint8Array([GS, 0x21, 0x00]);
 const CUT_FULL = new Uint8Array([GS, 0x56, 0x00]);
 const CUT_PARTIAL = new Uint8Array([GS, 0x56, 0x01]);
 const BEEP_3X = new Uint8Array([ESC, 0x42, 0x03, 0x03]);
@@ -74,15 +73,45 @@ function lineFeed(n = 1): Uint8Array {
   return new Uint8Array(new Array(n).fill(LF));
 }
 
-function formatSeq(n: number): string {
-  return `#${n.toString().padStart(4, '0')}`;
+function pad2(n: number): string {
+  return n.toString().padStart(2, '0');
+}
+
+function toWib(d: Date): Date {
+  return new Date(d.getTime() + 7 * 3600 * 1000);
 }
 
 function formatTimestamp(d: Date): string {
-  // Format ke WIB (UTC+7) DD/MM/YYYY HH:MM
-  const wib = new Date(d.getTime() + 7 * 3600 * 1000);
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${pad(wib.getUTCDate())}/${pad(wib.getUTCMonth() + 1)}/${wib.getUTCFullYear()} ${pad(wib.getUTCHours())}:${pad(wib.getUTCMinutes())}`;
+  const wib = toWib(d);
+  return `${pad2(wib.getUTCDate())}/${pad2(wib.getUTCMonth() + 1)}/${wib.getUTCFullYear()} ${pad2(wib.getUTCHours())}:${pad2(wib.getUTCMinutes())}`;
+}
+
+function formatOrderNumber(d: Date, seq: number): string {
+  const wib = toWib(d);
+  const yy = pad2(wib.getUTCFullYear() % 100);
+  // Format follows the photo's POS-DDMMYY-seq convention.
+  return `POS-${pad2(wib.getUTCDate())}${pad2(wib.getUTCMonth() + 1)}${yy}-${seq}`;
+}
+
+function formatRupiah(n: number): string {
+  // Indonesian thousand separator: 26000 -> 26.000
+  return n.toLocaleString('id-ID');
+}
+
+function rightAlignLine(left: string, right: string, lineWidth: number): string {
+  // Wrap-safe right alignment. If left+right exceeds lineWidth, put right on
+  // its own line so neither side gets truncated.
+  if (left.length + 1 + right.length > lineWidth) {
+    return left + '\n' + right.padStart(lineWidth, ' ');
+  }
+  const space = lineWidth - left.length - right.length;
+  return left + ' '.repeat(space) + right;
+}
+
+function labelLine(label: string, value: string, labelWidth: number): string {
+  // "Date          : 25/06/2026 10:30" — fixed-width label, colon, space, value.
+  const paddedLabel = label.length >= labelWidth ? label : label + ' '.repeat(labelWidth - label.length);
+  return `${paddedLabel}: ${value}`;
 }
 
 export function renderTicket(
@@ -90,69 +119,91 @@ export function renderTicket(
   settings: PrinterSettings = DEFAULT_PRINTER_SETTINGS,
 ): Uint8Array {
   const parts: Uint8Array[] = [];
-  const separator = '-'.repeat(charsPerLine(settings.paper_width));
+  const lineWidth = charsPerLine(settings.paper_width);
+  const heavySeparator = '='.repeat(lineWidth);
+  const lightSeparator = '-'.repeat(lineWidth);
   const trimmedHeader = settings.header_text?.trim();
+  // Reserve enough room for the longest Indonesian label below.
+  const labelWidth = 13;
 
   // 1. Init + optional buzzer
   parts.push(INIT);
   if (settings.beep_on_print) parts.push(BEEP_3X);
 
-  parts.push(ALIGN_CENTER);
-
-  // 2. Custom header (kalau diset) — normal weight, normal size
+  // 2. Centered header (custom header_text). Bold so it stands out from the
+  // info block below. If no header configured, skip — keeps the receipt
+  // clean rather than printing a placeholder.
   if (trimmedHeader) {
+    parts.push(ALIGN_CENTER);
+    parts.push(BOLD_ON);
     for (const line of trimmedHeader.split('\n')) {
       parts.push(encodeText(line));
       parts.push(lineFeed(1));
     }
+    parts.push(BOLD_OFF);
   }
 
-  // 3. Bold + double size: DAPUR / MINUMAN
-  parts.push(BOLD_ON);
-  parts.push(SIZE_DOUBLE);
-  parts.push(encodeText(input.target === 'dapur' ? 'DAPUR' : 'MINUMAN'));
-  parts.push(lineFeed(1));
-  parts.push(SIZE_NORMAL);
-  parts.push(BOLD_OFF);
-
-  // 4. Center align: No. antrian + meja (kalau ada)
-  let line2 = formatSeq(input.daily_seq);
-  if (input.table_no) line2 += `  |  Meja: ${input.table_no}`;
-  parts.push(encodeText(line2));
-  parts.push(lineFeed(1));
-
-  // 5. Customer name (kalau ada)
-  if (input.customer_name) {
-    parts.push(encodeText(input.customer_name));
-    parts.push(lineFeed(1));
-  }
-
-  // 6. Timestamp
-  parts.push(encodeText(formatTimestamp(input.created_at)));
-  parts.push(lineFeed(1));
-
-  // 7. Separator
+  // 3. Info block (Date / Order Number / Customer / Meja)
   parts.push(ALIGN_LEFT);
-  parts.push(encodeText(separator));
+  parts.push(encodeText(heavySeparator));
   parts.push(lineFeed(1));
 
-  // 8. Items
-  for (const item of input.items) {
-    parts.push(encodeText(`${item.qty}x ${item.name}`));
+  parts.push(encodeText(labelLine('Date', formatTimestamp(input.created_at), labelWidth)));
+  parts.push(lineFeed(1));
+
+  parts.push(encodeText(labelLine('Order Number', formatOrderNumber(input.created_at, input.daily_seq), labelWidth)));
+  parts.push(lineFeed(1));
+
+  if (input.customer_name) {
+    parts.push(encodeText(labelLine('Customer', input.customer_name, labelWidth)));
     parts.push(lineFeed(1));
+  }
+  if (input.table_no) {
+    parts.push(encodeText(labelLine('Meja', input.table_no, labelWidth)));
+    parts.push(lineFeed(1));
+  }
+
+  // 4. Items block
+  parts.push(encodeText(heavySeparator));
+  parts.push(lineFeed(1));
+
+  let totalQty = 0;
+  let totalAmount = 0;
+  for (const item of input.items) {
+    const lineTotal = item.qty * item.unit_price;
+    totalQty += item.qty;
+    totalAmount += lineTotal;
+
+    parts.push(encodeText(item.name));
+    parts.push(lineFeed(1));
+
+    const left = `${item.qty}x ${formatRupiah(item.unit_price)}`;
+    const right = formatRupiah(lineTotal);
+    parts.push(encodeText(rightAlignLine(left, right, lineWidth)));
+    parts.push(lineFeed(1));
+
     if (item.note) {
-      parts.push(encodeText(`    > ${item.note}`));
+      parts.push(encodeText(`  > ${item.note}`));
       parts.push(lineFeed(1));
     }
   }
 
-  // 9. Bottom separator + configurable feed
-  parts.push(encodeText(separator));
+  // 5. Totals block
+  parts.push(encodeText(heavySeparator));
+  parts.push(lineFeed(1));
+  parts.push(encodeText(`Total Item ${totalQty}`));
+  parts.push(lineFeed(1));
+  parts.push(encodeText(lightSeparator));
+  parts.push(lineFeed(1));
+  parts.push(BOLD_ON);
+  parts.push(encodeText(rightAlignLine('Total', formatRupiah(totalAmount), lineWidth)));
+  parts.push(BOLD_OFF);
+  parts.push(lineFeed(1));
+
+  // 6. Configurable feed + cut
   if (settings.feed_lines_before_cut > 0) {
     parts.push(lineFeed(settings.feed_lines_before_cut));
   }
-
-  // 10. Cut (skip kalau 'none' — printer tanpa cutter, sobek manual)
   if (settings.cut_mode === 'full') parts.push(CUT_FULL);
   else if (settings.cut_mode === 'partial') parts.push(CUT_PARTIAL);
 

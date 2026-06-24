@@ -42,6 +42,7 @@ type ItemForQueue = {
   qty: number;
   menu_name_snapshot: string;
   menu_category: string;
+  unit_price_snapshot: number;
   notes: string | null;
 };
 
@@ -71,6 +72,7 @@ async function submitPrintJob(args: {
       items: args.items.map((i) => ({
         qty: i.qty,
         name: i.menu_name_snapshot,
+        unit_price: i.unit_price_snapshot,
         note: i.notes,
       })),
     },
@@ -261,7 +263,7 @@ export function NotaReviewForm({
           customer_name: string | null;
           table_no: string | null;
         };
-        items: Array<{ id: string; menu_id: string; menu_name_snapshot: string; qty: number; notes: string | null }>;
+        items: Array<{ id: string; menu_id: string; menu_name_snapshot: string; unit_price_snapshot: number; qty: number; notes: string | null }>;
       };
 
       const itemsForQueue: ItemForQueue[] = data.items.map((it) => {
@@ -270,6 +272,7 @@ export function NotaReviewForm({
           qty: it.qty,
           menu_name_snapshot: it.menu_name_snapshot,
           menu_category: menu?.category ?? 'makanan',
+          unit_price_snapshot: it.unit_price_snapshot,
           notes: it.notes,
         };
       });

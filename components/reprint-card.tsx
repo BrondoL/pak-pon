@@ -12,6 +12,7 @@ export type TransactionItemForPrint = {
   id: string;
   menu_name_snapshot: string;
   menu_category: MenuCategory;
+  unit_price_snapshot: number;
   qty: number;
   notes: string | null;
 };
@@ -50,6 +51,7 @@ async function submitJob(args: {
       items: args.targetItems.map((i) => ({
         qty: i.qty,
         name: i.menu_name_snapshot,
+        unit_price: i.unit_price_snapshot,
         note: i.notes,
       })),
     },

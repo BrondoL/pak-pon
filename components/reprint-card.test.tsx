@@ -14,14 +14,14 @@ const txBase = {
 };
 
 const itemsBoth: TransactionItemForPrint[] = [
-  { id: '1', menu_name_snapshot: 'Ayam', menu_category: 'makanan', qty: 2, notes: null },
-  { id: '2', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', qty: 1, notes: null },
+  { id: '1', menu_name_snapshot: 'Ayam', menu_category: 'makanan', unit_price_snapshot: 25000, qty: 2, notes: null },
+  { id: '2', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', unit_price_snapshot: 5000, qty: 1, notes: null },
 ];
 const itemsDapurOnly: TransactionItemForPrint[] = [
-  { id: '1', menu_name_snapshot: 'Ayam', menu_category: 'makanan', qty: 2, notes: null },
+  { id: '1', menu_name_snapshot: 'Ayam', menu_category: 'makanan', unit_price_snapshot: 25000, qty: 2, notes: null },
 ];
 const itemsMinumanOnly: TransactionItemForPrint[] = [
-  { id: '1', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', qty: 1, notes: null },
+  { id: '1', menu_name_snapshot: 'Es Teh', menu_category: 'minuman', unit_price_snapshot: 5000, qty: 1, notes: null },
 ];
 
 const mockFetchOk = () =>
