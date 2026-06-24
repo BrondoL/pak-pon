@@ -16,9 +16,10 @@ Tablet primer (di meja kasir), responsive ke HP.
 
 1. Kasir foto nota di tablet → upload → Gemini OCR ekstrak item & total handwritten
 2. Kasir review hasil OCR di list editable (edit/tambah/hapus item) → konfirmasi
-3. Owner lihat report harian (angka pemasukan untuk samakan dengan uang fisik) & bulanan (chart + top menu)
-4. Owner kelola menu master (CRUD, soft-deactivate)
-5. History transaksi: list, edit, soft-delete; cron cleanup hard-delete >7 hari
+3. **Auto-print 2 nota struk** (format receipt: header, order number, items + harga, total) — dapur (makanan/nasi) + minuman, lewat LAN thermal printer ESC/POS via Android print-agent app
+4. Owner lihat report harian (angka pemasukan untuk samakan dengan uang fisik) & bulanan (chart + top menu)
+5. Owner kelola menu master (CRUD, soft-deactivate)
+6. History transaksi: list, edit, soft-delete; cron cleanup hard-delete >7 hari
 
 ## Business rules
 
@@ -30,4 +31,6 @@ Tablet primer (di meja kasir), responsive ke HP.
 
 ## Out of scope (MVP)
 
-Payment method tracking, tax/service charge/discount, menu variants berharga beda, multi-user role, signup public, print struk, inventory, push notifications, export CSV. Lihat spec §15.
+Payment method tracking, tax/service charge/discount, menu variants berharga beda, multi-user role, signup public, inventory, user-facing push notifications, export CSV. Lihat spec §15.
+
+> **Catatan:** print struk awalnya out-of-scope MVP, sekarang sudah live via print-agent Android app (lihat `docs/superpowers/specs/2026-06-23-print-nota-design.md` dan `2026-06-23-print-agent-design.md`).

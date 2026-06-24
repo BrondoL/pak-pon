@@ -72,8 +72,11 @@ End-to-end: history searchable + filtered + editable + soft-deletable, reports h
 - [ ] **Comparison trend** — "bulan ini vs bulan lalu", "minggu ini vs minggu lalu" di /reports/monthly.
 
 ### 🖨️ Print
-- [ ] **Print struk digital** — generate PDF struk yang bisa dibagi via WhatsApp ke pelanggan. Tidak perlu printer fisik kalau owner tidak punya.
-- [ ] *(opsional)* **Bluetooth thermal printer integration** — kalau owner invest printer 80mm.
+
+- [x] **Auto-print nota dapur + minuman ke LAN thermal printer (ESC/POS)** — done via Android print-agent app. Format receipt-style mirip nota fisik: header (`header_text` setting), Date / Order Number (POS-DDMMYY-seq) / Customer / Meja, list items dengan `qty x unit_price` dan line total right-aligned, Total Item count, Total bold. Lihat `lib/escpos.ts`.
+- [x] **Background print bypass OS freeze (Transsion HiOS, MIUI, dst)** — FCM high-priority data message bawa inline payload (job_id, target, bytes_b64), agent process langsung di FCM thread tanpa nunggu coroutine scope. Auth session di-persist via SettingsSessionManager + dedicated SharedPreferences. Detail lengkap di `pak-pon-print-agent/docs/firebase-fcm-plan.md`.
+- [ ] **Print struk digital (PDF/WhatsApp)** — generate PDF struk yang bisa dibagi via WhatsApp ke pelanggan. Complementary feature, untuk warung tanpa printer fisik atau request struk by pelanggan.
+- [ ] *(opsional)* **Bluetooth thermal printer integration** — kalau ada device tanpa LAN printer. Currently semua print lewat TCP socket ke printer ESC/POS (port 9100) di LAN yang sama dengan kasir.
 
 ### 💾 Data retention (Supabase free tier)
 
