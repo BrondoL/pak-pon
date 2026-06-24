@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
+import { pushCheckQueue } from '@/lib/fcm';
 import { PrintQueueInsertSchema } from './_schema';
 
 export async function POST(request: NextRequest) {
@@ -48,6 +49,43 @@ export async function POST(request: NextRequest) {
     }
 
     evt.set('job_id', inserted.id);
+
+    // Fan out FCM trigger to EVERY agent that has registered a token in the
+    // last 24 hours. We use a wide window deliberately: an agent whose
+    // process has been frozen for hours has stale last_seen_at but is
+    // EXACTLY the case we want FCM to wake up. Filtering too tight here
+    // would defeat the purpose. FCM itself takes care of dropping stale
+    // tokens via the error path below.
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: agents } = await supabase
+      .from('agent_heartbeats')
+      .select('agent_uuid, fcm_token')
+      .gte('last_seen_at', oneDayAgo)
+      .not('fcm_token', 'is', null);
+
+    const targets = (agents ?? []).filter(
+      (a): a is { agent_uuid: string; fcm_token: string } =>
+        typeof a.fcm_token === 'string' && a.fcm_token.length > 0,
+    );
+
+    if (targets.length > 0) {
+      // Fire-and-forget — don't block the response on FCM delivery.
+      pushCheckQueue({ tokens: targets.map((t) => t.fcm_token) }).then(
+        async (r) => {
+          console.log(`[fcm] push ok=${r.ok} failed=${r.failed}`);
+          // Garbage-collect tokens that FCM rejected as unregistered/invalid.
+          if (r.invalidTokens.length > 0) {
+            await supabase
+              .from('agent_heartbeats')
+              .update({ fcm_token: null })
+              .in('fcm_token', r.invalidTokens);
+            console.log(`[fcm] cleared ${r.invalidTokens.length} stale token(s)`);
+          }
+        },
+        (e) => console.warn('[fcm] push error', e),
+      );
+    }
+
     tagStatus(evt, 201);
     return NextResponse.json({ job_id: inserted.id }, { status: 201 });
   } catch (err) {
