@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
       target: payload.target,
       trigger: payload.trigger,
       bytes_size: payload.bytes_b64.length,
+      item_ids_count: payload.item_ids?.length ?? 0,
     });
 
     const { data: inserted, error: insertErr } = await supabase
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
         target: payload.target,
         trigger: payload.trigger,
         bytes_b64: payload.bytes_b64,
+        item_ids: payload.item_ids,
         created_by: user.id,
       })
       .select('id')
