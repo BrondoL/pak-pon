@@ -659,18 +659,9 @@ export function NotaReviewForm({
               })()}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              disabled={submitting}
-              onClick={async () => {
-                const ctx = modificationModal;
-                setModificationModal(null);
-                if (ctx) await submitSave({ reprintModifiedTarget: { dapur: false, minuman: false } });
-              }}
-            >
-              Skip — kabari manual
-            </AlertDialogCancel>
-            <AlertDialogAction
+          <AlertDialogFooter className="flex-col sm:flex-col gap-2">
+            <Button
+              type="button"
               disabled={submitting}
               onClick={async () => {
                 const ctx = modificationModal;
@@ -679,7 +670,27 @@ export function NotaReviewForm({
               }}
             >
               Cetak ulang ke {modificationModal ? modificationTargetLabel(modificationModal.modified) : ''}
-            </AlertDialogAction>
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={submitting}
+              onClick={async () => {
+                const ctx = modificationModal;
+                setModificationModal(null);
+                if (ctx) await submitSave({ reprintModifiedTarget: { dapur: false, minuman: false } });
+              }}
+            >
+              Skip — kabari manual
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={submitting}
+              onClick={() => setModificationModal(null)}
+            >
+              Batal — kembali ke edit
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
