@@ -55,20 +55,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // — TAMBAHAN: cleanup print_queue done/failed > 7 hari —
-    const { count: queueDeletedCount, error: queueDeleteErr } = await supabase
-      .from('print_queue')
-      .delete({ count: 'exact' })
-      .in('status', ['done', 'failed'])
-      .lt('created_at', cutoff);
-    if (queueDeleteErr) {
-      evt.warn(`print_queue cleanup error: ${queueDeleteErr.message}`);
-    } else {
-      evt.set('print_queue_deleted', queueDeletedCount ?? 0);
-    }
-
-    // — TAMBAHAN Phase 2: cleanup print_history > 7 hari —
-    // History selalu final state (done/failed) — no pending. Hapus apa pun > 7 hari.
+    // Cleanup print_history > 7 hari. History selalu final state
+    // (done/failed) — no pending. Hapus apa pun > 7 hari.
     const { count: historyDeletedCount, error: historyDeleteErr } = await supabase
       .from('print_history')
       .delete({ count: 'exact' })
