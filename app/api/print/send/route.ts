@@ -5,8 +5,13 @@ import { newEvent, tagStatus } from '@/lib/logger';
 import { pushPrintJob } from '@/lib/fcm';
 import { PrintSendSchema } from './_schema';
 
-// Sesuai keputusan spec section 2.3: 90s threshold = heartbeat 30s × 3 ticks.
-const ONLINE_THRESHOLD_SECONDS = 90;
+// Dispatch threshold = "agent kemungkinan masih reachable via FCM" — bukan
+// "heartbeat fresh". OEM Doze/App Standby (HiOS, MIUI, ColorOS) freeze
+// heartbeat thread, tapi Google Play Services tetap deliver FCM. Threshold
+// 24 jam cukup longgar untuk semua case freeze realistis (tablet idle
+// overnight), tetep filter agent yang truly dead (uninstall, ganti device).
+// UI banner di /api/agent/heartbeat tetap pakai 90s untuk indikasi staleness.
+const ONLINE_THRESHOLD_SECONDS = 24 * 60 * 60;
 
 export async function POST(request: NextRequest) {
   const evt = newEvent('POST /api/print/send');
