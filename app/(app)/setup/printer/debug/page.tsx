@@ -18,12 +18,13 @@ import {
 type Job = {
   id: string;
   tx_id: string | null;
-  target: 'dapur' | 'minuman';
-  trigger: 'auto' | 'reprint' | 'test';
-  status: 'pending' | 'printing' | 'done' | 'failed';
+  target: 'dapur' | 'minuman' | 'customer';
+  trigger: 'auto' | 'auto_additional' | 'reprint' | 'reprint_additional' | 'customer' | 'test';
+  status: 'done' | 'failed';
   failure_reason: string | null;
   created_at: string;
-  completed_at: string | null;
+  done_at: string | null;
+  failed_at: string | null;
   customer_name: string | null;
   table_no: string | null;
   daily_seq: number | null;
@@ -60,7 +61,7 @@ export default function PrinterDebugPage() {
     try {
       const [agentRes, jobsRes] = await Promise.all([
         fetch('/api/agent/heartbeat'),
-        fetch('/api/print/queue/recent?limit=30'),
+        fetch('/api/print/history?limit=30'),
       ]);
       if (!agentRes.ok) throw new Error(`agent HTTP ${agentRes.status}`);
       if (!jobsRes.ok) throw new Error(`jobs HTTP ${jobsRes.status}`);
@@ -80,17 +81,6 @@ export default function PrinterDebugPage() {
     reload();
   }, []);
 
-  async function retryJob(jobId: string) {
-    const res = await fetch(`/api/print/queue/${jobId}/retry`, { method: 'POST' });
-    if (res.ok) {
-      toast.success('Job di-retry — agent akan pick up lagi');
-      reload();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      toast.error(`Gagal retry: ${data.error ?? `HTTP ${res.status}`}`);
-    }
-  }
-
   async function deleteAgent(label: string) {
     const res = await fetch(`/api/agent/${encodeURIComponent(label)}`, { method: 'DELETE' });
     if (res.ok) {
@@ -102,8 +92,10 @@ export default function PrinterDebugPage() {
     }
   }
 
-  const pending = jobs.filter((j) => j.status === 'pending' || j.status === 'printing');
-  const recent = jobs.filter((j) => j.status === 'done' || j.status === 'failed');
+  // print_history hanya punya final states (done/failed). Tidak ada pending
+  // karena agent insert setelah job selesai.
+  const done = jobs.filter((j) => j.status === 'done');
+  const failed = jobs.filter((j) => j.status === 'failed');
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4">
@@ -176,83 +168,19 @@ export default function PrinterDebugPage() {
 
       <section className="space-y-2">
         <h2 className="text-base font-medium text-coal sm:text-lg">
-          Pending / In-progress ({pending.length})
+          Job History ({jobs.length})
         </h2>
-        {pending.length === 0 && (
-          <p className="text-sm text-coal-soft">Tidak ada job pending.</p>
+        <p className="text-xs text-coal-soft">
+          Failed: {failed.length} · Done: {done.length}.
+          {failed.length > 0 && ' Untuk retry, buka agent app → tab History.'}
+        </p>
+        {jobs.length === 0 && (
+          <p className="text-sm text-coal-soft">Belum ada job di history.</p>
         )}
-        {pending.length > 0 && (
+        {jobs.length > 0 && (
           <>
             <ul className="space-y-2 md:hidden">
-              {pending.map((j) => (
-                <li
-                  key={j.id}
-                  className="rounded-md border border-clay-soft bg-paper-soft p-3 text-xs"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="font-medium text-coal">{formatTxLabel(j)}</span>
-                    <span className="shrink-0 rounded-full bg-clay-mist px-2 py-0.5 text-[10px] uppercase tracking-wide text-coal">
-                      {j.status}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-coal-soft">
-                    {new Date(j.created_at).toLocaleString('id-ID')}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-coal-soft">
-                    <span>
-                      Target: <span className="text-coal">{j.target}</span>
-                    </span>
-                    <span>
-                      Trigger: <span className="text-coal">{j.trigger}</span>
-                    </span>
-                    <span>
-                      Agent: <span className="text-coal">{j.agent_label ?? '-'}</span>
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-clay-soft">
-                    <th className="p-2 text-left text-coal">Time</th>
-                    <th className="p-2 text-left text-coal">Transaksi</th>
-                    <th className="p-2 text-left text-coal">Target</th>
-                    <th className="p-2 text-left text-coal">Trigger</th>
-                    <th className="p-2 text-left text-coal">Agent</th>
-                    <th className="p-2 text-left text-coal">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pending.map((j) => (
-                    <tr key={j.id} className="border-b border-clay-soft">
-                      <td className="p-2 text-coal">{new Date(j.created_at).toLocaleString('id-ID')}</td>
-                      <td className="p-2 text-coal">{formatTxLabel(j)}</td>
-                      <td className="p-2 text-coal">{j.target}</td>
-                      <td className="p-2 text-coal">{j.trigger}</td>
-                      <td className="p-2 text-coal-soft">{j.agent_label ?? '-'}</td>
-                      <td className="p-2 text-coal">{j.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="text-base font-medium text-coal sm:text-lg">
-          Recent Jobs ({recent.length})
-        </h2>
-        {recent.length === 0 && (
-          <p className="text-sm text-coal-soft">Belum ada job done/failed.</p>
-        )}
-        {recent.length > 0 && (
-          <>
-            <ul className="space-y-2 md:hidden">
-              {recent.map((j) => (
+              {jobs.map((j) => (
                 <li
                   key={j.id}
                   className="rounded-md border border-clay-soft bg-paper-soft p-3 text-xs"
@@ -277,6 +205,9 @@ export default function PrinterDebugPage() {
                       Target: <span className="text-coal">{j.target}</span>
                     </span>
                     <span>
+                      Trigger: <span className="text-coal">{j.trigger}</span>
+                    </span>
+                    <span>
                       Agent: <span className="text-coal">{j.agent_label ?? '-'}</span>
                     </span>
                   </div>
@@ -284,14 +215,6 @@ export default function PrinterDebugPage() {
                     <div className="mt-1 break-words text-coal-soft">
                       Reason: <span className="text-coal">{j.failure_reason}</span>
                     </div>
-                  )}
-                  {j.status === 'failed' && (
-                    <button
-                      onClick={() => retryJob(j.id)}
-                      className="mt-2 rounded border border-brick-soft px-2 py-0.5 text-xs text-brick"
-                    >
-                      Retry
-                    </button>
                   )}
                 </li>
               ))}
@@ -303,18 +226,19 @@ export default function PrinterDebugPage() {
                     <th className="p-2 text-left text-coal">Time</th>
                     <th className="p-2 text-left text-coal">Transaksi</th>
                     <th className="p-2 text-left text-coal">Target</th>
+                    <th className="p-2 text-left text-coal">Trigger</th>
                     <th className="p-2 text-left text-coal">Agent</th>
                     <th className="p-2 text-left text-coal">Status</th>
                     <th className="p-2 text-left text-coal">Reason</th>
-                    <th className="p-2 text-left text-coal">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recent.map((j) => (
+                  {jobs.map((j) => (
                     <tr key={j.id} className="border-b border-clay-soft">
                       <td className="p-2 text-coal">{new Date(j.created_at).toLocaleString('id-ID')}</td>
                       <td className="p-2 text-coal">{formatTxLabel(j)}</td>
                       <td className="p-2 text-coal">{j.target}</td>
+                      <td className="p-2 text-coal-soft">{j.trigger}</td>
                       <td className="p-2 text-coal-soft">{j.agent_label ?? '-'}</td>
                       <td className="p-2">
                         <span className={j.status === 'done' ? 'text-leaf' : 'text-brick'}>
@@ -322,16 +246,6 @@ export default function PrinterDebugPage() {
                         </span>
                       </td>
                       <td className="p-2 text-coal-soft">{j.failure_reason ?? '-'}</td>
-                      <td className="p-2">
-                        {j.status === 'failed' && (
-                          <button
-                            onClick={() => retryJob(j.id)}
-                            className="rounded border border-brick-soft px-2 py-0.5 text-xs text-brick"
-                          >
-                            Retry
-                          </button>
-                        )}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
