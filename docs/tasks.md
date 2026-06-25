@@ -52,7 +52,7 @@ Spec: `docs/superpowers/specs/2026-06-25-print-revamp-design.md`
 - [x] **Phase 3 (web)** — Cleanup: `DROP TABLE print_queue CASCADE`, delete `/api/print/queue/*` routes, rename `pushCheckQueue → pushPrintJob` + drop legacy `check_queue` fallback. Plan: `docs/superpowers/plans/2026-06-25-print-revamp-phase3-cleanup-web.md`.
 - [x] **Phase 2 (agent)** — Strip realtime watcher + periodic + alarm trigger paths. FCM-only entry point. Start/Stop button → upsert `agent_heartbeats.status`. `PrintHistoryRepository` insert saat job final (done/failed). Tab History di agent app + Retry button. Plan: `docs/superpowers/plans/2026-06-25-print-revamp-phase2-agent.md`.
 - [x] **Phase 3 (agent)** — Cleanup: remove `realtime-kt` dependency dari `build.gradle.kts`, drop dead code di agent repo.
-- [ ] **E2E test** — agent Phase 2+3 sudah selesai, siap test bareng.
+- [x] **E2E test (2026-06-25)** — semua critical scenario PASS (A1/A3/A4, B1-B3, C1, D1/D2, E, G1, H1, I1, M1/M3, printed_*_at preservation, FCM bypass OEM freeze). Discovered + fixed: id-undefined NULL violation, cron cleanup dropped table, dispatch threshold defeat FCM (90s→24h), introduced 3-state agent UI (online/stale/offline 1h). Test plan: `docs/superpowers/plans/2026-06-25-print-revamp-e2e-test-plan.md`.
 
 ## Plan 4 — Shift Cut-off + shadcn Migration + Polish ✅ COMPLETE
 - [x] Shift-aware business-day cut-off (`docs/superpowers/specs/2026-06-21-shift-cutoff-design.md`)
