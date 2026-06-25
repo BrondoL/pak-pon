@@ -80,7 +80,7 @@ export default function SetupPrinterPage() {
         <ul className="list-disc space-y-1 pl-6 text-sm text-coal-soft">
           <li>Pastikan agent app masih jalan (cek notifikasi di status bar HP)</li>
           <li>Pastikan HP terhubung WiFi warung yang sama dengan printer</li>
-          <li>Cek halaman diagnostic untuk status agent &amp; antrian print job</li>
+          <li>Cek halaman diagnostic untuk status agent &amp; history print job</li>
         </ul>
         <a
           href="/setup/printer/debug"
