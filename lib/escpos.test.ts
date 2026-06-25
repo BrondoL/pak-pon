@@ -91,6 +91,7 @@ describe('renderTicket', () => {
       cut_mode: 'none',
       beep_on_print: false,
       header_text: 'PECEL LELE PAK PON',
+      footer_text: '',
     });
     const ascii = new TextDecoder('latin1').decode(bytes);
     expect(ascii).toContain('PECEL LELE PAK PON');

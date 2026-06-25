@@ -7,6 +7,7 @@ export type PrinterSettings = {
   cut_mode: CutMode;
   beep_on_print: boolean;
   header_text: string | null;
+  footer_text: string;
 };
 
 export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
@@ -15,6 +16,7 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   cut_mode: 'full',
   beep_on_print: false,
   header_text: null,
+  footer_text: '',
 };
 
 export function charsPerLine(paperWidth: PaperWidth): number {
