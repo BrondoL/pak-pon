@@ -266,7 +266,7 @@ async function replaceItems(
 ): Promise<StepResult> {
   const { data: existingItems, error: existingError } = await supabase
     .from('transaction_items')
-    .select('id, menu_id, unit_price_snapshot, qty, notes, sort_order')
+    .select('id, menu_id, unit_price_snapshot, qty, notes, sort_order, printed_dapur_at, printed_minuman_at')
     .eq('transaction_id', id);
   if (existingError) {
     tagStatus(evt, 500);

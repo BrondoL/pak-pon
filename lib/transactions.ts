@@ -16,6 +16,8 @@ export type ExistingItem = {
   qty: number;
   notes: string | null;
   sort_order: number;
+  printed_dapur_at: string | null;
+  printed_minuman_at: string | null;
 };
 
 export type RequestedItem = {
@@ -29,6 +31,9 @@ export type RequestedItem = {
 };
 
 export type ItemRow = {
+  // id present hanya untuk items yang preserved dari existing — supaya
+  // delete+insert tetap reuse UUID lama dan trigger Postgres tidak salah baca.
+  id?: string;
   menu_id: string;
   menu_name_snapshot: string;
   unit_price_snapshot: number;
@@ -37,6 +42,10 @@ export type ItemRow = {
   sort_order: number;
   confidence: number | null;
   alternatives: Alternative[] | null;
+  // Carry forward print-tracking flags supaya "Cetak tambahan" tahu mana yang
+  // sudah dicetak. Null untuk item baru (akan diset oleh trigger saat job done).
+  printed_dapur_at: string | null;
+  printed_minuman_at: string | null;
 };
 
 export type ReplaceItemsResult = {
@@ -71,6 +80,9 @@ export function computeReplaceItems(input: {
     const unit_price_snapshot = matchedExisting?.unit_price_snapshot ?? menu.price;
 
     return {
+      // Preserve id supaya printed_*_at di trigger Postgres tetap match item
+      // yang sama. Item baru (no match) tidak punya id — DB akan generate.
+      id: matchedExisting?.id,
       menu_id: menu.id,
       menu_name_snapshot: menu.name,
       unit_price_snapshot,
@@ -79,6 +91,8 @@ export function computeReplaceItems(input: {
       sort_order: req.sort_order,
       confidence: req.confidence ?? null,
       alternatives: req.alternatives ?? null,
+      printed_dapur_at: matchedExisting?.printed_dapur_at ?? null,
+      printed_minuman_at: matchedExisting?.printed_minuman_at ?? null,
     };
   });
 
