@@ -1,13 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
+import { renderKitchenTicket, uint8ToBase64 } from '@/lib/escpos';
 
 type Phase = 'idle' | 'submitting' | 'awaiting_agent' | 'error';
 type Target = 'dapur' | 'minuman';
 
 function buildTestPayload(target: Target): string {
-  const bytes = renderTicket({
+  const bytes = renderKitchenTicket({
     target,
     daily_seq: 0,
     created_at: new Date(),
