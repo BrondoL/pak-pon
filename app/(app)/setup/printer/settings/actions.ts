@@ -14,6 +14,10 @@ const SettingsSchema = z.object({
     .max(80)
     .transform((s) => (s.trim() === '' ? null : s.trim()))
     .nullable(),
+  footer_text: z
+    .string()
+    .max(200)
+    .transform((s) => s.trim()),
 });
 
 export type SettingsState = { ok?: boolean; error?: string };
@@ -28,6 +32,7 @@ export async function savePrinterSettings(
     cut_mode: formData.get('cut_mode'),
     beep_on_print: formData.get('beep_on_print') === 'on',
     header_text: formData.get('header_text') ?? '',
+    footer_text: formData.get('footer_text') ?? '',
   });
   if (!parsed.success) {
     return { error: 'Input tidak valid.' };

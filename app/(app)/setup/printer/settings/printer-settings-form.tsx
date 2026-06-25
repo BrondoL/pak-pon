@@ -138,6 +138,22 @@ export function PrinterSettingsForm({ initial }: { initial: PrinterSettings }) {
             Tulisan custom di atas DAPUR/MINUMAN. Kosongin kalau ga perlu. Max 80 karakter.
           </p>
         </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="footer_text">Footer text (nota customer)</Label>
+          <textarea
+            id="footer_text"
+            name="footer_text"
+            defaultValue={initial.footer_text}
+            maxLength={200}
+            rows={3}
+            placeholder="cth: Terima kasih atas kunjungan Anda&#10;~ Pak Pon ~"
+            className="w-full rounded-md border border-clay-soft bg-paper px-3 py-2 text-sm text-coal focus:outline-none focus:ring-2 focus:ring-mustard"
+          />
+          <p className="text-xs text-coal-soft">
+            Hanya dicetak di nota customer (yang tampil harga + total). Kosongkan kalau tidak perlu. Max 200 karakter, multi-baris diperbolehkan.
+          </p>
+        </div>
       </Card>
 
       <div className="flex justify-end">
