@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Textarea } from '@/components/ui/textarea';
 import type { PrinterSettings } from '@/lib/printer-settings';
 import { charsPerLine } from '@/lib/printer-settings';
 import { savePrinterSettings, type SettingsState } from './actions';
@@ -141,14 +142,13 @@ export function PrinterSettingsForm({ initial }: { initial: PrinterSettings }) {
 
         <div className="space-y-2">
           <Label htmlFor="footer_text">Footer text (nota customer)</Label>
-          <textarea
+          <Textarea
             id="footer_text"
             name="footer_text"
             defaultValue={initial.footer_text}
             maxLength={200}
             rows={3}
             placeholder="cth: Terima kasih atas kunjungan Anda&#10;~ Pak Pon ~"
-            className="w-full rounded-md border border-clay-soft bg-paper px-3 py-2 text-sm text-coal focus:outline-none focus:ring-2 focus:ring-mustard"
           />
           <p className="text-xs text-coal-soft">
             Hanya dicetak di nota customer (yang tampil harga + total). Kosongkan kalau tidak perlu. Max 200 karakter, multi-baris diperbolehkan.
