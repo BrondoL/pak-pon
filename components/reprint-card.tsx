@@ -69,7 +69,7 @@ async function submitJob(args: {
     args.target === 'customer' ? null : args.items.map((i) => i.id);
 
   try {
-    const res = await fetch('/api/print/queue', {
+    const res = await fetch('/api/print/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -82,7 +82,10 @@ async function submitJob(args: {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      return { ok: false, error: (data as { error?: string }).error ?? `HTTP ${res.status}` };
+      const err = (data as { error?: string }).error ?? `HTTP ${res.status}`;
+      // 503 = agent_offline: special handling supaya UX bisa show toast tertentu.
+      const isOffline = res.status === 503 && err === 'agent_offline';
+      return { ok: false, error: isOffline ? 'agent_offline' : err };
     }
     return { ok: true };
   } catch (err) {
@@ -149,7 +152,17 @@ export function ReprintCard({
     const ok = results.filter((r) => r.ok).map((r) => r.target);
     const fail = results.filter((r) => !r.ok);
     if (fail.length === 0) toast.success(`${ok.length} job tambahan dikirim ke agent`);
-    else toast.error(`${ok.length} sukses, ${fail.length} gagal: ${fail.map((f) => `${f.target}=${f.error}`).join(', ')}`);
+    else {
+      const offline = fail.some((f) => f.error === 'agent_offline');
+      if (offline) {
+        toast.warning('Agent printer offline', {
+          description: 'Nyalakan agent di Android dulu, lalu coba lagi.',
+          duration: 8000,
+        });
+      } else {
+        toast.error(`${ok.length} sukses, ${fail.length} gagal: ${fail.map((f) => `${f.target}=${f.error}`).join(', ')}`);
+      }
+    }
   }
 
   async function fireReprintTarget(target: 'dapur' | 'minuman') {
@@ -164,7 +177,11 @@ export function ReprintCard({
     });
     setSubmitting(null);
     if (result.ok) toast.success(`Cetak ulang ${target} dikirim ke agent`);
-    else toast.error(`Gagal kirim job ${target}: ${result.error}`);
+    else if (result.error === 'agent_offline') {
+      toast.warning('Agent printer offline', { description: 'Nyalakan agent di Android dulu, lalu coba lagi.', duration: 8000 });
+    } else {
+      toast.error(`Gagal kirim job ${target}: ${result.error}`);
+    }
   }
 
   async function fireReprintBoth() {
@@ -197,7 +214,17 @@ export function ReprintCard({
     const ok = results.filter((r) => r.ok).map((r) => r.target);
     const fail = results.filter((r) => !r.ok);
     if (fail.length === 0) toast.success(`${ok.length} job dikirim ke agent`);
-    else toast.error(`${ok.length} sukses, ${fail.length} gagal: ${fail.map((f) => `${f.target}=${f.error}`).join(', ')}`);
+    else {
+      const offline = fail.some((f) => f.error === 'agent_offline');
+      if (offline) {
+        toast.warning('Agent printer offline', {
+          description: 'Nyalakan agent di Android dulu, lalu coba lagi.',
+          duration: 8000,
+        });
+      } else {
+        toast.error(`${ok.length} sukses, ${fail.length} gagal: ${fail.map((f) => `${f.target}=${f.error}`).join(', ')}`);
+      }
+    }
   }
 
   async function fireCustomer() {
@@ -211,7 +238,11 @@ export function ReprintCard({
     });
     setSubmitting(null);
     if (result.ok) toast.success('Cetak nota customer dikirim ke agent');
-    else toast.error(`Gagal kirim job customer: ${result.error}`);
+    else if (result.error === 'agent_offline') {
+      toast.warning('Agent printer offline', { description: 'Nyalakan agent di Android dulu, lalu coba lagi.', duration: 8000 });
+    } else {
+      toast.error(`Gagal kirim job customer: ${result.error}`);
+    }
   }
 
   const isBusy = submitting !== null;

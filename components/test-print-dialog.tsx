@@ -32,7 +32,7 @@ export function TestPrintDialog({
     setPhase('submitting');
     setError(null);
     try {
-      const res = await fetch('/api/print/queue', {
+      const res = await fetch('/api/print/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

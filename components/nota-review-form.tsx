@@ -65,7 +65,7 @@ async function submitPrintJob(args: {
   items: ItemForQueue[];
   trigger: 'auto' | 'auto_additional';
   printerSettings: PrinterSettings;
-}): Promise<boolean> {
+}): Promise<{ ok: boolean; offline: boolean }> {
   const bytes = renderKitchenTicket(
     {
       target: args.target,
@@ -84,7 +84,7 @@ async function submitPrintJob(args: {
   );
   const bytes_b64 = uint8ToBase64(bytes);
   try {
-    const res = await fetch('/api/print/queue', {
+    const res = await fetch('/api/print/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -95,9 +95,10 @@ async function submitPrintJob(args: {
         bytes_b64,
       }),
     });
-    return res.ok;
+    if (res.ok) return { ok: true, offline: false };
+    return { ok: false, offline: res.status === 503 };
   } catch {
-    return false;
+    return { ok: false, offline: false };
   }
 }
 
@@ -307,29 +308,33 @@ export function NotaReviewForm({
         ? split.minuman.filter((i) => i.printed_minuman_at === null)
         : split.minuman;
 
-      const submitJobs: Promise<{ target: PrinterTarget; ok: boolean }>[] = [];
+      const submitJobs: Promise<{ target: PrinterTarget; ok: boolean; offline: boolean }>[] = [];
       if (dapurItems.length > 0) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'dapur', items: dapurItems, trigger, printerSettings }).then((ok) => ({ target: 'dapur', ok })),
+          submitPrintJob({ tx: data.transaction, target: 'dapur', items: dapurItems, trigger, printerSettings }).then((r) => ({ ...r, target: 'dapur' as const })),
         );
       }
       if (minumanItems.length > 0) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'minuman', items: minumanItems, trigger, printerSettings }).then((ok) => ({ target: 'minuman', ok })),
+          submitPrintJob({ tx: data.transaction, target: 'minuman', items: minumanItems, trigger, printerSettings }).then((r) => ({ ...r, target: 'minuman' as const })),
         );
       }
       const results = await Promise.all(submitJobs);
       const succeeded = results.filter((r) => r.ok).map((r) => r.target);
-      const failed = results.filter((r) => !r.ok).map((r) => r.target);
+      const failed = results.filter((r) => !r.ok);
+      const offlineCount = failed.filter((f) => f.offline).length;
 
       if (results.length === 0) {
         toast.success('Nota tersimpan (tidak ada item baru untuk dicetak)');
       } else if (failed.length === 0) {
         const action = wasConfirmedBefore ? 'tambahan' : 'cetak';
         toast.success(`Nota tersimpan, ${succeeded.length} print job ${action} dikirim ke agent`);
+      } else if (offlineCount > 0) {
+        toast.success('Nota tersimpan');
+        toast.warning('Agent printer offline. Nyalakan agent lalu klik Cetak tambahan dari halaman detail.', { duration: 10000 });
       } else {
         toast.success('Nota tersimpan');
-        toast.error(`Gagal kirim print job ke: ${failed.join(', ')}. Coba reprint manual dari halaman detail.`);
+        toast.error(`Gagal kirim print job ke: ${failed.map((f) => f.target).join(', ')}. Coba reprint manual dari halaman detail.`);
       }
 
       startTransition(() => {

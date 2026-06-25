@@ -51,7 +51,7 @@ describe('<TestPrintDialog />', () => {
     await user.click(screen.getByRole('button', { name: /cetak tes/i }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const call = fetchMock.mock.calls[0];
-    expect(call[0]).toBe('/api/print/queue');
+    expect(call[0]).toBe('/api/print/send');
     const body = JSON.parse(call[1]!.body as string);
     expect(body.target).toBe('minuman');
     expect(body.trigger).toBe('test');

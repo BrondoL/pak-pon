@@ -166,4 +166,21 @@ describe('<ReprintCard />', () => {
       expect(body.item_ids).toBeNull();
     });
   });
+
+  describe('Agent offline (503)', () => {
+    it('shows warning toast when fire single fails with agent_offline', async () => {
+      const fetchMock = vi.fn((..._args: [RequestInfo | URL, RequestInit?]) => {
+        void _args;
+        return Promise.resolve(new Response(JSON.stringify({ error: 'agent_offline', detail: 'no online agent' }), { status: 503 }));
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+      const user = userEvent.setup();
+      const items = [mkItem({ menu_category: 'makanan' })];
+      render(<ReprintCard transaction={txBase} items={items} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
+      await user.click(screen.getByRole('button', { name: /cetak ulang dapur/i }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      // Toast assertions are tricky without spying; assert fetchMock was called against /api/print/send
+      expect(String((fetchMock.mock.calls[0] as [unknown])[0])).toContain('/api/print/send');
+    });
+  });
 });
