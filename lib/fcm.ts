@@ -91,7 +91,7 @@ export async function pushPrintJob(args: PushAgentArgs): Promise<PushAgentResult
     data,
     android: {
       priority: 'high',
-      ttl: 60 * 1000, // 1 minute — agent's catch-up handles delayed receipts
+      ttl: 60 * 1000, // 1 minute — agent online via heartbeat; expire stale notif
     },
   });
 

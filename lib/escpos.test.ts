@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { renderCustomerReceipt, renderKitchenTicket, uint8ToBase64, type TicketInput } from './escpos';
 
 const baseInput: TicketInput = {
-  target: 'dapur',
   daily_seq: 45,
   created_at: new Date('2026-06-24T14:07:00.000Z'), // 21:07 WIB
   customer_name: 'Pak Budi',

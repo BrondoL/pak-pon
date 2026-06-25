@@ -43,11 +43,7 @@ async function submitJob(args: {
   trigger: Trigger;
   printerSettings: PrinterSettings;
 }): Promise<{ ok: boolean; error?: string }> {
-  // TicketInput.target type is 'dapur' | 'minuman'. Use 'dapur' as placeholder
-  // when target is 'customer' — the field is not used in render output.
-  const ticketTarget = args.target === 'customer' ? 'dapur' : args.target;
   const ticketInput = {
-    target: ticketTarget,
     daily_seq: args.tx.daily_seq ?? 0,
     created_at: new Date(args.tx.created_at),
     customer_name: args.tx.customer_name,

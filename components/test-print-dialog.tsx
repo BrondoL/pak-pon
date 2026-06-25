@@ -8,7 +8,6 @@ type Target = 'dapur' | 'minuman';
 
 function buildTestPayload(target: Target): string {
   const bytes = renderKitchenTicket({
-    target,
     daily_seq: 0,
     created_at: new Date(),
     customer_name: null,

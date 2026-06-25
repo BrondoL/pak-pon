@@ -21,7 +21,6 @@ import {
 } from './printer-settings';
 
 export type TicketInput = {
-  target: 'dapur' | 'minuman';
   daily_seq: number;
   created_at: Date;
   customer_name: string | null;

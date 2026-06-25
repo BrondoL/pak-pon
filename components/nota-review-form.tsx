@@ -68,7 +68,6 @@ async function submitPrintJob(args: {
 }): Promise<{ ok: boolean; offline: boolean }> {
   const bytes = renderKitchenTicket(
     {
-      target: args.target,
       daily_seq: args.tx.daily_seq ?? 0,
       created_at: new Date(args.tx.created_at),
       customer_name: args.tx.customer_name,
