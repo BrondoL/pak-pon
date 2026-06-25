@@ -37,8 +37,8 @@ export interface PushAgentArgs {
    */
   job?: {
     id: string;
-    target: 'dapur' | 'minuman';
-    trigger: 'auto' | 'reprint' | 'test';
+    target: 'dapur' | 'minuman' | 'customer';
+    trigger: 'auto' | 'auto_additional' | 'reprint' | 'reprint_additional' | 'customer' | 'test';
     bytes_b64: string;
   };
 }

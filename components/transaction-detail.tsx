@@ -29,6 +29,8 @@ type Item = {
   qty: number;
   notes: string | null;
   menu_category?: 'makanan' | 'nasi' | 'minuman' | string | null;
+  printed_dapur_at?: string | null;
+  printed_minuman_at?: string | null;
 };
 
 type Transaction = {
@@ -260,6 +262,8 @@ export function TransactionDetail({
                 unit_price_snapshot: it.unit_price_snapshot,
                 qty: it.qty,
                 notes: it.notes,
+                printed_dapur_at: it.printed_dapur_at ?? null,
+                printed_minuman_at: it.printed_minuman_at ?? null,
               }))}
               printerSettings={printerSettings}
             />

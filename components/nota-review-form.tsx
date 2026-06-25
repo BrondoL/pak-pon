@@ -22,7 +22,7 @@ import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
 import { ZoomableNotaImage } from './zoomable-nota-image';
-import { renderTicket, uint8ToBase64 } from '@/lib/escpos';
+import { renderKitchenTicket, uint8ToBase64 } from '@/lib/escpos';
 import { detectThousandsMissing } from '@/lib/total-parser';
 import type { PrinterSettings } from '@/lib/printer-settings';
 
@@ -39,11 +39,14 @@ type Transaction = {
 type PrinterTarget = 'dapur' | 'minuman';
 
 type ItemForQueue = {
+  id: string;
   qty: number;
   menu_name_snapshot: string;
   menu_category: string;
   unit_price_snapshot: number;
   notes: string | null;
+  printed_dapur_at: string | null;
+  printed_minuman_at: string | null;
 };
 
 function splitItems(items: ItemForQueue[]) {
@@ -60,9 +63,10 @@ async function submitPrintJob(args: {
   tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null };
   target: PrinterTarget;
   items: ItemForQueue[];
+  trigger: 'auto' | 'auto_additional';
   printerSettings: PrinterSettings;
 }): Promise<boolean> {
-  const bytes = renderTicket(
+  const bytes = renderKitchenTicket(
     {
       target: args.target,
       daily_seq: args.tx.daily_seq ?? 0,
@@ -86,7 +90,8 @@ async function submitPrintJob(args: {
       body: JSON.stringify({
         tx_id: args.tx.id,
         target: args.target,
-        trigger: 'auto',
+        trigger: args.trigger,
+        item_ids: args.items.map((i) => i.id),
         bytes_b64,
       }),
     });
@@ -263,42 +268,68 @@ export function NotaReviewForm({
           customer_name: string | null;
           table_no: string | null;
         };
-        items: Array<{ id: string; menu_id: string; menu_name_snapshot: string; unit_price_snapshot: number; qty: number; notes: string | null }>;
+        items: Array<{
+          id: string;
+          menu_id: string;
+          menu_name_snapshot: string;
+          unit_price_snapshot: number;
+          qty: number;
+          notes: string | null;
+          printed_dapur_at: string | null;
+          printed_minuman_at: string | null;
+        }>;
       };
+
+      const wasConfirmedBefore = transaction.status === 'confirmed';
 
       const itemsForQueue: ItemForQueue[] = data.items.map((it) => {
         const menu = menus.find((m) => m.id === it.menu_id);
         return {
+          id: it.id,
           qty: it.qty,
           menu_name_snapshot: it.menu_name_snapshot,
           menu_category: menu?.category ?? 'makanan',
           unit_price_snapshot: it.unit_price_snapshot,
           notes: it.notes,
+          printed_dapur_at: it.printed_dapur_at,
+          printed_minuman_at: it.printed_minuman_at,
         };
       });
+
       const split = splitItems(itemsForQueue);
+      const trigger: 'auto' | 'auto_additional' = wasConfirmedBefore
+        ? 'auto_additional'
+        : 'auto';
+      const dapurItems = wasConfirmedBefore
+        ? split.dapur.filter((i) => i.printed_dapur_at === null)
+        : split.dapur;
+      const minumanItems = wasConfirmedBefore
+        ? split.minuman.filter((i) => i.printed_minuman_at === null)
+        : split.minuman;
+
       const submitJobs: Promise<{ target: PrinterTarget; ok: boolean }>[] = [];
-      if (split.dapur.length > 0) {
+      if (dapurItems.length > 0) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur, printerSettings }).then((ok) => ({ target: 'dapur', ok }))
+          submitPrintJob({ tx: data.transaction, target: 'dapur', items: dapurItems, trigger, printerSettings }).then((ok) => ({ target: 'dapur', ok })),
         );
       }
-      if (split.minuman.length > 0) {
+      if (minumanItems.length > 0) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'minuman', items: split.minuman, printerSettings }).then((ok) => ({ target: 'minuman', ok }))
+          submitPrintJob({ tx: data.transaction, target: 'minuman', items: minumanItems, trigger, printerSettings }).then((ok) => ({ target: 'minuman', ok })),
         );
       }
       const results = await Promise.all(submitJobs);
       const succeeded = results.filter((r) => r.ok).map((r) => r.target);
       const failed = results.filter((r) => !r.ok).map((r) => r.target);
 
-      if (failed.length === 0 && succeeded.length > 0) {
-        toast.success(`Nota tersimpan, ${succeeded.length} print job dikirim ke agent`);
-      } else if (failed.length > 0) {
-        toast.success('Nota tersimpan');
-        toast.error(`Gagal kirim print job ke: ${failed.join(', ')}. Coba reprint manual dari halaman detail.`);
+      if (results.length === 0) {
+        toast.success('Nota tersimpan (tidak ada item baru untuk dicetak)');
+      } else if (failed.length === 0) {
+        const action = wasConfirmedBefore ? 'tambahan' : 'cetak';
+        toast.success(`Nota tersimpan, ${succeeded.length} print job ${action} dikirim ke agent`);
       } else {
         toast.success('Nota tersimpan');
+        toast.error(`Gagal kirim print job ke: ${failed.join(', ')}. Coba reprint manual dari halaman detail.`);
       }
 
       startTransition(() => {
