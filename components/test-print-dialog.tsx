@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { renderKitchenTicket, uint8ToBase64 } from '@/lib/escpos';
 
-type Phase = 'idle' | 'submitting' | 'awaiting_agent' | 'error';
+type Phase = 'idle' | 'submitting' | 'awaiting_agent' | 'offline' | 'error';
 type Target = 'dapur' | 'minuman';
 
 function buildTestPayload(target: Target): string {
@@ -45,7 +45,13 @@ export function TestPrintDialog({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(`gagal mengirim: ${data.error ?? `HTTP ${res.status}`}`);
+        const errCode = (data as { error?: string }).error;
+        // 503 + agent_offline: friendly state — most common during setup flow.
+        if (res.status === 503 && errCode === 'agent_offline') {
+          setPhase('offline');
+          return;
+        }
+        setError(`gagal mengirim: ${errCode ?? `HTTP ${res.status}`}`);
         setPhase('error');
         return;
       }
@@ -106,10 +112,36 @@ export function TestPrintDialog({
     );
   }
 
+  if (phase === 'offline') {
+    return (
+      <div className="space-y-3 rounded-md border border-mustard/40 bg-mustard-faint p-4">
+        <h3 className="font-medium text-coal">Agent printer offline</h3>
+        <p className="text-sm text-coal">
+          Belum ada agent yang aktif. Buka aplikasi <strong>Pak Pon Agent</strong> di Android, login,
+          lalu tap tombol <strong>Start</strong>. Kembali ke sini setelah indikator agent jadi <em>Online</em>.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setPhase('idle')}
+            className="flex-1 rounded-md border border-clay-soft px-4 py-2 text-coal"
+          >
+            Coba Lagi
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-md bg-primary px-4 py-2 text-primary-foreground"
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // phase === 'error'
   return (
     <div className="space-y-3 rounded-md border border-brick-soft bg-brick-faint p-4">
-      <h3 className="font-medium text-brick-dark">Gagal kirim job ke queue</h3>
+      <h3 className="font-medium text-brick-dark">Gagal kirim job ke agent</h3>
       <p className="text-sm text-brick-dark">{error ?? 'unknown error'}</p>
       <div className="flex gap-2">
         <button
