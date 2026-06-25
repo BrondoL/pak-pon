@@ -59,11 +59,43 @@ function splitItems(items: ItemForQueue[]) {
   return { dapur, minuman };
 }
 
+function detectModifiedTargets(
+  initial: Omit<NotaItem, '_localId'>[],
+  current: NotaItem[],
+  menus: MenuOption[],
+): { dapur: boolean; minuman: boolean } {
+  const initialById = new Map(initial.map((i) => [i.id, i]));
+  const categoryByMenuId = new Map(menus.map((m) => [m.id, m.category]));
+  let dapur = false;
+  let minuman = false;
+  function markTarget(category: string | undefined) {
+    if (category === 'makanan' || category === 'nasi') dapur = true;
+    else if (category === 'minuman') minuman = true;
+  }
+  for (const cur of current) {
+    // Item baru (no id) bukan modifikasi — di-handle delta print biasa.
+    if (!cur.id) continue;
+    const orig = initialById.get(cur.id);
+    if (!orig) continue;
+    const changed =
+      orig.menu_id !== cur.menu_id ||
+      orig.qty !== cur.qty ||
+      orig.notes !== cur.notes;
+    if (!changed) continue;
+    markTarget(categoryByMenuId.get(cur.menu_id));
+    // Kalau swap category (e.g. makanan → minuman), target lama juga affected.
+    if (orig.menu_id !== cur.menu_id) {
+      markTarget(categoryByMenuId.get(orig.menu_id));
+    }
+  }
+  return { dapur, minuman };
+}
+
 async function submitPrintJob(args: {
   tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null };
   target: PrinterTarget;
   items: ItemForQueue[];
-  trigger: 'auto' | 'auto_additional';
+  trigger: 'auto' | 'auto_additional' | 'reprint';
   printerSettings: PrinterSettings;
 }): Promise<{ ok: boolean; offline: boolean }> {
   const bytes = renderKitchenTicket(
@@ -128,6 +160,9 @@ export function NotaReviewForm({
   const [thousandsDismissed, setThousandsDismissed] = useState(false);
   const [thousandsApplying, setThousandsApplying] = useState(false);
   const [rescanning, setRescanning] = useState(false);
+  // Modal "Cetak ulang ke dapur" — saat edit confirmed tx + items existing dimodifikasi.
+  const [modificationModal, setModificationModal] = useState<{ dapur: boolean; minuman: boolean } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const menusByName = useMemo(
     () => new Map(menus.map((m) => [m.name, m])),
@@ -236,6 +271,20 @@ export function NotaReviewForm({
 
   async function handleConfirm() {
     setSubmitError(null);
+    // Edit save (tx sudah confirmed) + ada items existing yang dimodifikasi
+    // (qty/menu/notes) → tampilkan modal pilihan reprint, bukan langsung save.
+    if (transaction.status === 'confirmed') {
+      const mod = detectModifiedTargets(initialItems, items, menus);
+      if (mod.dapur || mod.minuman) {
+        setModificationModal(mod);
+        return;
+      }
+    }
+    await submitSave({ reprintModifiedTarget: { dapur: false, minuman: false } });
+  }
+
+  async function submitSave(args: { reprintModifiedTarget: { dapur: boolean; minuman: boolean } }) {
+    setSubmitting(true);
     const payload = {
       status: 'confirmed' as const,
       customer_name: customerName.trim() === '' ? null : customerName.trim(),
@@ -297,36 +346,53 @@ export function NotaReviewForm({
       });
 
       const split = splitItems(itemsForQueue);
-      const trigger: 'auto' | 'auto_additional' = wasConfirmedBefore
-        ? 'auto_additional'
-        : 'auto';
-      const dapurItems = wasConfirmedBefore
-        ? split.dapur.filter((i) => i.printed_dapur_at === null)
-        : split.dapur;
-      const minumanItems = wasConfirmedBefore
-        ? split.minuman.filter((i) => i.printed_minuman_at === null)
-        : split.minuman;
+      const reprint = args.reprintModifiedTarget;
 
-      const submitJobs: Promise<{ target: PrinterTarget; ok: boolean; offline: boolean }>[] = [];
-      if (dapurItems.length > 0) {
+      // Per target: kalau reprint mode (user pilih cetak ulang via modal) →
+      // full reprint semua items target. Else → auto/auto_additional delta.
+      function buildJob(target: PrinterTarget, targetItems: ItemForQueue[]): { items: ItemForQueue[]; trigger: 'auto' | 'auto_additional' | 'reprint' } | null {
+        if (targetItems.length === 0) return null;
+        if (reprint[target]) {
+          return { items: targetItems, trigger: 'reprint' };
+        }
+        const trigger: 'auto' | 'auto_additional' = wasConfirmedBefore ? 'auto_additional' : 'auto';
+        const filtered = wasConfirmedBefore
+          ? targetItems.filter((i) => (target === 'dapur' ? i.printed_dapur_at : i.printed_minuman_at) === null)
+          : targetItems;
+        if (filtered.length === 0) return null;
+        return { items: filtered, trigger };
+      }
+
+      const dapurJob = buildJob('dapur', split.dapur);
+      const minumanJob = buildJob('minuman', split.minuman);
+
+      const submitJobs: Promise<{ target: PrinterTarget; ok: boolean; offline: boolean; trigger: string }>[] = [];
+      if (dapurJob) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'dapur', items: dapurItems, trigger, printerSettings }).then((r) => ({ ...r, target: 'dapur' as const })),
+          submitPrintJob({ tx: data.transaction, target: 'dapur', items: dapurJob.items, trigger: dapurJob.trigger, printerSettings })
+            .then((r) => ({ ...r, target: 'dapur' as const, trigger: dapurJob.trigger })),
         );
       }
-      if (minumanItems.length > 0) {
+      if (minumanJob) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'minuman', items: minumanItems, trigger, printerSettings }).then((r) => ({ ...r, target: 'minuman' as const })),
+          submitPrintJob({ tx: data.transaction, target: 'minuman', items: minumanJob.items, trigger: minumanJob.trigger, printerSettings })
+            .then((r) => ({ ...r, target: 'minuman' as const, trigger: minumanJob.trigger })),
         );
       }
       const results = await Promise.all(submitJobs);
       const succeeded = results.filter((r) => r.ok).map((r) => r.target);
       const failed = results.filter((r) => !r.ok);
       const offlineCount = failed.filter((f) => f.offline).length;
+      const reprintCount = results.filter((r) => r.ok && r.trigger === 'reprint').length;
 
       if (results.length === 0) {
         toast.success('Nota tersimpan (tidak ada item baru untuk dicetak)');
       } else if (failed.length === 0) {
-        const action = wasConfirmedBefore ? 'tambahan' : 'cetak';
+        const action = reprintCount > 0
+          ? 'cetak ulang'
+          : wasConfirmedBefore
+            ? 'tambahan'
+            : 'cetak';
         toast.success(`Nota tersimpan, ${succeeded.length} print job ${action} dikirim ke agent`);
       } else if (offlineCount > 0) {
         toast.success('Nota tersimpan');
@@ -348,7 +414,15 @@ export function NotaReviewForm({
       toast.error('Gagal menyimpan nota', {
         description: err instanceof Error ? err.message : 'Coba lagi.',
       });
+    } finally {
+      setSubmitting(false);
     }
+  }
+
+  function modificationTargetLabel(mod: { dapur: boolean; minuman: boolean }): string {
+    if (mod.dapur && mod.minuman) return 'dapur & minuman';
+    if (mod.dapur) return 'dapur';
+    return 'minuman';
   }
 
   return (
@@ -534,6 +608,51 @@ export function NotaReviewForm({
           onDelete={editing ? () => removeItem(editing._localId) : undefined}
         />
       )}
+
+      <AlertDialog
+        open={modificationModal !== null}
+        onOpenChange={(open) => { if (!open && !submitting) setModificationModal(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ada items yang diubah</AlertDialogTitle>
+            <AlertDialogDescription>
+              {modificationModal && (
+                <>
+                  Beberapa items diedit (qty / menu / catatan). Cetak ulang ke{' '}
+                  <strong>{modificationTargetLabel(modificationModal)}</strong> biar mereka tau perubahannya?
+                  <br />
+                  <span className="block mt-2 text-xs text-coal-soft">
+                    Pilih Skip kalau kamu kabari langsung — items yang diubah tidak akan auto-print.
+                  </span>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={submitting}
+              onClick={async () => {
+                const mod = modificationModal;
+                setModificationModal(null);
+                if (mod) await submitSave({ reprintModifiedTarget: { dapur: false, minuman: false } });
+              }}
+            >
+              Skip — kabari manual
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={submitting}
+              onClick={async () => {
+                const mod = modificationModal;
+                setModificationModal(null);
+                if (mod) await submitSave({ reprintModifiedTarget: mod });
+              }}
+            >
+              Cetak ulang ke {modificationModal ? modificationTargetLabel(modificationModal) : ''}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
