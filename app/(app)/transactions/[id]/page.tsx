@@ -26,7 +26,7 @@ export default async function TransactionPage({
 
   const { data: items } = await supabase
     .from('transaction_items')
-    .select('id, menu_name_snapshot, unit_price_snapshot, qty, notes, sort_order, menus(category)')
+    .select('id, menu_name_snapshot, unit_price_snapshot, qty, notes, sort_order, printed_dapur_at, printed_minuman_at, menus(category)')
     .eq('transaction_id', id)
     .order('sort_order');
 
@@ -67,6 +67,8 @@ export default async function TransactionPage({
           qty: it.qty,
           notes: it.notes,
           menu_category: category,
+          printed_dapur_at: it.printed_dapur_at,
+          printed_minuman_at: it.printed_minuman_at,
         };
       })}
       scanUrl={scanUrl}
