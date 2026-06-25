@@ -40,14 +40,29 @@ function formatTxLabel(j: Job): string {
   return parts.length > 0 ? parts.join(' · ') : '-';
 }
 
+type DisplayState = 'online' | 'stale' | 'offline';
+
 type Agent = {
   agent_label: string;
   last_seen_at: string;
   agent_version: string | null;
   device_info: string | null;
   status: string;
+  display_state: DisplayState;
   online: boolean;
 };
+
+function badgeClassesFor(state: DisplayState): string {
+  if (state === 'online') return 'bg-leaf text-white';
+  if (state === 'stale') return 'bg-mustard text-coal';
+  return 'bg-brick text-white';
+}
+
+function badgeLabelFor(state: DisplayState): string {
+  if (state === 'online') return 'Online';
+  if (state === 'stale') return 'Stale';
+  return 'Offline';
+}
 
 export default function PrinterDebugPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -133,11 +148,9 @@ export default function PrinterDebugPage() {
             </div>
             <div className="flex items-center justify-between gap-2 sm:justify-end">
               <span
-                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                  a.online ? 'bg-leaf text-white' : 'bg-brick text-white'
-                }`}
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${badgeClassesFor(a.display_state)}`}
               >
-                {a.online ? 'Online' : 'Offline'}
+                {badgeLabelFor(a.display_state)}
               </span>
               <AlertDialog>
                 <AlertDialogTrigger

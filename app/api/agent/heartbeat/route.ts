@@ -2,8 +2,19 @@ import { NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
 
-// 90s = heartbeat 30s × 3 ticks toleransi (sesuai spec 2.3).
-const ONLINE_THRESHOLD_MS = 90 * 1000;
+// 3-state agent display:
+// - online: status='online' AND heartbeat segar (< 1 jam)
+// - stale:  status='online' AND heartbeat >= 1 jam (kemungkinan ke-freeze OEM,
+//           tapi FCM still bisa wake — dispatch route tetap kirim)
+// - offline: status='offline' (user pencet Stop, atau belum start sama sekali)
+const STALE_THRESHOLD_MS = 60 * 60 * 1000;
+
+type DisplayState = 'online' | 'stale' | 'offline';
+
+function computeDisplayState(status: string, lastSeenMs: number, nowMs: number): DisplayState {
+  if (status !== 'online') return 'offline';
+  return nowMs - lastSeenMs >= STALE_THRESHOLD_MS ? 'stale' : 'online';
+}
 
 export async function GET() {
   const evt = newEvent('GET /api/agent/heartbeat');
@@ -27,18 +38,30 @@ export async function GET() {
     }
 
     const now = Date.now();
-    const agents = (data ?? []).map((a) => ({
-      agent_label: a.agent_label,
-      last_seen_at: a.last_seen_at,
-      agent_version: a.agent_version,
-      device_info: a.device_info,
-      status: a.status,
-      // Online: status='online' AND heartbeat recent. Either condition alone
-      // is insufficient — stale status='online' (crash) or fresh heartbeat
-      // tanpa start (legacy build) both = false.
-      online: a.status === 'online' && now - new Date(a.last_seen_at).getTime() < ONLINE_THRESHOLD_MS,
-    }));
-    evt.merge({ agents_count: agents.length, online_count: agents.filter((a) => a.online).length });
+    const agents = (data ?? []).map((a) => {
+      const display_state = computeDisplayState(
+        a.status,
+        new Date(a.last_seen_at).getTime(),
+        now,
+      );
+      return {
+        agent_label: a.agent_label,
+        last_seen_at: a.last_seen_at,
+        agent_version: a.agent_version,
+        device_info: a.device_info,
+        status: a.status,
+        display_state,
+        // Backward-compat: `online` true cuma kalau benar-benar segar.
+        // Banner / debug page sekarang pakai display_state.
+        online: display_state === 'online',
+      };
+    });
+    evt.merge({
+      agents_count: agents.length,
+      online_count: agents.filter((a) => a.display_state === 'online').length,
+      stale_count: agents.filter((a) => a.display_state === 'stale').length,
+      offline_count: agents.filter((a) => a.display_state === 'offline').length,
+    });
 
     tagStatus(evt, 200);
     return NextResponse.json({ agents });
