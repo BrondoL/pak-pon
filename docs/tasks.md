@@ -50,8 +50,9 @@ Spec: `docs/superpowers/specs/2026-06-25-print-revamp-design.md`
 - [x] **Phase 1** — Format nota: kitchen ticket BIG (item+qty, no price) vs customer receipt (harga + total + footer "Terima kasih"). Item flag `printed_dapur_at`/`printed_minuman_at` per-target. Tombol "Cetak tambahan" (auto-delta), "Cetak ulang Dapur/Minuman/Keduanya", "Cetak nota customer". Auto-print delta only saat edit confirmed tx (re-prints baru item tambahan, ngga ngulang). `replaceItems` preserve flag lewat PATCH save. Plan: `docs/superpowers/plans/2026-06-25-print-revamp-phase1-nota-format.md`.
 - [x] **Phase 2 (web)** — FCM-only architecture switch. Drop realtime watcher dependency. New `POST /api/print/send` cek `agent_heartbeats.status='online' AND last_seen_at>now()-90s`, kalau ngga ada → 503 `agent_offline` (toast warning di client). `print_history` table baru (audit-only, agent write saat job final). `agent_heartbeats.status` explicit online/offline. Trigger update `printed_*_at` pindah dari print_queue ke print_history. Debug page switch ke history source. Cron extend cleanup history >7 hari. Plan: `docs/superpowers/plans/2026-06-25-print-revamp-phase2-fcm-only-web.md`.
 - [x] **Phase 3 (web)** — Cleanup: `DROP TABLE print_queue CASCADE`, delete `/api/print/queue/*` routes, rename `pushCheckQueue → pushPrintJob` + drop legacy `check_queue` fallback. Plan: `docs/superpowers/plans/2026-06-25-print-revamp-phase3-cleanup-web.md`.
-- [ ] **Phase 2 (agent)** — IN PROGRESS (parallel repo `pak-pon-print-agent`). Plan: `docs/superpowers/plans/2026-06-25-print-revamp-phase2-agent.md`.
-- [ ] **E2E test** — Tunggu agent Phase 2 selesai.
+- [x] **Phase 2 (agent)** — Strip realtime watcher + periodic + alarm trigger paths. FCM-only entry point. Start/Stop button → upsert `agent_heartbeats.status`. `PrintHistoryRepository` insert saat job final (done/failed). Tab History di agent app + Retry button. Plan: `docs/superpowers/plans/2026-06-25-print-revamp-phase2-agent.md`.
+- [x] **Phase 3 (agent)** — Cleanup: remove `realtime-kt` dependency dari `build.gradle.kts`, drop dead code di agent repo.
+- [ ] **E2E test** — agent Phase 2+3 sudah selesai, siap test bareng.
 
 ## Plan 4 — Shift Cut-off + shadcn Migration + Polish ✅ COMPLETE
 - [x] Shift-aware business-day cut-off (`docs/superpowers/specs/2026-06-21-shift-cutoff-design.md`)
