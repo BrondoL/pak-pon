@@ -34,7 +34,7 @@ export interface PushAgentArgs {
    * print without needing a follow-up Supabase fetch. Agent ignores empty
    * `tx_id` (sentinel for test print). `item_ids` JSON-encoded as string array.
    */
-  job?: {
+  job: {
     id: string;
     tx_id: string | null;
     target: 'dapur' | 'minuman' | 'customer';
@@ -63,29 +63,27 @@ const INVALID_FCM_ERROR_CODES = new Set([
 ]);
 
 /**
- * Fire-and-forget "check_queue" trigger push to one or more agent devices.
+ * Fire-and-forget inline print job push to one or more agent devices.
  * Returns counts + the subset of tokens FCM said are dead so the caller
  * can clean them out of the DB.
  */
-export async function pushCheckQueue(args: PushAgentArgs): Promise<PushAgentResult> {
+export async function pushPrintJob(args: PushAgentArgs): Promise<PushAgentResult> {
   const app = adminApp();
   if (!app || args.tokens.length === 0) {
     return { ok: 0, failed: 0, invalidTokens: [] };
   }
 
-  // FCM data values must be strings. Build the payload conditionally so the
-  // legacy "check_queue" trigger still works if no job is attached.
-  const data: Record<string, string> = args.job
-    ? {
-        action: 'print_job',
-        job_id: args.job.id,
-        tx_id: args.job.tx_id ?? '',
-        target: args.job.target,
-        trigger: args.job.trigger,
-        item_ids: JSON.stringify(args.job.item_ids ?? []),
-        bytes_b64: args.job.bytes_b64,
-      }
-    : { action: 'check_queue' };
+  // FCM data values must be strings. After Phase 3 cleanup, payload always
+  // includes the full inline job — no legacy `check_queue` fallback.
+  const data: Record<string, string> = {
+    action: 'print_job',
+    job_id: args.job.id,
+    tx_id: args.job.tx_id ?? '',
+    target: args.job.target,
+    trigger: args.job.trigger,
+    item_ids: JSON.stringify(args.job.item_ids ?? []),
+    bytes_b64: args.job.bytes_b64,
+  };
 
   const messaging = getMessaging(app);
   const res = await messaging.sendEachForMulticast({

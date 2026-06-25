@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
-import { pushCheckQueue } from '@/lib/fcm';
+import { pushPrintJob } from '@/lib/fcm';
 import { PrintSendSchema } from './_schema';
 
 // Sesuai keputusan spec section 2.3: 90s threshold = heartbeat 30s × 3 ticks.
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     evt.set('dispatched_to', targets.map((t) => t.agent_label));
 
     // Fire-and-forget FCM push. Cleanup invalid tokens on the side.
-    pushCheckQueue({
+    pushPrintJob({
       tokens: targets.map((t) => t.fcm_token),
       job: {
         id: job_id,
