@@ -59,22 +59,37 @@ function splitItems(items: ItemForQueue[]) {
   return { dapur, minuman };
 }
 
-function detectModifiedTargets(
+type ModalContext = {
+  modified: { dapur: boolean; minuman: boolean };
+  newItems: { dapur: number; minuman: number };
+};
+
+function detectModalContext(
   initial: Omit<NotaItem, '_localId'>[],
   current: NotaItem[],
   menus: MenuOption[],
-): { dapur: boolean; minuman: boolean } {
+): ModalContext {
   const initialById = new Map(initial.map((i) => [i.id, i]));
   const categoryByMenuId = new Map(menus.map((m) => [m.id, m.category]));
-  let dapur = false;
-  let minuman = false;
-  function markTarget(category: string | undefined) {
-    if (category === 'makanan' || category === 'nasi') dapur = true;
-    else if (category === 'minuman') minuman = true;
+  const modified = { dapur: false, minuman: false };
+  const newItems = { dapur: 0, minuman: 0 };
+  function markTarget(category: string | undefined, kind: 'modified' | 'new') {
+    const isKitchen = category === 'makanan' || category === 'nasi';
+    const isMinuman = category === 'minuman';
+    if (kind === 'modified') {
+      if (isKitchen) modified.dapur = true;
+      else if (isMinuman) modified.minuman = true;
+    } else {
+      if (isKitchen) newItems.dapur += 1;
+      else if (isMinuman) newItems.minuman += 1;
+    }
   }
   for (const cur of current) {
-    // Item baru (no id) bukan modifikasi — di-handle delta print biasa.
-    if (!cur.id) continue;
+    if (!cur.id) {
+      // Item baru — count untuk display di modal.
+      markTarget(categoryByMenuId.get(cur.menu_id), 'new');
+      continue;
+    }
     const orig = initialById.get(cur.id);
     if (!orig) continue;
     const changed =
@@ -82,13 +97,13 @@ function detectModifiedTargets(
       orig.qty !== cur.qty ||
       orig.notes !== cur.notes;
     if (!changed) continue;
-    markTarget(categoryByMenuId.get(cur.menu_id));
-    // Kalau swap category (e.g. makanan → minuman), target lama juga affected.
+    markTarget(categoryByMenuId.get(cur.menu_id), 'modified');
+    // Swap category (e.g. makanan → minuman) → target lama juga affected.
     if (orig.menu_id !== cur.menu_id) {
-      markTarget(categoryByMenuId.get(orig.menu_id));
+      markTarget(categoryByMenuId.get(orig.menu_id), 'modified');
     }
   }
-  return { dapur, minuman };
+  return { modified, newItems };
 }
 
 async function submitPrintJob(args: {
@@ -161,7 +176,7 @@ export function NotaReviewForm({
   const [thousandsApplying, setThousandsApplying] = useState(false);
   const [rescanning, setRescanning] = useState(false);
   // Modal "Cetak ulang ke dapur" — saat edit confirmed tx + items existing dimodifikasi.
-  const [modificationModal, setModificationModal] = useState<{ dapur: boolean; minuman: boolean } | null>(null);
+  const [modificationModal, setModificationModal] = useState<ModalContext | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const menusByName = useMemo(
@@ -274,9 +289,9 @@ export function NotaReviewForm({
     // Edit save (tx sudah confirmed) + ada items existing yang dimodifikasi
     // (qty/menu/notes) → tampilkan modal pilihan reprint, bukan langsung save.
     if (transaction.status === 'confirmed') {
-      const mod = detectModifiedTargets(initialItems, items, menus);
-      if (mod.dapur || mod.minuman) {
-        setModificationModal(mod);
+      const ctx = detectModalContext(initialItems, items, menus);
+      if (ctx.modified.dapur || ctx.modified.minuman) {
+        setModificationModal(ctx);
         return;
       }
     }
@@ -617,25 +632,40 @@ export function NotaReviewForm({
           <AlertDialogHeader>
             <AlertDialogTitle>Ada items yang diubah</AlertDialogTitle>
             <AlertDialogDescription>
-              {modificationModal && (
-                <>
-                  Beberapa items diedit (qty / menu / catatan). Cetak ulang ke{' '}
-                  <strong>{modificationTargetLabel(modificationModal)}</strong> biar mereka tau perubahannya?
-                  <br />
-                  <span className="block mt-2 text-xs text-coal-soft">
-                    Pilih Skip kalau kamu kabari langsung — items yang diubah tidak akan auto-print.
-                  </span>
-                </>
-              )}
+              {modificationModal && (() => {
+                const modLabel = modificationTargetLabel(modificationModal.modified);
+                const totalNew = modificationModal.newItems.dapur + modificationModal.newItems.minuman;
+                const newParts: string[] = [];
+                if (modificationModal.newItems.dapur > 0) {
+                  newParts.push(`${modificationModal.newItems.dapur} ke dapur`);
+                }
+                if (modificationModal.newItems.minuman > 0) {
+                  newParts.push(`${modificationModal.newItems.minuman} ke minuman`);
+                }
+                return (
+                  <>
+                    Items existing diubah di <strong>{modLabel}</strong> (qty / menu / catatan).
+                    Cetak ulang ke {modLabel} biar mereka tau perubahannya?
+                    {totalNew > 0 && (
+                      <span className="block mt-2 rounded-md bg-mustard-faint px-3 py-2 text-xs text-coal">
+                        ℹ Item baru ({newParts.join(' · ')}) <strong>tetap dicetak otomatis</strong> ke target masing-masing, tidak dipengaruhi pilihan di bawah.
+                      </span>
+                    )}
+                    <span className="block mt-2 text-xs text-coal-soft">
+                      Pilih Skip kalau kamu kabari modifikasi langsung ke {modLabel}.
+                    </span>
+                  </>
+                );
+              })()}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel
               disabled={submitting}
               onClick={async () => {
-                const mod = modificationModal;
+                const ctx = modificationModal;
                 setModificationModal(null);
-                if (mod) await submitSave({ reprintModifiedTarget: { dapur: false, minuman: false } });
+                if (ctx) await submitSave({ reprintModifiedTarget: { dapur: false, minuman: false } });
               }}
             >
               Skip — kabari manual
@@ -643,12 +673,12 @@ export function NotaReviewForm({
             <AlertDialogAction
               disabled={submitting}
               onClick={async () => {
-                const mod = modificationModal;
+                const ctx = modificationModal;
                 setModificationModal(null);
-                if (mod) await submitSave({ reprintModifiedTarget: mod });
+                if (ctx) await submitSave({ reprintModifiedTarget: ctx.modified });
               }}
             >
-              Cetak ulang ke {modificationModal ? modificationTargetLabel(modificationModal) : ''}
+              Cetak ulang ke {modificationModal ? modificationTargetLabel(modificationModal.modified) : ''}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
