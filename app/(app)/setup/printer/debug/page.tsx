@@ -105,10 +105,16 @@ export default function PrinterDebugPage() {
   const recent = jobs.filter((j) => j.status === 'done' || j.status === 'failed');
 
   return (
-    <div className="max-w-3xl mx-auto p-4 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-coal">Printer Diagnostic</h1>
-        <Button type="button" variant="secondary" onClick={reload} disabled={loading}>
+    <div className="mx-auto max-w-3xl space-y-6 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl font-semibold text-coal sm:text-2xl">Printer Diagnostic</h1>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={reload}
+          disabled={loading}
+          className="self-start sm:self-auto"
+        >
           {loading ? 'Loading…' : 'Refresh'}
         </Button>
       </div>
@@ -116,14 +122,14 @@ export default function PrinterDebugPage() {
       {error && <p className="text-sm text-brick-dark">Error: {error}</p>}
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium text-coal">Agent Status</h2>
+        <h2 className="text-base font-medium text-coal sm:text-lg">Agent Status</h2>
         {agents.length === 0 && (
           <p className="text-sm text-coal-soft">Belum ada agent registered.</p>
         )}
         {agents.map((a) => (
           <div
             key={a.agent_label}
-            className="flex items-center justify-between gap-3 rounded-md border border-clay-soft bg-paper-soft p-3"
+            className="flex flex-col gap-2 rounded-md border border-clay-soft bg-paper-soft p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
           >
             <div className="min-w-0">
               <p className="truncate font-medium text-coal">{a.agent_label}</p>
@@ -132,7 +138,7 @@ export default function PrinterDebugPage() {
                 {a.agent_version && ` · v${a.agent_version}`}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2 sm:justify-end">
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                   a.online ? 'bg-leaf text-white' : 'bg-brick text-white'
@@ -168,83 +174,169 @@ export default function PrinterDebugPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium text-coal">Pending / In-progress ({pending.length})</h2>
+        <h2 className="text-base font-medium text-coal sm:text-lg">
+          Pending / In-progress ({pending.length})
+        </h2>
         {pending.length === 0 && (
           <p className="text-sm text-coal-soft">Tidak ada job pending.</p>
         )}
         {pending.length > 0 && (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-clay-soft">
-                <th className="text-left p-2 text-coal">Time</th>
-                <th className="text-left p-2 text-coal">Transaksi</th>
-                <th className="text-left p-2 text-coal">Target</th>
-                <th className="text-left p-2 text-coal">Trigger</th>
-                <th className="text-left p-2 text-coal">Agent</th>
-                <th className="text-left p-2 text-coal">Status</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <ul className="space-y-2 md:hidden">
               {pending.map((j) => (
-                <tr key={j.id} className="border-b border-clay-soft">
-                  <td className="p-2 text-coal">{new Date(j.created_at).toLocaleString('id-ID')}</td>
-                  <td className="p-2 text-coal">{formatTxLabel(j)}</td>
-                  <td className="p-2 text-coal">{j.target}</td>
-                  <td className="p-2 text-coal">{j.trigger}</td>
-                  <td className="p-2 text-coal-soft">{j.agent_label ?? '-'}</td>
-                  <td className="p-2 text-coal">{j.status}</td>
-                </tr>
+                <li
+                  key={j.id}
+                  className="rounded-md border border-clay-soft bg-paper-soft p-3 text-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-medium text-coal">{formatTxLabel(j)}</span>
+                    <span className="shrink-0 rounded-full bg-clay-mist px-2 py-0.5 text-[10px] uppercase tracking-wide text-coal">
+                      {j.status}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-coal-soft">
+                    {new Date(j.created_at).toLocaleString('id-ID')}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-coal-soft">
+                    <span>
+                      Target: <span className="text-coal">{j.target}</span>
+                    </span>
+                    <span>
+                      Trigger: <span className="text-coal">{j.trigger}</span>
+                    </span>
+                    <span>
+                      Agent: <span className="text-coal">{j.agent_label ?? '-'}</span>
+                    </span>
+                  </div>
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-clay-soft">
+                    <th className="p-2 text-left text-coal">Time</th>
+                    <th className="p-2 text-left text-coal">Transaksi</th>
+                    <th className="p-2 text-left text-coal">Target</th>
+                    <th className="p-2 text-left text-coal">Trigger</th>
+                    <th className="p-2 text-left text-coal">Agent</th>
+                    <th className="p-2 text-left text-coal">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pending.map((j) => (
+                    <tr key={j.id} className="border-b border-clay-soft">
+                      <td className="p-2 text-coal">{new Date(j.created_at).toLocaleString('id-ID')}</td>
+                      <td className="p-2 text-coal">{formatTxLabel(j)}</td>
+                      <td className="p-2 text-coal">{j.target}</td>
+                      <td className="p-2 text-coal">{j.trigger}</td>
+                      <td className="p-2 text-coal-soft">{j.agent_label ?? '-'}</td>
+                      <td className="p-2 text-coal">{j.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium text-coal">Recent Jobs ({recent.length})</h2>
+        <h2 className="text-base font-medium text-coal sm:text-lg">
+          Recent Jobs ({recent.length})
+        </h2>
         {recent.length === 0 && (
           <p className="text-sm text-coal-soft">Belum ada job done/failed.</p>
         )}
         {recent.length > 0 && (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-clay-soft">
-                <th className="text-left p-2 text-coal">Time</th>
-                <th className="text-left p-2 text-coal">Transaksi</th>
-                <th className="text-left p-2 text-coal">Target</th>
-                <th className="text-left p-2 text-coal">Agent</th>
-                <th className="text-left p-2 text-coal">Status</th>
-                <th className="text-left p-2 text-coal">Reason</th>
-                <th className="text-left p-2 text-coal">Action</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <ul className="space-y-2 md:hidden">
               {recent.map((j) => (
-                <tr key={j.id} className="border-b border-clay-soft">
-                  <td className="p-2 text-coal">{new Date(j.created_at).toLocaleString('id-ID')}</td>
-                  <td className="p-2 text-coal">{formatTxLabel(j)}</td>
-                  <td className="p-2 text-coal">{j.target}</td>
-                  <td className="p-2 text-coal-soft">{j.agent_label ?? '-'}</td>
-                  <td className="p-2">
-                    <span className={j.status === 'done' ? 'text-leaf' : 'text-brick'}>
+                <li
+                  key={j.id}
+                  className="rounded-md border border-clay-soft bg-paper-soft p-3 text-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-medium text-coal">{formatTxLabel(j)}</span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+                        j.status === 'done'
+                          ? 'bg-leaf/15 text-leaf'
+                          : 'bg-brick/15 text-brick'
+                      }`}
+                    >
                       {j.status}
                     </span>
-                  </td>
-                  <td className="p-2 text-coal-soft">{j.failure_reason ?? '-'}</td>
-                  <td className="p-2">
-                    {j.status === 'failed' && (
-                      <button
-                        onClick={() => retryJob(j.id)}
-                        className="rounded border border-brick-soft px-2 py-0.5 text-xs text-brick"
-                      >
-                        Retry
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                  </div>
+                  <div className="mt-1 text-coal-soft">
+                    {new Date(j.created_at).toLocaleString('id-ID')}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-coal-soft">
+                    <span>
+                      Target: <span className="text-coal">{j.target}</span>
+                    </span>
+                    <span>
+                      Agent: <span className="text-coal">{j.agent_label ?? '-'}</span>
+                    </span>
+                  </div>
+                  {j.failure_reason && (
+                    <div className="mt-1 break-words text-coal-soft">
+                      Reason: <span className="text-coal">{j.failure_reason}</span>
+                    </div>
+                  )}
+                  {j.status === 'failed' && (
+                    <button
+                      onClick={() => retryJob(j.id)}
+                      className="mt-2 rounded border border-brick-soft px-2 py-0.5 text-xs text-brick"
+                    >
+                      Retry
+                    </button>
+                  )}
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-clay-soft">
+                    <th className="p-2 text-left text-coal">Time</th>
+                    <th className="p-2 text-left text-coal">Transaksi</th>
+                    <th className="p-2 text-left text-coal">Target</th>
+                    <th className="p-2 text-left text-coal">Agent</th>
+                    <th className="p-2 text-left text-coal">Status</th>
+                    <th className="p-2 text-left text-coal">Reason</th>
+                    <th className="p-2 text-left text-coal">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recent.map((j) => (
+                    <tr key={j.id} className="border-b border-clay-soft">
+                      <td className="p-2 text-coal">{new Date(j.created_at).toLocaleString('id-ID')}</td>
+                      <td className="p-2 text-coal">{formatTxLabel(j)}</td>
+                      <td className="p-2 text-coal">{j.target}</td>
+                      <td className="p-2 text-coal-soft">{j.agent_label ?? '-'}</td>
+                      <td className="p-2">
+                        <span className={j.status === 'done' ? 'text-leaf' : 'text-brick'}>
+                          {j.status}
+                        </span>
+                      </td>
+                      <td className="p-2 text-coal-soft">{j.failure_reason ?? '-'}</td>
+                      <td className="p-2">
+                        {j.status === 'failed' && (
+                          <button
+                            onClick={() => retryJob(j.id)}
+                            className="rounded border border-brick-soft px-2 py-0.5 text-xs text-brick"
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
     </div>
