@@ -78,8 +78,10 @@ export async function POST(request: NextRequest) {
         tokens: targets.map((t) => t.fcm_token),
         job: {
           id: inserted.id,
+          tx_id: payload.tx_id,
           target: payload.target,
           trigger: payload.trigger,
+          item_ids: payload.item_ids,
           bytes_b64: payload.bytes_b64,
         },
       }).then(

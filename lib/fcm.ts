@@ -31,14 +31,15 @@ export interface PushAgentArgs {
   tokens: string[];
   /**
    * Inline job payload — sent in FCM data so the agent can process the
-   * print without needing a follow-up Supabase fetch. This sidesteps the
-   * "no pending jobs" race that happens when aggressive OEMs (HiOS) only
-   * give the unfrozen app ~5s and the SELECT misses the just-committed row.
+   * print without needing a follow-up Supabase fetch. Agent ignores empty
+   * `tx_id` (sentinel for test print). `item_ids` JSON-encoded as string array.
    */
   job?: {
     id: string;
+    tx_id: string | null;
     target: 'dapur' | 'minuman' | 'customer';
     trigger: 'auto' | 'auto_additional' | 'reprint' | 'reprint_additional' | 'customer' | 'test';
+    item_ids: string[] | null;
     bytes_b64: string;
   };
 }
@@ -78,8 +79,10 @@ export async function pushCheckQueue(args: PushAgentArgs): Promise<PushAgentResu
     ? {
         action: 'print_job',
         job_id: args.job.id,
+        tx_id: args.job.tx_id ?? '',
         target: args.job.target,
         trigger: args.job.trigger,
+        item_ids: JSON.stringify(args.job.item_ids ?? []),
         bytes_b64: args.job.bytes_b64,
       }
     : { action: 'check_queue' };
