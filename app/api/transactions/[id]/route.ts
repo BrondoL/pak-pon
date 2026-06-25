@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getSupabaseServer } from '@/lib/supabase/server';
-import { computeReplaceItems, type ExistingItem, type MenuRef } from '@/lib/transactions';
+import { buildItemInsertRows, computeReplaceItems, type ExistingItem, type MenuRef } from '@/lib/transactions';
 import { newEvent, tagStatus, type RequestEvent } from '@/lib/logger';
 import { computeNextDailySeq } from '@/lib/daily-seq';
 import { businessDate, businessDayRange } from '@/lib/date';
@@ -318,14 +318,7 @@ async function replaceItems(
   }
 
   if (computed.rows.length > 0) {
-    // Strip undefined `id` so DB default gen_random_uuid() fires for new items.
-    // Items preserved from existing rows include their old id (carries flags).
-    const insertRows = computed.rows.map((r) => {
-      const { id: rowId, ...rest } = r;
-      return rowId !== undefined
-        ? { ...rest, id: rowId, transaction_id: id }
-        : { ...rest, transaction_id: id };
-    });
+    const insertRows = buildItemInsertRows(computed.rows, id);
     const { error: insertError } = await supabase
       .from('transaction_items')
       .insert(insertRows);

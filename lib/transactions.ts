@@ -53,6 +53,28 @@ export type ReplaceItemsResult = {
 };
 
 /**
+ * Build insert payload supaya:
+ * - Item baru (id undefined): kolom `id` di-strip → Postgres pakai DEFAULT gen_random_uuid()
+ * - Item preserved (id string): kolom `id` di-include → flag tracking via trigger jalan
+ *
+ * Penting: undefined kalau di-spread literal ke insert → Supabase client serialize jadi
+ * null → kena NOT NULL constraint di transaction_items.id.
+ */
+export function buildItemInsertRows(
+  rows: ItemRow[],
+  transactionId: string,
+): Array<Record<string, unknown>> {
+  return rows.map((r) => {
+    const { id: rowId, ...rest } = r;
+    const base: Record<string, unknown> = { ...rest, transaction_id: transactionId };
+    if (typeof rowId === 'string' && rowId.length > 0) {
+      base.id = rowId;
+    }
+    return base;
+  });
+}
+
+/**
  * Compute rows untuk "replace items" PATCH transaksi.
  *
  * Untuk setiap requested item:

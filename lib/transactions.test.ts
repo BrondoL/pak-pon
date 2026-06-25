@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeReplaceItems, type ExistingItem, type RequestedItem, type MenuRef } from './transactions';
+import { buildItemInsertRows, computeReplaceItems, type ExistingItem, type ItemRow, type RequestedItem, type MenuRef } from './transactions';
 
 const menus: MenuRef[] = [
   { id: 'menu-pecel', name: 'Pecel Lele', price: 16000 },
@@ -149,5 +149,48 @@ describe('computeReplaceItems', () => {
       expect(result.rows[1].id).toBeUndefined();
       expect(result.rows[1].printed_dapur_at).toBeNull();
     });
+  });
+});
+
+describe('buildItemInsertRows', () => {
+  const baseRow: ItemRow = {
+    menu_id: 'menu-pecel',
+    menu_name_snapshot: 'Pecel Lele',
+    unit_price_snapshot: 16000,
+    qty: 1,
+    notes: null,
+    sort_order: 0,
+    confidence: null,
+    alternatives: null,
+    printed_dapur_at: null,
+    printed_minuman_at: null,
+  };
+
+  it('strips id key entirely for new items (id undefined)', () => {
+    const out = buildItemInsertRows([{ ...baseRow, id: undefined }], 'tx-1');
+    expect(out).toHaveLength(1);
+    expect('id' in out[0]).toBe(false);
+    expect(out[0].transaction_id).toBe('tx-1');
+    expect(out[0].menu_id).toBe('menu-pecel');
+  });
+
+  it('includes id for preserved items (id string)', () => {
+    const out = buildItemInsertRows([{ ...baseRow, id: 'item-x' }], 'tx-1');
+    expect(out[0].id).toBe('item-x');
+    expect(out[0].transaction_id).toBe('tx-1');
+  });
+
+  it('mixed: preserved gets id, new omits id key (prevents null serialization)', () => {
+    const out = buildItemInsertRows([
+      { ...baseRow, id: 'kept-1' },
+      { ...baseRow, id: undefined, sort_order: 1 },
+    ], 'tx-1');
+    expect(out[0].id).toBe('kept-1');
+    expect('id' in out[1]).toBe(false);
+  });
+
+  it('treats empty string id as missing (defensive)', () => {
+    const out = buildItemInsertRows([{ ...baseRow, id: '' }], 'tx-1');
+    expect('id' in out[0]).toBe(false);
   });
 });
