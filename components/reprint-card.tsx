@@ -99,17 +99,24 @@ export function ReprintCard({
   printerSettings: PrinterSettings;
 }) {
   const [submitting, setSubmitting] = useState<string | null>(null);
+  // Item id yang baru-baru ini berhasil di-dispatch via "Cetak tambahan" supaya
+  // tombol langsung disable tanpa nunggu agent set flag + page refresh.
+  // Trigger M1 server-side tetap authoritative; ini cuma client-side optimistic.
+  const [optimisticallyFlagged, setOptimisticallyFlagged] = useState<{
+    dapur: Set<string>;
+    minuman: Set<string>;
+  }>({ dapur: new Set(), minuman: new Set() });
 
   const dapurAll = useMemo(() => items.filter(isKitchenItem), [items]);
   const minumanAll = useMemo(() => items.filter((i) => i.menu_category === 'minuman'), [items]);
 
   const dapurPending = useMemo(
-    () => dapurAll.filter((i) => i.printed_dapur_at === null),
-    [dapurAll],
+    () => dapurAll.filter((i) => i.printed_dapur_at === null && !optimisticallyFlagged.dapur.has(i.id)),
+    [dapurAll, optimisticallyFlagged.dapur],
   );
   const minumanPending = useMemo(
-    () => minumanAll.filter((i) => i.printed_minuman_at === null),
-    [minumanAll],
+    () => minumanAll.filter((i) => i.printed_minuman_at === null && !optimisticallyFlagged.minuman.has(i.id)),
+    [minumanAll, optimisticallyFlagged.minuman],
   );
 
   const hasDapur = dapurAll.length > 0;
@@ -120,24 +127,27 @@ export function ReprintCard({
 
   async function fireAdditional() {
     setSubmitting('tambahan');
+    // Snapshot items per target supaya bisa optimistic-flag setelah dispatch ok.
+    const dapurSnapshot = dapurPending;
+    const minumanSnapshot = minumanPending;
     const jobs: Promise<{ target: PrinterTarget; ok: boolean; error?: string }>[] = [];
-    if (dapurPending.length > 0) {
+    if (dapurSnapshot.length > 0) {
       jobs.push(
         submitJob({
           tx: transaction,
           target: 'dapur',
-          items: dapurPending,
+          items: dapurSnapshot,
           trigger: 'reprint_additional',
           printerSettings,
         }).then((r) => ({ ...r, target: 'dapur' as const })),
       );
     }
-    if (minumanPending.length > 0) {
+    if (minumanSnapshot.length > 0) {
       jobs.push(
         submitJob({
           tx: transaction,
           target: 'minuman',
-          items: minumanPending,
+          items: minumanSnapshot,
           trigger: 'reprint_additional',
           printerSettings,
         }).then((r) => ({ ...r, target: 'minuman' as const })),
@@ -147,6 +157,18 @@ export function ReprintCard({
     setSubmitting(null);
     const ok = results.filter((r) => r.ok).map((r) => r.target);
     const fail = results.filter((r) => !r.ok);
+    // Optimistic: items yang sukses di-dispatch dianggap "akan ke-flag" supaya
+    // tombol langsung disable. Trigger M1 nanti yang authoritative-nya update.
+    if (ok.length > 0) {
+      setOptimisticallyFlagged((prev) => ({
+        dapur: ok.includes('dapur')
+          ? new Set([...prev.dapur, ...dapurSnapshot.map((i) => i.id)])
+          : prev.dapur,
+        minuman: ok.includes('minuman')
+          ? new Set([...prev.minuman, ...minumanSnapshot.map((i) => i.id)])
+          : prev.minuman,
+      }));
+    }
     if (fail.length === 0) toast.success(`${ok.length} job tambahan dikirim ke agent`);
     else {
       const offline = fail.some((f) => f.error === 'agent_offline');
