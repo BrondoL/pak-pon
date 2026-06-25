@@ -293,7 +293,11 @@ Route handler: insert `item_ids` ke print_queue row. Tidak ada perubahan FCM log
   4. Klik "Cetak nota customer" → nota lengkap dengan harga + footer.
   5. Cek DB: `transaction_items.printed_dapur_at` ter-set setelah job status='done'.
 
-## 1.7 Phase 1 acceptance criteria
+## 1.7 Cron cleanup (existing, no change Phase 1)
+
+Existing `app/api/cron/cleanup/route.ts` (schedule `0 19 * * *` UTC = 02:00 WIB di `vercel.json`) sudah cleanup `print_queue` rows `status IN ('done','failed') AND created_at < now() - 7 days`. **Tidak perlu modify di Phase 1** — target `'customer'` yang ditambahkan masih ke `print_queue`, ikut ke-cleanup.
+
+## 1.8 Phase 1 acceptance criteria
 
 - [ ] Kitchen ticket double-size, no price, no total amount.
 - [ ] Customer receipt sama dengan format sekarang + footer kalau `footer_text` non-empty.
@@ -399,14 +403,29 @@ AFTER INSERT ON print_history
 FOR EACH ROW EXECUTE FUNCTION mark_items_printed_history();
 ```
 
-## 2.2 Prerequisite: sync `agent_uuid` column
+## 2.2 Prerequisite: commit retrofit migration `agent_heartbeats.agent_uuid`
 
-Repo `pak-pon` schema (migration 0005) define `agent_heartbeats` cuma punya `id` UUID PK + `agent_label` UNIQUE. **Tapi** agent code (`HeartbeatRepository.kt`) pakai `agent_uuid` UNIQUE via `onConflict='agent_uuid'`. Ini berarti ada migration yang ada di Supabase tapi belum di-commit ke repo.
+Kolom `agent_uuid TEXT UNIQUE` sudah ada di Supabase (dipakai oleh `app/api/print/queue/route.ts:62` dan agent `HeartbeatRepository.kt` via `onConflict='agent_uuid'`), tapi **migration definisinya belum di-commit ke repo**. Schema source of truth `supabase/migrations/0005_print_queue.sql` masih versi lama tanpa kolom ini.
 
-**Action**: sebelum apply migration 0018-0020, owner harus:
-1. Cek schema di Supabase: `SELECT column_name FROM information_schema.columns WHERE table_name='agent_heartbeats';`
-2. Kalau kolom `agent_uuid` ada, commit migration backfill ke repo (sebagai `0011a_agent_heartbeats_agent_uuid.sql` retrofit) supaya source of truth konsisten.
-3. Migration 0018 reference `agent_heartbeats(id)`. Kalau di Supabase agent malah pakai `agent_uuid` sebagai PK alternatif, sesuaikan FK target.
+**Action sebelum Phase 2 jalan**:
+
+1. Pull schema definition dari Supabase (via MCP `list_tables` atau `execute_sql`):
+   ```sql
+   SELECT column_name, data_type, is_nullable
+   FROM information_schema.columns
+   WHERE table_name='agent_heartbeats';
+   ```
+2. Commit retrofit migration `supabase/migrations/0011a_agent_heartbeats_agent_uuid.sql`:
+   ```sql
+   -- Retrofit: kolom ini sudah ada di Supabase tapi belum di-commit ke repo.
+   -- Ditambah saat agent app butuh stable device identifier (agent_label bisa diubah owner).
+   ALTER TABLE agent_heartbeats
+     ADD COLUMN IF NOT EXISTS agent_uuid TEXT;
+   CREATE UNIQUE INDEX IF NOT EXISTS agent_heartbeats_agent_uuid_idx
+     ON agent_heartbeats (agent_uuid)
+     WHERE agent_uuid IS NOT NULL;
+   ```
+3. FK di migration 0018 reference `agent_heartbeats(id)` (UUID PK, bukan agent_uuid) — sudah benar, tidak perlu diubah.
 
 ## 2.3 Web API: `/api/print/send`
 
@@ -778,9 +797,9 @@ suspend fun processJob(job: InlineJob) {
         "dapur" -> { ip = settings.getDapurIp(); port = settings.getDapurPort() }
         "minuman" -> { ip = settings.getMinumanIp(); port = settings.getMinumanPort() }
         "customer" -> {
-            // Customer receipt: gunakan printer dapur default (configurable di settings nanti)
-            ip = settings.getCustomerReceiptIp() ?: settings.getDapurIp()
-            port = settings.getCustomerReceiptPort() ?: settings.getDapurPort()
+            // Customer receipt route fixed ke printer dapur (keputusan owner 2026-06-25).
+            // Tidak ada UI toggle terpisah supaya owner tidak salah set.
+            ip = settings.getDapurIp(); port = settings.getDapurPort()
         }
         else -> {
             insertFailed(job, agentId, agentLabel, "unknown target: ${job.target}")
@@ -929,7 +948,36 @@ companion object {
 5. Matikan printer fisik, klik Cetak lagi → row baru di history (status='failed', `failure_reason='Connection timeout'`).
 6. Buka agent app → tab History → tap "Retry" pada row failed → kalau printer sudah nyala, nota print, row baru status='done'.
 
-## 2.7 Phase 2 acceptance criteria
+## 2.7 Cron cleanup extend untuk `print_history`
+
+`app/api/cron/cleanup/route.ts` extend supaya juga cleanup `print_history` dengan policy sama (7 hari). Karena Phase 2 web masih dual-write (atau ada legacy `print_queue` rows sampai Phase 3), cleanup keduanya:
+
+```ts
+// — existing —
+const { count: queueDeletedCount, error: queueDeleteErr } = await supabase
+  .from('print_queue')
+  .delete({ count: 'exact' })
+  .in('status', ['done', 'failed'])
+  .lt('created_at', cutoff);
+// log + evt.set('print_queue_deleted', ...)
+
+// — TAMBAHAN Phase 2 —
+const { count: historyDeletedCount, error: historyDeleteErr } = await supabase
+  .from('print_history')
+  .delete({ count: 'exact' })
+  .lt('created_at', cutoff);
+if (historyDeleteErr) {
+  evt.warn(`print_history cleanup error: ${historyDeleteErr.message}`);
+} else {
+  evt.set('print_history_deleted', historyDeletedCount ?? 0);
+}
+```
+
+**Catatan**: `print_history` hapus row apa pun (`status` apa pun) >7 hari karena tidak ada konsep "pending" — semua row sudah final state (done/failed). Owner setuju retention 7 hari sama dengan transaksi.
+
+Phase 3 cleanup: hapus block `print_queue` cleanup (table sudah di-DROP).
+
+## 2.8 Phase 2 acceptance criteria
 
 - [ ] Web tidak insert ke `print_queue` (dropped routes return 410 Gone atau no-op).
 - [ ] Web cek `agent_heartbeats.status='online' AND last_seen_at>now()-90s` sebelum push. Kalau kosong → 503.
@@ -1008,8 +1056,9 @@ PHASE 1 — Format & flag tracking
   [ ] Sign-off owner: kitchen format OK, footer customer OK
 
 PHASE 2 — FCM-only architecture
-  [ ] Pre-flight: konfirmasi schema agent_heartbeats.agent_uuid ada
+  [ ] Pre-flight: commit retrofit migration 0011a (agent_uuid)
   [ ] Apply migrations 0018-0020 ke Supabase
+  [ ] Extend cron cleanup untuk print_history (2.7)
   [ ] Implement web /api/print/send + handle 503 di komponen
   [ ] Implement agent: PrintHistoryRepository + JobProcessor rewrite +
       strip realtime/periodic/alarm + Start/Stop online status
@@ -1030,10 +1079,10 @@ PHASE 3 — Cleanup
 
 # Open prerequisites / questions
 
-1. **Schema `agent_uuid` di repo**: confirm + commit retrofit migration sebelum Phase 2 jalan.
-2. **Customer receipt printer**: target='customer' di agent harus print ke printer mana? Default dapur. Pertanyaan operasional untuk owner — kalau jawab "ke dapur OK", aman pakai default. Kalau mau kasih owner pilih dari Settings, butuh kolom `customer_receipt_target` di `printer_settings` (or di agent SharedPreferences).
-3. **`PrintHistoryRow.bytes_b64` retention**: row simpan full payload Base64 (~10-50KB per job). 50 jobs/hari × 365 hari = ~1GB/tahun. Mungkin perlu cron retention (e.g. drop bytes_b64 setelah 30 hari, keep header only). Out of scope untuk spec ini, taruh di backlog.
-4. **Feature flag untuk transisi Phase 2**: optional. Kalau dipakai, tambah ENV `NEXT_PUBLIC_PRINT_SEND_ENDPOINT='/api/print/send'` (default) vs `'/api/print/queue'`. Kalau no flag, big bang deploy.
+1. **Retrofit migration `agent_uuid`** (resolved planning): kolom ada di Supabase + dipakai di `app/api/print/queue/route.ts:62`. Commit migration `0011a_agent_heartbeats_agent_uuid.sql` sebelum Phase 2 mulai (lihat 2.2).
+2. **Customer receipt printer** (resolved): owner setuju route fix ke printer dapur. No settings UI, hard-coded di `JobProcessor` (lihat 2.5.4).
+3. **`print_history` retention** (resolved): cron `app/api/cron/cleanup` extend supaya hapus row >7 hari. Lihat 2.7. Kalau kemudian hari `bytes_b64` jadi bottleneck storage, opsi: retention diperpendek atau set `bytes_b64=NULL` di sweep 3-hari (preserve audit metadata).
+4. **Feature flag untuk transisi Phase 2** (open): optional. Kalau dipakai, tambah ENV `NEXT_PUBLIC_PRINT_SEND_ENDPOINT='/api/print/send'` (default) vs `'/api/print/queue'`. Kalau no flag, big-bang deploy.
 
 ---
 
