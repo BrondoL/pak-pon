@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       created_at: string;
       done_at: string | null;
       failed_at: string | null;
-      transactions: { customer_name: string | null; table_no: string | null; daily_seq: number | null };
+      transactions: { customer_name: string | null; table_no: string | null; daily_seq: number | null } | null;
     };
 
     const rows = (data ?? []).map((row) => {

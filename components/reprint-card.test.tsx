@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { ReprintCard } from './reprint-card';
 import type { TransactionItemForPrint } from './reprint-card';
 import { DEFAULT_PRINTER_SETTINGS } from '@/lib/printer-settings';
@@ -174,13 +175,33 @@ describe('<ReprintCard />', () => {
         return Promise.resolve(new Response(JSON.stringify({ error: 'agent_offline', detail: 'no online agent' }), { status: 503 }));
       });
       global.fetch = fetchMock as unknown as typeof fetch;
+      const warningSpy = vi.spyOn(toast, 'warning');
       const user = userEvent.setup();
       const items = [mkItem({ menu_category: 'makanan' })];
       render(<ReprintCard transaction={txBase} items={items} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
       await user.click(screen.getByRole('button', { name: /cetak ulang dapur/i }));
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-      // Toast assertions are tricky without spying; assert fetchMock was called against /api/print/send
-      expect(String((fetchMock.mock.calls[0] as [unknown])[0])).toContain('/api/print/send');
+      await waitFor(() => expect(warningSpy).toHaveBeenCalled());
+      const [message] = warningSpy.mock.calls[0] as [string];
+      expect(message).toMatch(/agent printer offline/i);
+    });
+
+    it('shows warning toast when "Cetak tambahan" hits agent_offline on any target', async () => {
+      const fetchMock = vi.fn((..._args: [RequestInfo | URL, RequestInit?]) => {
+        void _args;
+        return Promise.resolve(new Response(JSON.stringify({ error: 'agent_offline' }), { status: 503 }));
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+      const warningSpy = vi.spyOn(toast, 'warning');
+      const user = userEvent.setup();
+      const items = [
+        mkItem({ menu_category: 'makanan', printed_dapur_at: null }),
+        mkItem({ menu_category: 'minuman', printed_minuman_at: null }),
+      ];
+      render(<ReprintCard transaction={txBase} items={items} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
+      await user.click(screen.getByRole('button', { name: /cetak tambahan/i }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(warningSpy).toHaveBeenCalled());
     });
   });
 });
