@@ -318,7 +318,14 @@ async function replaceItems(
   }
 
   if (computed.rows.length > 0) {
-    const insertRows = computed.rows.map((r) => ({ ...r, transaction_id: id }));
+    // Strip undefined `id` so DB default gen_random_uuid() fires for new items.
+    // Items preserved from existing rows include their old id (carries flags).
+    const insertRows = computed.rows.map((r) => {
+      const { id: rowId, ...rest } = r;
+      return rowId !== undefined
+        ? { ...rest, id: rowId, transaction_id: id }
+        : { ...rest, transaction_id: id };
+    });
     const { error: insertError } = await supabase
       .from('transaction_items')
       .insert(insertRows);
