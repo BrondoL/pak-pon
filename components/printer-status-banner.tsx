@@ -8,6 +8,7 @@ type Agent = {
   last_seen_at: string;
   agent_version: string | null;
   device_info: string | null;
+  status: string;
   online: boolean;
 };
 
