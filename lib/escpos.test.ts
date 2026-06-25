@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderTicket, uint8ToBase64, type TicketInput } from './escpos';
+import { renderTicket, renderKitchenTicket, uint8ToBase64, type TicketInput } from './escpos';
 
 const baseInput: TicketInput = {
   target: 'dapur',
@@ -102,6 +102,83 @@ describe('renderTicket', () => {
     const last5 = Array.from(bytes.slice(-5));
     expect(last5).toContain(0x1d);
     expect(last5).toContain(0x56);
+  });
+});
+
+describe('renderKitchenTicket', () => {
+  it('produces non-empty Uint8Array for valid input', () => {
+    const bytes = renderKitchenTicket(baseInput);
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(bytes.byteLength).toBeGreaterThan(20);
+  });
+
+  it('includes header info block (Date, Order Number, Customer, Meja)', () => {
+    const bytes = renderKitchenTicket(baseInput);
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).toContain('Date');
+    expect(ascii).toContain('24/06/2026 21:07');
+    expect(ascii).toContain('Order Number');
+    expect(ascii).toContain('POS-240626-45');
+    expect(ascii).toContain('Customer');
+    expect(ascii).toContain('Pak Budi');
+    expect(ascii).toContain('Meja');
+  });
+
+  it('renders qty + name uppercase per item', () => {
+    const bytes = renderKitchenTicket(baseInput);
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).toContain('1x NASI AYAM BAKAR DADA');
+    expect(ascii).toContain('2x PETE GORENG');
+  });
+
+  it('does NOT print unit_price or line total (kitchen format)', () => {
+    const bytes = renderKitchenTicket(baseInput);
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).not.toContain('26.000');
+    expect(ascii).not.toContain('46.000');
+  });
+
+  it('includes Total Item from sum of qty', () => {
+    const bytes = renderKitchenTicket(baseInput);
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).toContain('Total Item 3');
+  });
+
+  it('does NOT include "Total Rp" line (only kitchen receipt)', () => {
+    const bytes = renderKitchenTicket(baseInput);
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    // Indirect: ensure formatted amounts (26.000, 46.000) absent.
+    expect(ascii).not.toContain('46.000');
+  });
+
+  it('uses double-size ESC/POS bytes (GS ! 0x11) for item lines', () => {
+    const bytes = renderKitchenTicket(baseInput);
+    let found = false;
+    for (let i = 0; i < bytes.length - 2; i++) {
+      if (bytes[i] === 0x1d && bytes[i+1] === 0x21 && bytes[i+2] === 0x11) {
+        found = true;
+        break;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('renders notes per item in normal size below double-size name', () => {
+    const bytes = renderKitchenTicket(baseInput);
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).toContain('> pedas');
+  });
+
+  it('omits Meja line when table_no null', () => {
+    const bytes = renderKitchenTicket({ ...baseInput, table_no: null });
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).not.toContain('Meja');
+  });
+
+  it('handles empty items list', () => {
+    const bytes = renderKitchenTicket({ ...baseInput, items: [] });
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).toContain('Total Item 0');
   });
 });
 

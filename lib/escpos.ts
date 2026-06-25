@@ -48,6 +48,11 @@ const CUT_FULL = new Uint8Array([GS, 0x56, 0x00]);
 const CUT_PARTIAL = new Uint8Array([GS, 0x56, 0x01]);
 const BEEP_3X = new Uint8Array([ESC, 0x42, 0x03, 0x03]);
 
+// GS ! n — character size. 0x11 = double width (bit 4) + double height (bit 0).
+// Dipakai untuk kitchen ticket supaya dapur baca cepat dari jauh.
+const DOUBLE_SIZE_ON  = new Uint8Array([GS, 0x21, 0x11]);
+const DOUBLE_SIZE_OFF = new Uint8Array([GS, 0x21, 0x00]);
+
 function encodeText(s: string): Uint8Array {
   // Latin-1 / CP437 encoding for thermal printer compatibility
   const bytes = new Uint8Array(s.length);
@@ -112,6 +117,79 @@ function labelLine(label: string, value: string, labelWidth: number): string {
   // "Date          : 25/06/2026 10:30" — fixed-width label, colon, space, value.
   const paddedLabel = label.length >= labelWidth ? label : label + ' '.repeat(labelWidth - label.length);
   return `${paddedLabel}: ${value}`;
+}
+
+export function renderKitchenTicket(
+  input: TicketInput,
+  settings: PrinterSettings = DEFAULT_PRINTER_SETTINGS,
+): Uint8Array {
+  const parts: Uint8Array[] = [];
+  const lineWidth = charsPerLine(settings.paper_width);
+  const heavySeparator = '='.repeat(lineWidth);
+  const trimmedHeader = settings.header_text?.trim();
+  const labelWidth = 13;
+
+  parts.push(INIT);
+  if (settings.beep_on_print) parts.push(BEEP_3X);
+
+  // Centered bold header (warung name).
+  if (trimmedHeader) {
+    parts.push(ALIGN_CENTER);
+    parts.push(BOLD_ON);
+    for (const line of trimmedHeader.split('\n')) {
+      parts.push(encodeText(line));
+      parts.push(lineFeed(1));
+    }
+    parts.push(BOLD_OFF);
+  }
+
+  // Info block.
+  parts.push(ALIGN_LEFT);
+  parts.push(encodeText(heavySeparator));
+  parts.push(lineFeed(1));
+  parts.push(encodeText(labelLine('Date', formatTimestamp(input.created_at), labelWidth)));
+  parts.push(lineFeed(1));
+  parts.push(encodeText(labelLine('Order Number', formatOrderNumber(input.created_at, input.daily_seq), labelWidth)));
+  parts.push(lineFeed(1));
+  if (input.customer_name) {
+    parts.push(encodeText(labelLine('Customer', input.customer_name, labelWidth)));
+    parts.push(lineFeed(1));
+  }
+  if (input.table_no) {
+    parts.push(encodeText(labelLine('Meja', input.table_no, labelWidth)));
+    parts.push(lineFeed(1));
+  }
+  parts.push(encodeText(heavySeparator));
+  parts.push(lineFeed(1));
+
+  // Items in DOUBLE SIZE — qty + name uppercase. Notes in normal size below.
+  let totalQty = 0;
+  for (const item of input.items) {
+    totalQty += item.qty;
+    parts.push(DOUBLE_SIZE_ON);
+    parts.push(encodeText(`${item.qty}x ${item.name.toUpperCase()}`));
+    parts.push(DOUBLE_SIZE_OFF);
+    parts.push(lineFeed(1));
+    if (item.note) {
+      parts.push(encodeText(`  > ${item.note}`));
+      parts.push(lineFeed(1));
+    }
+  }
+
+  // Footer count, no amount.
+  parts.push(encodeText(heavySeparator));
+  parts.push(lineFeed(1));
+  parts.push(encodeText(`Total Item ${totalQty}`));
+  parts.push(lineFeed(1));
+
+  // Feed + cut.
+  if (settings.feed_lines_before_cut > 0) {
+    parts.push(lineFeed(settings.feed_lines_before_cut));
+  }
+  if (settings.cut_mode === 'full') parts.push(CUT_FULL);
+  else if (settings.cut_mode === 'partial') parts.push(CUT_PARTIAL);
+
+  return concat(...parts);
 }
 
 export function renderTicket(
