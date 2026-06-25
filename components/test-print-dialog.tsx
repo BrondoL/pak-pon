@@ -39,6 +39,7 @@ export function TestPrintDialog({
           tx_id: null,
           target,
           trigger: 'test',
+          item_ids: null,
           bytes_b64: buildTestPayload(target),
         }),
       });
