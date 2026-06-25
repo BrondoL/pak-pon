@@ -111,6 +111,35 @@ FROM agent_heartbeats ORDER BY last_seen_at DESC LIMIT 1;
 
 ---
 
+## A4. WiFi drop → reconnect → heartbeat resume
+
+**Precondition:** Agent online (A1 sukses), HP terhubung WiFi.
+
+**Steps:**
+1. Note `last_seen_at` saat ini di DB.
+2. Matikan WiFi HP (Settings → WiFi off, atau airplane mode). Jangan stop agent.
+3. Tunggu 60 detik.
+4. Nyalakan WiFi lagi, tunggu reconnect (~10 detik).
+5. Tunggu 35 detik (1 heartbeat cycle).
+6. Re-query DB.
+
+**Expected:**
+- Selama WiFi off: heartbeat fail di logcat (log warn "Heartbeat #N FAILED"), `last_seen_at` STALE > 60 detik.
+- Setelah WiFi reconnect: heartbeat berikutnya sukses, `last_seen_at` ter-update fresh.
+- Tidak ada crash agent app (WiFi lock + try/catch loop preserve).
+- Banner web "Print agent belum jalan" sempat muncul selama outage, hilang setelah reconnect.
+
+**DB verify (setelah reconnect):**
+```sql
+SELECT status, last_seen_at, now() - last_seen_at AS staleness
+FROM agent_heartbeats ORDER BY last_seen_at DESC LIMIT 1;
+```
+`staleness < '00:00:35'`, `status='online'`.
+
+**Notes:** WiFi lock di service prevents radio kill saat layar mati; kalau WiFi user toggle manual, heartbeat akan tetap recovery via try/catch + retry. Test ini juga verify auth session masih valid setelah network gap (SettingsSessionManager persistence).
+
+---
+
 # B. Format kitchen ticket (dapur/minuman)
 
 ## B1. Visual: BIG double-size + UPPERCASE qty+name
@@ -429,6 +458,40 @@ WHERE tx_id='<id>' ORDER BY created_at DESC LIMIT 1;
 
 ---
 
+## F5. Partial failure: Cetak ulang Keduanya dengan 1 printer mati
+
+**Precondition:** Agent online, printer dapur ON, **printer minuman OFF** (atau IP minuman invalid/unreachable).
+
+**Steps:**
+1. Buka detail tx mixed (ada makanan + minuman).
+2. Klik "Cetak ulang Keduanya".
+3. Tunggu 10-15 detik (TCP timeout 5s × 2 targets).
+
+**Expected (UI):**
+- Toast hijau "1 sukses, 1 gagal: minuman=Connection timeout" (atau sejenis)
+- Printer dapur cetak normal
+- Printer minuman tidak cetak (mati)
+
+**Expected (DB):**
+```sql
+SELECT target, status, failure_reason FROM print_history
+WHERE tx_id='<id>' ORDER BY created_at DESC LIMIT 2;
+```
+- Row dapur: `status='done'`, `failure_reason IS NULL`
+- Row minuman: `status='failed'`, `failure_reason` ada (Connection timeout / refused)
+
+**Expected (items flag):**
+```sql
+SELECT id, menu_category, printed_dapur_at, printed_minuman_at
+FROM transaction_items WHERE transaction_id='<id>';
+```
+- Items makanan/nasi: `printed_dapur_at` ter-update fresh (dapur sukses → trigger fire)
+- Items minuman: `printed_minuman_at` TIDAK berubah (minuman gagal → trigger skip)
+
+**Notes:** Test ini verify partial-failure semantic: per-target independence. Cetak tambahan berikutnya akan re-include minuman items karena flag masih NULL.
+
+---
+
 # G. Manual "Cetak nota customer"
 
 ## G1. Klik → 1 job target=customer, item_ids=null
@@ -531,6 +594,62 @@ SELECT COUNT(*) FROM print_history WHERE tx_id='<id baru>';
 - Copy actionable: "Buka aplikasi Pak Pon Agent di Android, login, lalu tap Start. Kembali ke sini setelah indikator agent jadi Online."
 - 2 tombol: "Coba Lagi" + "Tutup"
 - Klik "Coba Lagi" → kembali ke state idle
+
+---
+
+## H5. Test print success path via web Settings
+
+**Precondition:** Agent ONLINE, printer dapur ON.
+
+**Steps:**
+1. Buka `/setup/printer` (atau wherever test print dialog dipanggil).
+2. Pilih target dapur, klik "Test Print".
+
+**Expected:**
+- Dialog tampil progress "Mengirim job test print..." lalu success state hijau.
+- Printer dapur cetak bytes test (header pendek, "TEST PRINT" line atau sejenis).
+- DB ada row `print_history` baru dengan `trigger='test'`, `tx_id IS NULL`, `item_ids IS NULL`, `status='done'`.
+
+**DB verify:**
+```sql
+SELECT trigger, tx_id, item_ids, status, target
+FROM print_history WHERE trigger='test'
+ORDER BY created_at DESC LIMIT 1;
+```
+`trigger='test'`, `tx_id IS NULL`, `item_ids IS NULL`, `target='dapur'`, `status='done'`.
+
+**Notes:** Test print uses `/api/print/send` endpoint (Phase 2 web Task 10 step 3 changes). Verify request body shape `{ tx_id: null, item_ids: null, target, trigger: 'test', bytes_b64 }` di DevTools Network. Test ini verify route + payload kompat untuk test flow (item_ids null + tx_id null).
+
+---
+
+## H6. Stop button race vs FCM in-flight → recordStoppedAfterDispatch
+
+**Precondition:** Agent ONLINE, printer dapur ON. Susah di-reproduce deterministik, tapi worth dicoba.
+
+**Steps:**
+1. Posisi: detail tx dengan beberapa items dapur yang flag-nya NULL.
+2. Klik "Cetak tambahan" di web.
+3. **Segera** (kurang dari 1 detik setelah klik) tekan **Stop Agent** di app HP.
+4. Tunggu 5-10 detik.
+
+**Expected (kalau race kena):**
+- Web sudah balas 200 + toast "Cetak tambahan dikirim" (FCM sudah ter-dispatch dari web side).
+- Tapi agent stop SEBELUM FCM sampai → `PakPonFcmService.isRunning()` return false → `recordStoppedAfterDispatch` path → DB insert row `failed` dengan reason spesifik.
+- Printer dapur TIDAK cetak.
+- Items flag tetap NULL (karena trigger DB skip — status='failed').
+
+**Expected (kalau race tidak kena = stop terlalu lambat):**
+- Print job ter-proses normal (race window kecil ~500ms).
+- Coba ulang 2-3 kali untuk reproduce. Kalau persisten tidak kena, OK skip — Phase 2 code path tested via unit test ParseInlineJobTest.
+
+**DB verify (kalau race kena):**
+```sql
+SELECT status, failure_reason, target FROM print_history
+WHERE tx_id='<id>' ORDER BY created_at DESC LIMIT 1;
+```
+`status='failed'`, `failure_reason='agent stopped after dispatch'`.
+
+**Notes:** Test ini verify Phase 2 design decision: race antara `web POST → FCM dispatch` dan `user Stop` dibikin audit-friendly (failed row dengan reason spesifik) instead of silent drop. Owner melihat di Tab History → tahu kenapa nota tidak tercetak.
 
 ---
 
@@ -711,6 +830,25 @@ ORDER BY version;
 - `agent_heartbeats_status` (0019)
 - `mark_items_printed_history_trigger` (0020)
 - `drop_print_queue` (0021)
+
+---
+
+## L4. Debug page UI: tidak ada tombol Retry/Cancel lagi
+
+**Precondition:** Phase 2 web Task 11 sudah ship (debug page switched dari `print_queue` ke `print_history`).
+
+**Steps:**
+1. Buka `/setup/printer/debug` di web.
+2. Inspect row di list (kalau kosong, buat 1-2 jobs dulu lewat reprint test agar ada row).
+
+**Expected:**
+- Setiap row hanya tampil: agent_label, target, trigger, status badge, timestamps (created_at + done_at/failed_at), customer_name + table_no (via join transactions).
+- Filter buttons: **"All / Done / Failed"** (bukan Pending — `print_history` tidak punya pending state).
+- **TIDAK ADA** tombol "Retry" di row status='failed'.
+- **TIDAK ADA** tombol "Cancel" (legacy untuk pending).
+- Owner workflow change: untuk retry, owner buka agent app tab History → tap Retry (verified di scenario I2).
+
+**Notes:** Verify perubahan UX Phase 2 web. Kalau masih ada tombol retry/cancel di debug page, kemungkinan client component lama belum di-update atau ada code path lama yang masih reachable. Test ini lightweight — visual inspect saja, tidak butuh DB query.
 
 ---
 

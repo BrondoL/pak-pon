@@ -53,6 +53,17 @@ export class RequestEvent {
         message: err.message,
         stack: err.stack?.split('\n').slice(0, 6).join('\n'),
       };
+    } else if (err && typeof err === 'object') {
+      // Plain error objects (e.g. PostgrestError dari supabase-js: bukan
+      // instanceof Error, just { code, message, details, hint }). Extract
+      // known fields supaya tidak ter-stringify jadi "[object Object]".
+      const e = err as Record<string, unknown>;
+      this.fields.error = {
+        ...(typeof e.code === 'string' ? { code: e.code } : {}),
+        message: typeof e.message === 'string' ? e.message : String(err),
+        ...(typeof e.details === 'string' ? { details: e.details } : {}),
+        ...(typeof e.hint === 'string' ? { hint: e.hint } : {}),
+      };
     } else {
       this.fields.error = { message: String(err) };
     }

@@ -319,9 +319,13 @@ async function replaceItems(
 
   if (computed.rows.length > 0) {
     const insertRows = buildItemInsertRows(computed.rows, id);
+    // defaultToNull: false — supaya supabase-js TIDAK set columns= query param,
+    // sehingga row tanpa `id` (item baru) di-handle PostgREST pakai DEFAULT
+    // gen_random_uuid() instead of NULL (kena NOT NULL constraint). Lihat
+    // buildItemInsertRows comment + PostgREST bulk insert docs.
     const { error: insertError } = await supabase
       .from('transaction_items')
-      .insert(insertRows);
+      .insert(insertRows, { defaultToNull: false });
     if (insertError) {
       tagStatus(evt, 500);
       evt.error(insertError);
