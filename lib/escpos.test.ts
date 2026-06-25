@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderTicket, renderKitchenTicket, uint8ToBase64, type TicketInput } from './escpos';
+import { renderCustomerReceipt, renderKitchenTicket, uint8ToBase64, type TicketInput } from './escpos';
 
 const baseInput: TicketInput = {
   target: 'dapur',
@@ -13,15 +13,15 @@ const baseInput: TicketInput = {
   ],
 };
 
-describe('renderTicket', () => {
+describe('renderCustomerReceipt', () => {
   it('produces non-empty Uint8Array for valid input', () => {
-    const bytes = renderTicket(baseInput);
+    const bytes = renderCustomerReceipt(baseInput);
     expect(bytes).toBeInstanceOf(Uint8Array);
     expect(bytes.byteLength).toBeGreaterThan(20);
   });
 
   it('includes Date, Order Number, Customer, Meja info lines', () => {
-    const bytes = renderTicket(baseInput);
+    const bytes = renderCustomerReceipt(baseInput);
     const ascii = new TextDecoder('latin1').decode(bytes);
     expect(ascii).toContain('Date');
     expect(ascii).toContain('24/06/2026 21:07');
@@ -33,20 +33,20 @@ describe('renderTicket', () => {
   });
 
   it('omits Meja line when table_no null', () => {
-    const bytes = renderTicket({ ...baseInput, table_no: null });
+    const bytes = renderCustomerReceipt({ ...baseInput, table_no: null });
     const ascii = new TextDecoder('latin1').decode(bytes);
     expect(ascii).not.toContain('Meja');
   });
 
   it('omits Customer line when customer_name null', () => {
-    const bytes = renderTicket({ ...baseInput, customer_name: null });
+    const bytes = renderCustomerReceipt({ ...baseInput, customer_name: null });
     const ascii = new TextDecoder('latin1').decode(bytes);
     expect(ascii).not.toContain('Pak Budi');
     expect(ascii).not.toContain('Customer');
   });
 
   it('renders each item with name + qty/price line + right-aligned line total', () => {
-    const bytes = renderTicket(baseInput);
+    const bytes = renderCustomerReceipt(baseInput);
     const ascii = new TextDecoder('latin1').decode(bytes);
     expect(ascii).toContain('Nasi ayam bakar dada');
     expect(ascii).toContain('1x 26.000');
@@ -56,13 +56,13 @@ describe('renderTicket', () => {
   });
 
   it('renders note line when present', () => {
-    const bytes = renderTicket(baseInput);
+    const bytes = renderCustomerReceipt(baseInput);
     const ascii = new TextDecoder('latin1').decode(bytes);
     expect(ascii).toContain('> pedas');
   });
 
   it('omits note line when null', () => {
-    const bytes = renderTicket({
+    const bytes = renderCustomerReceipt({
       ...baseInput,
       items: [{ qty: 1, name: 'Nasi Putih', unit_price: 5000, note: null }],
     });
@@ -71,21 +71,21 @@ describe('renderTicket', () => {
   });
 
   it('computes Total Item from sum of qty', () => {
-    const bytes = renderTicket(baseInput);
+    const bytes = renderCustomerReceipt(baseInput);
     const ascii = new TextDecoder('latin1').decode(bytes);
     // base: qty 1 + qty 2 = 3
     expect(ascii).toContain('Total Item 3');
   });
 
   it('computes Total amount from sum of qty * unit_price', () => {
-    const bytes = renderTicket(baseInput);
+    const bytes = renderCustomerReceipt(baseInput);
     const ascii = new TextDecoder('latin1').decode(bytes);
     // base: 1*26000 + 2*10000 = 46000 → "46.000"
     expect(ascii).toContain('46.000');
   });
 
   it('uses header_text when provided', () => {
-    const bytes = renderTicket(baseInput, {
+    const bytes = renderCustomerReceipt(baseInput, {
       paper_width: '58mm',
       feed_lines_before_cut: 0,
       cut_mode: 'none',
@@ -98,10 +98,51 @@ describe('renderTicket', () => {
   });
 
   it('ends with cut command when cut_mode=full', () => {
-    const bytes = renderTicket(baseInput);
+    const bytes = renderCustomerReceipt(baseInput);
     const last5 = Array.from(bytes.slice(-5));
     expect(last5).toContain(0x1d);
     expect(last5).toContain(0x56);
+  });
+
+  it('renders footer_text when non-empty', () => {
+    const bytes = renderCustomerReceipt(baseInput, {
+      paper_width: '58mm',
+      feed_lines_before_cut: 0,
+      cut_mode: 'none',
+      beep_on_print: false,
+      header_text: null,
+      footer_text: 'Terima kasih\n~ Pak Pon ~',
+    });
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).toContain('Terima kasih');
+    expect(ascii).toContain('~ Pak Pon ~');
+  });
+
+  it('does NOT render footer when footer_text empty', () => {
+    const bytes = renderCustomerReceipt(baseInput, {
+      paper_width: '58mm',
+      feed_lines_before_cut: 0,
+      cut_mode: 'none',
+      beep_on_print: false,
+      header_text: null,
+      footer_text: '',
+    });
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).not.toContain('Terima kasih');
+  });
+
+  it('replaces non-Latin-1 chars in footer with ?', () => {
+    const bytes = renderCustomerReceipt(baseInput, {
+      paper_width: '58mm',
+      feed_lines_before_cut: 0,
+      cut_mode: 'none',
+      beep_on_print: false,
+      header_text: null,
+      footer_text: 'Terima kasih 🙏',
+    });
+    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).toContain('Terima kasih');
+    expect(ascii).toContain('?');
   });
 });
 

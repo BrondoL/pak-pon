@@ -192,7 +192,7 @@ export function renderKitchenTicket(
   return concat(...parts);
 }
 
-export function renderTicket(
+export function renderCustomerReceipt(
   input: TicketInput,
   settings: PrinterSettings = DEFAULT_PRINTER_SETTINGS,
 ): Uint8Array {
@@ -277,6 +277,19 @@ export function renderTicket(
   parts.push(encodeText(rightAlignLine('Total', formatRupiah(totalAmount), lineWidth)));
   parts.push(BOLD_OFF);
   parts.push(lineFeed(1));
+
+  // 5b. Optional footer (Terima kasih dst). Print centered, normal size, with
+  // breathing room before cut. Kosong = skip semuanya supaya tidak ada gap.
+  const trimmedFooter = settings.footer_text?.trim();
+  if (trimmedFooter) {
+    parts.push(lineFeed(1));
+    parts.push(ALIGN_CENTER);
+    for (const line of trimmedFooter.split('\n')) {
+      parts.push(encodeText(line));
+      parts.push(lineFeed(1));
+    }
+    parts.push(ALIGN_LEFT);
+  }
 
   // 6. Configurable feed + cut
   if (settings.feed_lines_before_cut > 0) {
