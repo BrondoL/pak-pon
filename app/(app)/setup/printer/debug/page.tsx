@@ -50,6 +50,7 @@ type Agent = {
   status: string;
   display_state: DisplayState;
   online: boolean;
+  is_primary: boolean;
 };
 
 function badgeClassesFor(state: DisplayState): string {
@@ -96,6 +97,21 @@ export default function PrinterDebugPage() {
     reload();
   }, []);
 
+  async function setPrimary(label: string) {
+    const res = await fetch(`/api/agent/${encodeURIComponent(label)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_primary: true }),
+    });
+    if (res.ok) {
+      toast.success(`${label} sekarang primary`);
+      reload();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast.error(`Gagal set primary: ${data.detail ?? data.error ?? `HTTP ${res.status}`}`);
+    }
+  }
+
   async function deleteAgent(label: string) {
     const res = await fetch(`/api/agent/${encodeURIComponent(label)}`, { method: 'DELETE' });
     if (res.ok) {
@@ -134,13 +150,29 @@ export default function PrinterDebugPage() {
         {agents.length === 0 && (
           <p className="text-sm text-coal-soft">Belum ada agent registered.</p>
         )}
+        {agents.length > 0 && !agents.some((a) => a.is_primary) && (
+          <div className="rounded-md border border-brick-soft bg-brick-faint p-3 text-sm text-brick-dark">
+            <p className="font-medium">Belum ada primary agent</p>
+            <p>
+              Print tidak akan jalan sampai owner pilih satu agent sebagai primary.
+              Klik &ldquo;Jadikan Primary&rdquo; pada salah satu agent di bawah.
+            </p>
+          </div>
+        )}
         {agents.map((a) => (
           <div
             key={a.agent_label}
             className="flex flex-col gap-2 rounded-md border border-clay-soft bg-paper-soft p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
           >
             <div className="min-w-0">
-              <p className="truncate font-medium text-coal">{a.agent_label}</p>
+              <div className="flex items-center gap-2">
+                <p className="truncate font-medium text-coal">{a.agent_label}</p>
+                {a.is_primary && (
+                  <span className="shrink-0 rounded-full bg-coal px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-paper">
+                    Primary
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-coal-soft">
                 Last seen: {new Date(a.last_seen_at).toLocaleString('id-ID')}
                 {a.agent_version && ` · v${a.agent_version}`}
@@ -152,6 +184,33 @@ export default function PrinterDebugPage() {
               >
                 {badgeLabelFor(a.display_state)}
               </span>
+              {!a.is_primary && (
+                <AlertDialog>
+                  <AlertDialogTrigger
+                    aria-label={`Jadikan primary ${a.agent_label}`}
+                    render={<Button type="button" variant="outline" size="sm" />}
+                  >
+                    Jadikan Primary
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        Ganti primary agent ke &ldquo;{a.agent_label}&rdquo;?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Semua nota akan dikirim ke device ini. Pastikan device aktif dan printer-nya
+                        sudah benar di-set.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Batal</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => setPrimary(a.agent_label)}>
+                        Set Primary
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
               <AlertDialog>
                 <AlertDialogTrigger
                   aria-label={`Hapus agent ${a.agent_label}`}
