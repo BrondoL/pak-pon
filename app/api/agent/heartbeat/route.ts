@@ -29,7 +29,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('agent_heartbeats')
-      .select('agent_label, last_seen_at, agent_version, device_info, status')
+      .select('agent_label, last_seen_at, agent_version, device_info, status, is_primary')
       .order('last_seen_at', { ascending: false });
     if (error) {
       tagStatus(evt, 500);
@@ -50,17 +50,21 @@ export async function GET() {
         agent_version: a.agent_version,
         device_info: a.device_info,
         status: a.status,
+        is_primary: a.is_primary,
         display_state,
         // Backward-compat: `online` true cuma kalau benar-benar segar.
         // Banner / debug page sekarang pakai display_state.
         online: display_state === 'online',
       };
     });
+    const primary = agents.find((a) => a.is_primary);
     evt.merge({
       agents_count: agents.length,
       online_count: agents.filter((a) => a.display_state === 'online').length,
       stale_count: agents.filter((a) => a.display_state === 'stale').length,
       offline_count: agents.filter((a) => a.display_state === 'offline').length,
+      primary_label: primary?.agent_label ?? null,
+      primary_display_state: primary?.display_state ?? null,
     });
 
     tagStatus(evt, 200);
