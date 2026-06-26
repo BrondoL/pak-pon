@@ -20,7 +20,7 @@ type Job = {
   tx_id: string | null;
   target: 'dapur' | 'minuman' | 'customer';
   trigger: 'auto' | 'auto_additional' | 'reprint' | 'reprint_additional' | 'customer' | 'test';
-  status: 'done' | 'failed';
+  status: 'pending' | 'done' | 'failed';
   failure_reason: string | null;
   created_at: string;
   done_at: string | null;
@@ -123,8 +123,7 @@ export default function PrinterDebugPage() {
     }
   }
 
-  // print_history hanya punya final states (done/failed). Tidak ada pending
-  // karena agent insert setelah job selesai.
+  const pending = jobs.filter((j) => j.status === 'pending');
   const done = jobs.filter((j) => j.status === 'done');
   const failed = jobs.filter((j) => j.status === 'failed');
 
@@ -243,7 +242,7 @@ export default function PrinterDebugPage() {
           Job History ({jobs.length})
         </h2>
         <p className="text-xs text-coal-soft">
-          Failed: {failed.length} · Done: {done.length}.
+          Pending: {pending.length} · Failed: {failed.length} · Done: {done.length}.
           {failed.length > 0 && ' Untuk retry, buka agent app → tab History.'}
         </p>
         {jobs.length === 0 && (
@@ -263,6 +262,8 @@ export default function PrinterDebugPage() {
                       className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
                         j.status === 'done'
                           ? 'bg-leaf/15 text-leaf'
+                          : j.status === 'pending'
+                          ? 'bg-mustard/20 text-coal'
                           : 'bg-brick/15 text-brick'
                       }`}
                     >
@@ -313,7 +314,11 @@ export default function PrinterDebugPage() {
                       <td className="p-2 text-coal-soft">{j.trigger}</td>
                       <td className="p-2 text-coal-soft">{j.agent_label ?? '-'}</td>
                       <td className="p-2">
-                        <span className={j.status === 'done' ? 'text-leaf' : 'text-brick'}>
+                        <span className={
+                          j.status === 'done' ? 'text-leaf' :
+                          j.status === 'pending' ? 'text-coal-soft' :
+                          'text-brick'
+                        }>
                           {j.status}
                         </span>
                       </td>

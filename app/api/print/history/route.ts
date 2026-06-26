@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10) || 50, 200);
-    const statusFilter = searchParams.get('status'); // 'done' | 'failed' | null
+    const statusFilter = searchParams.get('status'); // 'pending' | 'done' | 'failed' | null
     const txFilter = searchParams.get('tx_id');
 
     let query = supabase
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       .select('id, tx_id, agent_label, target, trigger, status, failure_reason, created_at, done_at, failed_at, transactions(customer_name, table_no, daily_seq)')
       .order('created_at', { ascending: false })
       .limit(limit);
-    if (statusFilter === 'done' || statusFilter === 'failed') {
+    if (statusFilter === 'pending' || statusFilter === 'done' || statusFilter === 'failed') {
       query = query.eq('status', statusFilter);
     }
     if (txFilter) {
