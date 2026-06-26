@@ -85,19 +85,20 @@ CREATE UNIQUE INDEX agent_heartbeats_primary_singleton_idx
   ON agent_heartbeats (is_primary)
   WHERE is_primary = true;
 
--- Auto-elect agent paling lama sebagai primary saat migrasi.
--- Kalau tabel kosong (fresh install), no-op — primary ke-set saat owner
--- pilih manual dari debug page atau saat agent pertama register lalu di-elect.
+-- Auto-elect agent paling lama (proxy: last_seen_at ASC karena tidak ada
+-- created_at di agent_heartbeats) sebagai primary saat migrasi. Tie-break
+-- pakai id ASC supaya deterministik. Kalau tabel kosong (fresh install),
+-- no-op — primary ke-set saat owner pilih manual dari debug page.
 UPDATE agent_heartbeats
   SET is_primary = true
   WHERE id = (
     SELECT id FROM agent_heartbeats
-    ORDER BY created_at ASC, id ASC
+    ORDER BY last_seen_at ASC, id ASC
     LIMIT 1
   );
 ```
 
-**Catatan**: `created_at` ada di `agent_heartbeats` (verifikasi pre-migration — kalau kolom belum ada, fallback ke `last_seen_at ASC`). Tie-break pakai `id ASC` supaya deterministik.
+**Catatan**: `agent_heartbeats` tidak punya kolom `created_at` (verified — schema di 0005 + alterations 0011a/0012/0019). Pakai `last_seen_at ASC` sebagai proxy. Asumsi: agent paling lama register juga punya heartbeat paling stale di antara yang aktif (true untuk single-warung use case).
 
 ### Agent app upsert tidak perlu diubah
 
