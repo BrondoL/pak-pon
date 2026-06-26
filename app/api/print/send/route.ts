@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
     const { data: agents, error: queryErr } = await supabase
       .from('agent_heartbeats')
       .select('agent_label, fcm_token')
+      .eq('is_primary', true)
       .eq('status', 'online')
       .gte('last_seen_at', threshold)
       .not('fcm_token', 'is', null);
@@ -64,9 +65,9 @@ export async function POST(request: NextRequest) {
 
     if (targets.length === 0) {
       tagStatus(evt, 503);
-      evt.set('reject_reason', 'agent_offline');
+      evt.set('reject_reason', 'primary_offline');
       return NextResponse.json(
-        { error: 'agent_offline', detail: 'no online agent available' },
+        { error: 'agent_offline', detail: 'primary agent offline or not set' },
         { status: 503 },
       );
     }
