@@ -73,6 +73,28 @@ export async function POST(request: NextRequest) {
     }
     evt.set('dispatched_to', targets.map((t) => t.agent_label));
 
+    // Insert pending row sebagai proof of dispatch. Polling agent juga
+    // pakai row ini sebagai fallback kalau FCM ga nyampe.
+    const primaryLabel = targets[0].agent_label;
+    const { error: insertErr } = await supabase
+      .from('print_history')
+      .insert({
+        id: job_id,
+        tx_id: payload.tx_id,
+        agent_label: primaryLabel,
+        target: payload.target,
+        trigger: payload.trigger,
+        item_ids: payload.item_ids,
+        bytes_b64: payload.bytes_b64,
+        status: 'pending',
+      });
+    if (insertErr) {
+      tagStatus(evt, 500);
+      evt.error(insertErr);
+      return NextResponse.json({ error: insertErr.message }, { status: 500 });
+    }
+    evt.set('inserted_pending', true);
+
     // Fire-and-forget FCM push. Cleanup invalid tokens on the side.
     pushPrintJob({
       tokens: targets.map((t) => t.fcm_token),
