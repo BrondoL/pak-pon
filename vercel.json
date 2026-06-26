@@ -11,9 +11,5 @@
       "path": "/api/cron/cleanup",
       "schedule": "0 19 * * *"
     }
-    // {
-    //   "path": "/api/cron/print-sweep",
-    //   "schedule": "*/5 * * * *"
-    // }
   ]
 }
