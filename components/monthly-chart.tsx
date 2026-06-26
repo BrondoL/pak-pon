@@ -1,10 +1,25 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 import { formatRp } from '@/lib/currency';
 import { currentBusinessDate } from '@/lib/date';
 
@@ -55,14 +70,27 @@ export function MonthlyChart({
   const router = useRouter();
   const sp = useSearchParams();
   const [pending, startTransition] = useTransition();
-  const [hovered, setHovered] = useState<number | null>(null);
-  const max = Math.max(1, ...daily.map((d) => d.total));
   const activeDays = daily.filter((d) => d.total > 0);
   const avgPerDay = activeDays.length > 0 ? Math.round(total / activeDays.length) : 0;
   const bestDay = daily.reduce<DayBar | null>((b, d) => (d.total > (b?.total ?? 0) ? d : b), null);
   const todayYmd = currentBusinessDate();
   const isEmpty = count === 0;
   const isCurrentMonth = month === todayYmd.slice(0, 7);
+
+  const chartData = daily.map((d) => ({
+    day: parseInt(d.date.slice(-2), 10),
+    date: d.date,
+    total: d.total,
+    count: d.count,
+    isToday: d.date === todayYmd,
+  }));
+
+  const chartConfig = {
+    total: {
+      label: 'Pemasukan',
+      color: 'var(--color-gold)',
+    },
+  } satisfies ChartConfig;
 
   function setMonth(ym: string) {
     const next = new URLSearchParams(sp.toString());
@@ -167,83 +195,89 @@ export function MonthlyChart({
           )}
         </div>
 
-        <div className="relative mt-6">
-          <div className="absolute inset-y-0 left-0 flex flex-col justify-between pr-2 text-right text-[9px] text-clay-soft">
-            <span>{formatCompactRp(max)}</span>
-            <span>{formatCompactRp(max / 2)}</span>
-            <span>0</span>
-          </div>
-
-          <div className="ml-9 border-l border-clay-soft/60">
-            <div className="relative h-44">
-              <div className="absolute inset-x-0 top-0 border-t border-dashed border-clay-soft/40" />
-              <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-clay-soft/40" />
-              {avgPerDay > 0 && (
-                <div
-                  className="absolute inset-x-0 border-t border-dashed border-brick/40"
-                  style={{ top: `${100 - (avgPerDay / max) * 100}%` }}
-                  title={`Rata-rata harian: ${formatRp(avgPerDay)}`}
-                >
-                  <span className="absolute -top-3 right-0 rounded bg-brick px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-paper">
-                    avg
-                  </span>
-                </div>
-              )}
-
-              <div className="absolute inset-0 flex items-end gap-[2px] px-0.5">
-                {daily.map((d, i) => {
-                  const heightPct = (d.total / max) * 100;
-                  const day = parseInt(d.date.slice(-2), 10);
-                  const isToday = d.date === todayYmd;
-                  const isHovered = hovered === i;
-                  return (
-                    <div
-                      key={d.date}
-                      className="group relative flex flex-1 flex-col items-center justify-end"
-                      onMouseEnter={() => setHovered(i)}
-                      onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
-                    >
-                      <div
-                        className={[
-                          'w-full rounded-t transition-colors',
-                          d.total === 0
-                            ? 'bg-clay-mist'
-                            : isToday
-                              ? 'bg-brick group-hover:bg-brick-dark'
-                              : 'bg-gold/80 group-hover:bg-gold',
-                        ].join(' ')}
-                        style={{ height: `${Math.max(heightPct, d.total > 0 ? 2 : 1)}%` }}
-                      />
-                      {isHovered && d.total > 0 && (
-                        <div className="pointer-events-none absolute -top-14 left-1/2 z-10 min-w-[110px] -translate-x-1/2 rounded-md border border-clay-soft bg-night-deep px-3 py-2 text-center shadow-[var(--shadow-stamp)]">
-                          <div className="text-[10px] uppercase tracking-wide text-ink-soft">
-                            {dayOfWeekShort(d.date)} {day}
-                          </div>
-                          <div className="font-display text-sm text-paper">
-                            {formatRp(d.total)}
-                          </div>
-                          <div className="text-[10px] text-ink-soft">{d.count} tx</div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="mt-1 flex gap-[2px] px-0.5">
-              {daily.map((d) => {
-                const day = parseInt(d.date.slice(-2), 10);
-                const showLabel = day === 1 || day === 5 || day === 10 || day === 15 || day === 20 || day === 25 || day === daily.length;
-                return (
-                  <div key={d.date} className="flex-1 text-center text-[9px] text-clay-soft">
-                    {showLabel ? day : ''}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <ChartContainer
+          config={chartConfig}
+          className="mt-4 aspect-auto h-56 w-full"
+        >
+          <BarChart data={chartData} margin={{ top: 16, right: 8, left: 0, bottom: 4 }}>
+            <CartesianGrid
+              vertical={false}
+              strokeDasharray="3 3"
+              stroke="var(--color-clay-soft)"
+              strokeOpacity={0.5}
+            />
+            <XAxis
+              dataKey="day"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              interval={4}
+              tick={{ fill: 'var(--color-clay)', fontSize: 10 }}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              width={44}
+              tick={{ fill: 'var(--color-clay-soft)', fontSize: 10 }}
+              tickFormatter={(v: number) => formatCompactRp(v)}
+            />
+            {avgPerDay > 0 && (
+              <ReferenceLine
+                y={avgPerDay}
+                stroke="var(--color-brick)"
+                strokeOpacity={0.55}
+                strokeDasharray="4 4"
+                label={{
+                  value: 'avg',
+                  position: 'right',
+                  fill: 'var(--color-brick)',
+                  fontSize: 9,
+                  fontWeight: 700,
+                }}
+              />
+            )}
+            <ChartTooltip
+              cursor={{ fill: 'var(--color-cream)', opacity: 0.5 }}
+              content={
+                <ChartTooltipContent
+                  hideIndicator
+                  labelFormatter={(_v, payload) => {
+                    const item = payload?.[0]?.payload as
+                      | { date: string; day: number }
+                      | undefined;
+                    if (!item) return '';
+                    return `${dayOfWeekShort(item.date)}, ${item.day} ${ymLabel(month).split(' ')[0]}`;
+                  }}
+                  formatter={(value, _name, item) => {
+                    const p = item.payload as { count: number };
+                    return (
+                      <div className="flex flex-1 items-center justify-between gap-3">
+                        <span className="text-muted-foreground">{p.count} tx</span>
+                        <span className="font-mono font-medium tabular-nums text-foreground">
+                          {formatRp(Number(value))}
+                        </span>
+                      </div>
+                    );
+                  }}
+                />
+              }
+            />
+            <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+              {chartData.map((entry) => (
+                <Cell
+                  key={entry.date}
+                  fill={
+                    entry.total === 0
+                      ? 'var(--color-clay-mist)'
+                      : entry.isToday
+                        ? 'var(--color-brick)'
+                        : 'var(--color-gold)'
+                  }
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ChartContainer>
       </Card>
       )}
 
