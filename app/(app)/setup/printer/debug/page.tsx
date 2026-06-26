@@ -205,7 +205,7 @@ export default function PrinterDebugPage() {
                     <AlertDialogFooter>
                       <AlertDialogCancel>Batal</AlertDialogCancel>
                       <AlertDialogAction onClick={() => setPrimary(a.agent_label)}>
-                        Set Primary
+                        Ya, jadikan primary
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
