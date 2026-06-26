@@ -54,18 +54,10 @@ describe('renderCustomerReceipt', () => {
     expect(ascii).toContain('20.000');
   });
 
-  it('renders note line when present', () => {
+  it('does not render item notes (customer receipt strips notes)', () => {
     const bytes = renderCustomerReceipt(baseInput);
     const ascii = new TextDecoder('latin1').decode(bytes);
-    expect(ascii).toContain('> pedas');
-  });
-
-  it('omits note line when null', () => {
-    const bytes = renderCustomerReceipt({
-      ...baseInput,
-      items: [{ qty: 1, name: 'Nasi Putih', unit_price: 5000, note: null }],
-    });
-    const ascii = new TextDecoder('latin1').decode(bytes);
+    expect(ascii).not.toContain('pedas');
     expect(ascii).not.toMatch(/^\s*>/m);
   });
 

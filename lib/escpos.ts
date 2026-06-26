@@ -258,11 +258,6 @@ export function renderCustomerReceipt(
     const right = formatRupiah(lineTotal);
     parts.push(encodeText(rightAlignLine(left, right, lineWidth)));
     parts.push(lineFeed(1));
-
-    if (item.note) {
-      parts.push(encodeText(`  > ${item.note}`));
-      parts.push(lineFeed(1));
-    }
   }
 
   // 5. Totals block
