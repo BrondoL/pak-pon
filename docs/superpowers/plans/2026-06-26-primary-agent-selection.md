@@ -63,14 +63,16 @@ CREATE UNIQUE INDEX agent_heartbeats_primary_singleton_idx
   ON agent_heartbeats (is_primary)
   WHERE is_primary = true;
 
--- Backfill: auto-elect agent paling lama (proxy: last_seen_at ASC).
--- Kalau tabel kosong, UPDATE no-op — primary ke-set kemudian saat owner
--- pilih manual dari /setup/printer/debug.
+-- Backfill: auto-elect agent dengan heartbeat terbaru (DESC = paling
+-- mungkin agent yang lagi dipakai operasional). Kalau pakai ASC, risiko
+-- pilih agent stale yang owner sudah ga pakai. Tie-break id ASC supaya
+-- deterministik. Kalau tabel kosong, UPDATE no-op — primary ke-set
+-- kemudian saat owner pilih manual dari /setup/printer/debug.
 UPDATE agent_heartbeats
   SET is_primary = true
   WHERE id = (
     SELECT id FROM agent_heartbeats
-    ORDER BY last_seen_at ASC, id ASC
+    ORDER BY last_seen_at DESC, id ASC
     LIMIT 1
   );
 
