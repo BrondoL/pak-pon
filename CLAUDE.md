@@ -37,11 +37,11 @@ See:
 - Soft delete: `transactions` pakai `deleted_at` timestamp (cron cleanup >7 hari). `menus` pakai `is_active=false` (permanent, preserve FK).
 - Next.js 16: konsultasi `node_modules/next/dist/docs/01-app/` sebelum menulis route handler / middleware / server actions / dynamic APIs (banyak breaking changes vs versi sebelumnya).
 
-## Print system (Phase 1+2+3 shipped 2026-06-25)
+## Print system (Phase 1+2+3 shipped 2026-06-25, primary agent 2026-06-26)
 
 - **Format**: kitchen ticket (dapur/minuman) pakai double-size ESC/POS, no price (`lib/escpos.ts:renderKitchenTicket`). Customer receipt format lengkap + footer (`renderCustomerReceipt`).
-- **Dispatch**: `POST /api/print/send` cek `agent_heartbeats.status='online' AND last_seen_at>now()-24h AND fcm_token IS NOT NULL` → fan-out FCM dengan payload inline. **24h threshold** sengaja longgar supaya FCM bypass OEM freeze (HiOS/MIUI dll) — `last_seen_at` cuma tracker heartbeat, bukan liveness.
-- **Agent state UI**: 3-state via `/api/agent/heartbeat` — `online` (status=online + heartbeat <1h), `stale` (status=online + heartbeat >=1h, warning kuning), `offline` (status=offline, alarm merah).
+- **Dispatch**: `POST /api/print/send` cek `agent_heartbeats.is_primary=true AND status='online' AND last_seen_at>now()-24h AND fcm_token IS NOT NULL` → kirim FCM ke 1 primary agent (no fan-out, no race). Primary di-set owner via `/setup/printer/debug` (`PATCH /api/agent/[label]` → RPC `set_primary_agent` atomic swap). Backfill migrasi 0024 pilih agent dengan heartbeat terbaru. **24h threshold** sengaja longgar supaya FCM bypass OEM freeze (HiOS/MIUI dll) — `last_seen_at` cuma tracker heartbeat, bukan liveness. Primary offline → 503 dengan `detail='primary agent offline or not set'`.
+- **Agent state UI**: 3-state via `/api/agent/heartbeat` — `online` (status=online + heartbeat <1h), `stale` (status=online + heartbeat >=1h, warning kuning), `offline` (status=offline, alarm merah). Banner `printer-status-banner.tsx` fokus ke status primary, bukan agent generik. DELETE primary diblok 409 kalau masih ada agent lain (owner harus pindahin dulu).
 - **Audit**: agent insert ke `print_history` saat job done/failed. Trigger `mark_items_printed_history` set `transaction_items.printed_*_at` saat status=done dengan `item_ids` non-null. Customer print skip flag (item_ids null).
 - **Delta logic**: edit save tx confirmed → cuma items dengan flag NULL yang di-print (`auto_additional`). Items existing dimodifikasi (qty/menu/notes) → modal pilihan reprint full ke target atau skip.
 - **Cleanup**: cron 02:00 WIB hapus `print_history >7 hari`.
