@@ -20,7 +20,9 @@ export async function DELETE(
 
     // Protect primary: kalau target = primary AND masih ada agent lain,
     // tolak sampai owner pindahin primary dulu. Kalau ini satu-satunya
-    // agent, delete OK (fresh state, primary kosong).
+    // agent, delete OK (fresh state, primary kosong). Soft-guard: lookup
+    // + count + delete bukan transaksi. Single-owner POS, race window
+    // praktis nol — kalau jadi masalah, convert ke RPC atomic.
     const { data: target, error: lookupErr } = await supabase
       .from('agent_heartbeats')
       .select('is_primary')
