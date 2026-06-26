@@ -29,7 +29,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('agent_heartbeats')
-      .select('agent_label, last_seen_at, agent_version, device_info, status, is_primary')
+      .select('id, agent_label, last_seen_at, agent_version, device_info, status, is_primary')
       .order('last_seen_at', { ascending: false });
     if (error) {
       tagStatus(evt, 500);
@@ -45,6 +45,7 @@ export async function GET() {
         now,
       );
       return {
+        id: a.id,
         agent_label: a.agent_label,
         last_seen_at: a.last_seen_at,
         agent_version: a.agent_version,

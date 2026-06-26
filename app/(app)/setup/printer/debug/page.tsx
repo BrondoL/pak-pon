@@ -43,6 +43,7 @@ function formatTxLabel(j: Job): string {
 type DisplayState = 'online' | 'stale' | 'offline';
 
 type Agent = {
+  id: string;
   agent_label: string;
   last_seen_at: string;
   agent_version: string | null;
@@ -97,14 +98,14 @@ export default function PrinterDebugPage() {
     reload();
   }, []);
 
-  async function setPrimary(label: string) {
-    const res = await fetch(`/api/agent/${encodeURIComponent(label)}`, {
+  async function setPrimary(agent: Agent) {
+    const res = await fetch(`/api/agent/${agent.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_primary: true }),
     });
     if (res.ok) {
-      toast.success(`${label} sekarang primary`);
+      toast.success(`${agent.agent_label} sekarang primary`);
       reload();
     } else {
       const data = await res.json().catch(() => ({}));
@@ -112,10 +113,10 @@ export default function PrinterDebugPage() {
     }
   }
 
-  async function deleteAgent(label: string) {
-    const res = await fetch(`/api/agent/${encodeURIComponent(label)}`, { method: 'DELETE' });
+  async function deleteAgent(agent: Agent) {
+    const res = await fetch(`/api/agent/${agent.id}`, { method: 'DELETE' });
     if (res.ok) {
-      toast.success(`Agent "${label}" dihapus`);
+      toast.success(`Agent "${agent.agent_label}" dihapus`);
       reload();
     } else {
       const data = await res.json().catch(() => ({}));
@@ -160,7 +161,7 @@ export default function PrinterDebugPage() {
         )}
         {agents.map((a) => (
           <div
-            key={a.agent_label}
+            key={a.id}
             className="flex flex-col gap-2 rounded-md border border-clay-soft bg-paper-soft p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
           >
             <div className="min-w-0">
@@ -203,7 +204,7 @@ export default function PrinterDebugPage() {
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Batal</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => setPrimary(a.agent_label)}>
+                      <AlertDialogAction onClick={() => setPrimary(a)}>
                         Ya, jadikan primary
                       </AlertDialogAction>
                     </AlertDialogFooter>
@@ -226,7 +227,7 @@ export default function PrinterDebugPage() {
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Batal</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => deleteAgent(a.agent_label)}>
+                    <AlertDialogAction onClick={() => deleteAgent(a)}>
                       Ya, hapus
                     </AlertDialogAction>
                   </AlertDialogFooter>

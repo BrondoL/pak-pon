@@ -3,12 +3,22 @@ import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
 import { AgentPatchSchema } from './_schema';
 
+// Identitas agent: row PK (uuid). Sebelumnya pakai agent_label tapi label
+// boleh duplikat di schema (UNIQUE dipindah ke agent_uuid di retrofit 0011a).
+// Reinstall app -> agent_uuid baru, label sama -> 2 row dengan label sama.
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: Promise<{ label: string }> },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { label } = await params;
-  const evt = newEvent('DELETE /api/agent/[label]', { agent_label: label });
+  const { id } = await params;
+  const evt = newEvent('DELETE /api/agent/[id]', { agent_id: id });
   try {
     const supabase = await getSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
@@ -18,6 +28,11 @@ export async function DELETE(
     }
     evt.set('user_id', user.id);
 
+    if (!isUuid(id)) {
+      tagStatus(evt, 400);
+      return NextResponse.json({ error: 'invalid_id' }, { status: 400 });
+    }
+
     // Protect primary: kalau target = primary AND masih ada agent lain,
     // tolak sampai owner pindahin primary dulu. Kalau ini satu-satunya
     // agent, delete OK (fresh state, primary kosong). Soft-guard: lookup
@@ -25,19 +40,22 @@ export async function DELETE(
     // praktis nol — kalau jadi masalah, convert ke RPC atomic.
     const { data: target, error: lookupErr } = await supabase
       .from('agent_heartbeats')
-      .select('is_primary')
-      .eq('agent_label', label)
+      .select('is_primary, agent_label')
+      .eq('id', id)
       .maybeSingle();
     if (lookupErr) {
       tagStatus(evt, 500);
       evt.error(lookupErr);
       return NextResponse.json({ error: lookupErr.message }, { status: 500 });
     }
+    if (target?.agent_label) {
+      evt.set('agent_label', target.agent_label);
+    }
     if (target?.is_primary) {
       const { count: othersCount, error: countErr } = await supabase
         .from('agent_heartbeats')
         .select('id', { count: 'exact', head: true })
-        .neq('agent_label', label);
+        .neq('id', id);
       if (countErr) {
         tagStatus(evt, 500);
         evt.error(countErr);
@@ -59,7 +77,7 @@ export async function DELETE(
     const { error, count } = await supabase
       .from('agent_heartbeats')
       .delete({ count: 'exact' })
-      .eq('agent_label', label);
+      .eq('id', id);
 
     if (error) {
       tagStatus(evt, 500);
@@ -86,10 +104,10 @@ export async function DELETE(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ label: string }> },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { label } = await params;
-  const evt = newEvent('PATCH /api/agent/[label]', { agent_label: label });
+  const { id } = await params;
+  const evt = newEvent('PATCH /api/agent/[id]', { agent_id: id });
   try {
     const supabase = await getSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
@@ -98,6 +116,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
     evt.set('user_id', user.id);
+
+    if (!isUuid(id)) {
+      tagStatus(evt, 400);
+      return NextResponse.json({ error: 'invalid_id' }, { status: 400 });
+    }
 
     const body = await request.json();
     const parsed = AgentPatchSchema.safeParse(body);
@@ -109,8 +132,8 @@ export async function PATCH(
 
     const { data: target, error: lookupErr } = await supabase
       .from('agent_heartbeats')
-      .select('id, is_primary')
-      .eq('agent_label', label)
+      .select('id, agent_label, is_primary')
+      .eq('id', id)
       .maybeSingle();
     if (lookupErr) {
       tagStatus(evt, 500);
@@ -121,6 +144,7 @@ export async function PATCH(
       tagStatus(evt, 404);
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
     }
+    evt.set('agent_label', target.agent_label);
 
     if (target.is_primary) {
       tagStatus(evt, 200);
@@ -139,7 +163,7 @@ export async function PATCH(
       return NextResponse.json({ error: rpcErr.message }, { status: 500 });
     }
 
-    evt.set('new_primary_label', label);
+    evt.set('new_primary_label', target.agent_label);
     tagStatus(evt, 200);
     return NextResponse.json({ ok: true });
   } catch (err) {
