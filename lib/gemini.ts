@@ -2,9 +2,6 @@ import { GoogleGenAI } from '@google/genai';
 import { buildScanSchema, buildMenuRefText, OCR_SYSTEM_PROMPT, type MenuRef, type ScanResult } from './prompts';
 
 // Model selection — overridable via env (.env.local) for easy A/B without code change.
-// FAST_MODEL = primary scan target. CAREFUL_MODEL = auto-fallback + manual rescan.
-// Defaults reflect empirical accuracy on pak-pon notas (Jun 2026); update via env if cost
-// becomes a concern or a newer model proves better.
 const FAST_MODEL = process.env.GEMINI_FAST_MODEL ?? 'gemini-3.5-flash';
 const CAREFUL_MODEL = process.env.GEMINI_CAREFUL_MODEL ?? 'gemini-2.5-pro';
 
@@ -14,16 +11,22 @@ export type ScanAttempt = {
   model: string;
   duration_ms: number;
   outcome: 'success' | 'api_error' | 'empty_response' | 'invalid_json' | 'schema_mismatch';
+
   error_message?: string;
   raw_text_preview?: string;
   schema_issues?: unknown[];
   items_count?: number;
   handwritten_total?: number;
+
+  // 🆕 token usage
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
 };
 
 export type ScanMeta = {
   attempts: ScanAttempt[];
-  final_model: string | null; // null = all failed, result is the empty fallback
+  final_model: string | null;
   fell_back: boolean;
 };
 
@@ -44,23 +47,9 @@ function truncate(s: string, n = 400): string {
 }
 
 export type ScanOptions = {
-  // 'fast' (default): try FAST_MODEL first, fall back to CAREFUL_MODEL on failure/empty.
-  // 'careful': skip fast model, use careful directly (kasir-triggered rescan).
   mode?: 'fast' | 'careful';
 };
 
-/**
- * OCR sebuah foto nota. Function ini PURE OF SIDE EFFECTS — tidak console.log.
- * Caller dapat seluruh meta (attempts, errors, durations) dan decide apa yang
- * mau di-include di request log.
- *
- * Default mode ('fast'):
- * - Try FAST_MODEL (Flash) dulu.
- * - Kalau gagal/empty, retry dengan CAREFUL_MODEL (Pro).
- * Mode 'careful': cuma coba Pro langsung, no fallback (rescan).
- *
- * Never throws. Kalau semua gagal → return EMPTY_RESULT dengan final_model=null.
- */
 export async function scanNota(
   base64Image: string,
   mimeType: string,
@@ -74,12 +63,18 @@ export async function scanNota(
 
   async function callModel(model: string): Promise<ScanResult | null> {
     const t0 = Date.now();
-    const attempt: ScanAttempt = { model, duration_ms: 0, outcome: 'success' };
+
+    const attempt: ScanAttempt = {
+      model,
+      duration_ms: 0,
+      outcome: 'success',
+    };
 
     let response;
+
     try {
-      // Flash supports thinkingBudget: 0 (fast mode). Pro 2.5 rejects budget 0 — it requires thinking.
       const isFlash = model.includes('flash');
+
       response = await client.models.generateContent({
         model,
         contents: [
@@ -103,17 +98,29 @@ export async function scanNota(
       attempts.push(attempt);
       return null;
     }
+
     attempt.duration_ms = Date.now() - t0;
 
+    // 🆕 TOKEN USAGE CAPTURE
+    const usage = response.usageMetadata;
+    if (usage) {
+      attempt.input_tokens = usage.promptTokenCount;
+      attempt.output_tokens = usage.candidatesTokenCount;
+      attempt.total_tokens = usage.totalTokenCount;
+    }
+
     const text = response.text;
+
     if (!text) {
       attempt.outcome = 'empty_response';
       attempts.push(attempt);
       return null;
     }
+
     attempt.raw_text_preview = truncate(text);
 
     let parsedJson: unknown;
+
     try {
       parsedJson = JSON.parse(text);
     } catch (err) {
@@ -124,6 +131,7 @@ export async function scanNota(
     }
 
     const parsed = schema.safeParse(parsedJson);
+
     if (!parsed.success) {
       attempt.outcome = 'schema_mismatch';
       attempt.schema_issues = parsed.error.issues.slice(0, 6);
@@ -133,37 +141,51 @@ export async function scanNota(
 
     attempt.items_count = parsed.data.items.length;
     attempt.handwritten_total = parsed.data.handwritten_total;
+
     attempts.push(attempt);
+
     return parsed.data;
   }
 
   if (mode === 'careful') {
     const result = await callModel(CAREFUL_MODEL);
+
     return {
       result: result ?? EMPTY_RESULT,
-      meta: { attempts, final_model: result ? CAREFUL_MODEL : null, fell_back: false },
+      meta: {
+        attempts,
+        final_model: result ? CAREFUL_MODEL : null,
+        fell_back: false,
+      },
     };
   }
 
-  // Fast mode: try fast model first
   const fastResult = await callModel(FAST_MODEL);
+
   if (fastResult && (fastResult.items.length > 0 || fastResult.handwritten_total > 0)) {
     return {
       result: fastResult,
-      meta: { attempts, final_model: FAST_MODEL, fell_back: false },
+      meta: {
+        attempts,
+        final_model: FAST_MODEL,
+        fell_back: false,
+      },
     };
   }
 
-  // Fast either failed OR returned empty — escalate to careful
   const carefulResult = await callModel(CAREFUL_MODEL);
+
   if (carefulResult) {
     return {
       result: carefulResult,
-      meta: { attempts, final_model: CAREFUL_MODEL, fell_back: true },
+      meta: {
+        attempts,
+        final_model: CAREFUL_MODEL,
+        fell_back: true,
+      },
     };
   }
 
-  // Both failed. Prefer fast's empty result (might at least have customer/table) over EMPTY_RESULT.
   return {
     result: fastResult ?? EMPTY_RESULT,
     meta: {
