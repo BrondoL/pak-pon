@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { buildScanSchema, buildMenuRefText, OCR_SYSTEM_PROMPT, type MenuRef, type ScanResult } from './prompts';
+import { buildScanSchema, buildScanResponseSchema, OCR_SYSTEM_PROMPT, type MenuRef, type ScanResult } from './prompts';
 
 // Single model only — fallback Pro dihapus per plan 2026-06-30.
 const MODEL = process.env.GEMINI_FAST_MODEL ?? 'gemini-3.5-flash';
@@ -50,7 +50,7 @@ export async function scanNota(
   menus: MenuRef[]
 ): Promise<ScanNotaResult> {
   const schema = buildScanSchema(menus);
-  const menuRefText = buildMenuRefText(menus);
+  const responseSchema = buildScanResponseSchema(menus);
   const attempts: ScanAttempt[] = [];
 
   const t0 = Date.now();
@@ -68,13 +68,15 @@ export async function scanNota(
         {
           role: 'user',
           parts: [
-            { text: OCR_SYSTEM_PROMPT + '\n\n' + menuRefText },
+            { text: OCR_SYSTEM_PROMPT },
             { inlineData: { mimeType, data: base64Image } },
           ],
         },
       ],
       config: {
         responseMimeType: 'application/json',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        responseSchema: responseSchema as any,
         thinkingConfig: { thinkingBudget: 0 },
       },
     });

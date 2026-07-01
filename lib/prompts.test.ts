@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildScanSchema, buildMenuRefText, OCR_SYSTEM_PROMPT, type MenuRef } from './prompts';
+import { buildScanSchema, buildScanResponseSchema, OCR_SYSTEM_PROMPT, type MenuRef } from './prompts';
 
 const sampleMenus: MenuRef[] = [
   { id: 'a', name: 'Pecel Lele', category: 'makanan', price: 16000 },
@@ -36,20 +36,6 @@ describe('OCR_SYSTEM_PROMPT', () => {
     // Baseline 2026-06-30: prompt ~2400 char → ~600 tokens.
     // Target post-trim: <1800 char → ~300-400 tokens.
     expect(OCR_SYSTEM_PROMPT.length).toBeLessThan(1800);
-  });
-});
-
-describe('buildMenuRefText', () => {
-  it('lists menu names only (no category, no price)', () => {
-    const text = buildMenuRefText(sampleMenus);
-    expect(text).toContain('Pecel Lele');
-    expect(text).toContain('Es Teh');
-    // Token-saver: jangan kirim metadata yang tidak dipakai Gemini
-    expect(text).not.toMatch(/makanan|minuman/);
-    expect(text).not.toMatch(/Rp|16000|6000/);
-  });
-  it('returns a string even for empty menu list', () => {
-    expect(typeof buildMenuRefText([])).toBe('string');
   });
 });
 
@@ -272,5 +258,43 @@ describe('buildScanSchema', () => {
       expect(result.data.customer_name).toBeNull();
       expect(result.data.table_no).toBeNull();
     }
+  });
+});
+
+describe('buildScanResponseSchema', () => {
+  it('returns OpenAPI 3.0 schema with menu enum constraint', () => {
+    const schema = buildScanResponseSchema(sampleMenus);
+    expect(schema.type).toBe('object');
+    expect(schema.required).toEqual(expect.arrayContaining(['i', 't']));
+    const props = schema.properties as Record<string, { items?: { properties?: Record<string, { enum?: string[] }>; required?: string[] } }>;
+    const itemSchema = props.i.items!;
+    expect(itemSchema.properties!.m.enum).toEqual(['Pecel Lele', 'Es Teh']);
+    expect(itemSchema.required).toEqual(expect.arrayContaining(['m', 'q']));
+  });
+
+  it('marks n / c / a / cn / tn as optional (not in required)', () => {
+    const schema = buildScanResponseSchema(sampleMenus);
+    const props = schema.properties as Record<string, { items?: { required?: string[] } }>;
+    const itemRequired = props.i.items!.required!;
+    expect(itemRequired).not.toContain('n');
+    expect(itemRequired).not.toContain('c');
+    expect(itemRequired).not.toContain('a');
+    expect(schema.required).not.toContain('cn');
+    expect(schema.required).not.toContain('tn');
+  });
+
+  it('constrains alternatives.m to menu enum too', () => {
+    const schema = buildScanResponseSchema(sampleMenus);
+    const props = schema.properties as Record<string, { items?: { properties?: Record<string, { items?: { properties?: Record<string, { enum?: string[] }> } }> } }>;
+    const altItemSchema = props.i.items!.properties!.a.items!;
+    expect(altItemSchema.properties!.m.enum).toEqual(['Pecel Lele', 'Es Teh']);
+  });
+
+  it('handles empty menu list (no enum constraint)', () => {
+    const schema = buildScanResponseSchema([]);
+    const props = schema.properties as Record<string, { items?: { properties?: Record<string, { type?: string; enum?: string[] }> } }>;
+    const menuProp = props.i.items!.properties!.m;
+    expect(menuProp.enum).toBeUndefined();
+    expect(menuProp.type).toBe('string');
   });
 });
