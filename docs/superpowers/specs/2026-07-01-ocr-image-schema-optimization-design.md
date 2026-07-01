@@ -172,8 +172,9 @@ Post-deploy, cek 20-30 scan pertama di Vercel log:
 
 ## Out of scope (future plans)
 
-- **Phase 2: Template-aware client crop** — kalau A ternyata insufficient (-30% ga cukup), plan lanjutan crop image ke region "items grid" saja. Est additional -20% total.
-- **Phase 3: Gemini context caching** — kalau volume 500+ scan/hari, warm cache jadi viable. Sekarang belum urgent.
+- ~~**Phase 2: Template-aware client crop**~~ — **KILLED 2026-07-01** setelah smoke test `scripts/verify-crop-tokens.mjs` empirically confirm Gemini 3.5 Flash charge HARD MINIMUM ~1089 image tok untuk apapun inline image, termasuk thumbnail 192×256 (9KB). Cropping/resize apapun tidak turunkan bill.
+- **Phase 3: Gemini context caching** — pad prompt >1024 tok, cache TTL 5min. Saving ceiling = prompt tok (~350) per warm hit. Perlu verify `@google/genai` explicit caching support + observe kasir scan pattern (frequency).
+- **Model switch** — coba `gemini-flash-lite` atau `gemini-2.0-flash` yang mungkin different pricing tier. Trade: accuracy risk untuk handwriting.
 
 ## Rollout Result (2026-07-01)
 
