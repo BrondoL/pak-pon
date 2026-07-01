@@ -17,7 +17,7 @@
 - [x] T1 Install deps (@google/genai, browser-image-compression) + vercel.json
 - [x] T2 lib/compress.ts client-side compression
 - [x] T3 lib/prompts.ts OCR prompt + Zod schema (TDD)
-- [x] T4 lib/gemini.ts SDK wrapper with Flash → Pro fallback
+- [x] T4 lib/gemini.ts SDK wrapper (Flash+Pro fallback saat awal, disederhanakan jadi single-Flash 2026-06-30 — lihat Plan 6)
 - [x] T5 /api/scan POST handler
 - [x] T6 lib/transactions.ts replace-items diff helper (TDD)
 - [x] T7 /api/transactions/[id] GET + PATCH
@@ -63,6 +63,44 @@ Spec: `docs/superpowers/specs/2026-06-25-print-revamp-design.md`
 - [x] Sonner toasts + Undo action pada delete
 - [x] Empty states ramah di Home/daily/monthly/menu
 - [x] Menu edit form pindah ke Dialog modal (no more scroll-up)
+
+## Plan 6 — OCR Token Reduction ✅ COMPLETE (2026-06-30 + 2026-07-01)
+
+Bill kasir ~600k IDR/bulan @ 150 tx/hari. Dua putaran optimasi.
+
+### Round 1: Single-model + prompt trim (2026-06-30)
+Plan: `docs/superpowers/plans/2026-06-30-ocr-token-reduction.md`
+- [x] Drop kolom `transactions.rescanned_at` (migrasi 0027)
+- [x] Hapus `/api/transactions/[id]/rescan` endpoint + tombol "Scan ulang dengan Pro" di review page
+- [x] `lib/gemini.ts` single-model (drop Pro fallback + `ScanOptions`)
+- [x] `lib/prompts.ts` menu ref cuma nama (drop kategori+harga), trim system prompt 2400→~1400 char
+- [x] Output JSON pakai short keys (m/q/n/c/a/t/cn/tn) + Zod `.transform()` re-expand → consumer code untouched
+- [x] Skip null fields di prompt + Zod optional
+- [x] Fix hallucination `handwritten_total` saat kasir ga nulis total
+
+**Hasil**: 2530 → 1879 tok (-26% total). Correctness intact.
+
+### Round 2: responseSchema + image compress (2026-07-01)
+Plan: `docs/superpowers/plans/2026-07-01-ocr-image-schema-optimization.md`, spec: `docs/superpowers/specs/2026-07-01-ocr-image-schema-optimization-design.md`
+- [x] Smoke verify Gemini `responseSchema` tidak count enum sebagai input token (`scripts/verify-response-schema.mjs`)
+- [x] `buildScanResponseSchema()` builder — menu enum via schema, tidak lagi via prompt text
+- [x] `lib/gemini.ts` pakai `responseSchema` config; drop `buildMenuRefText`
+- [x] Prompt trim lanjut (schema enforce menu enum)
+- [x] Fix regressi: `a` field vs verbose `n` notes (add contoh JSON di prompt)
+- [x] `NEXT_PUBLIC_IMAGE_MAX_WIDTH` env var (default 1600, code-only lever)
+- [x] Smoke verify image tok scaling (`scripts/verify-crop-tokens.mjs`)
+
+**Hasil**: 1879 → 1512 tok (-19% dari Round-1, total -40% dari 2530 baseline). Bill ~540k IDR/bulan.
+
+### Findings kritis (documented di spec)
+- Gemini 3.5 Flash charge HARD MINIMUM ~1089 tok untuk apapun inline image (verified via cropping/resize test — bahkan 192×256 thumbnail 9KB tetap 1089 tok). **Image manipulation tidak turunkan bill.** Phase 2 (template crop) killed.
+- `responseSchema` enum values = free input tokens.
+- `a` field usage inconsistent di Flash 3.5 (stochastic — kadang isi, kadang dump ke `n`).
+
+### Opsi cost-reduction lanjutan (belum urgent)
+- Model switch: coba `gemini-flash-lite` atau `gemini-2.0-flash` — different pricing tier
+- Context caching: pad prompt >1024 tok + explicit cache API (perlu verify SDK support)
+- Batching multi-nota — TIDAK amortize (image tok tetap per-image)
 
 ---
 

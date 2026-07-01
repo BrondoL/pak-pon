@@ -137,8 +137,7 @@ Internal web app untuk warung **Pecel Lele Pak Pon** (Bandar Lampung). Bukan pub
 
 | Skenario | Behavior |
 |---|---|
-| Foto blur / Gemini Flash bingung (items=[] atau total=0) | Server retry sekali dengan `gemini-3.1-pro-preview` |
-| Pro juga gagal | Tetap insert draft dengan items=[] → kasir input manual via "+ Tambah item" |
+| Foto blur / Gemini Flash bingung (items=[] atau total=0) | Insert draft dengan items=[] → kasir input manual via "+ Tambah item". Fallback ke Pro dihapus 2026-06-30 (lihat plan). |
 | Gemini timeout (>20s) | Return 504 → client kasih retry button (foto sudah ke-upload, kirim ulang job dengan path foto saja) |
 | Item OCR pakai menu yang `is_active=false` | Validasi server skip item itu, masuk warning → kasir input manual |
 | Upload Storage gagal | Return 500, client retry penuh |

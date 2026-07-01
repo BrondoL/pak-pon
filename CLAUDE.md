@@ -15,6 +15,7 @@ See:
 - `docs/logging.md` — wide-event logging pattern (loggingsucks.com style)
 - `docs/superpowers/specs/2026-06-20-pak-pon-design.md` — design spec lengkap (sumber kebenaran)
 - `docs/superpowers/specs/2026-06-25-print-revamp-design.md` — arsitektur print sekarang (kitchen + customer format, FCM-only dispatch, print_history)
+- `docs/superpowers/specs/2026-07-01-ocr-image-schema-optimization-design.md` — arsitektur OCR sekarang (single-model, `responseSchema` menu enum, empirical Gemini image tok findings)
 
 ## Commands
 
@@ -32,10 +33,19 @@ See:
 - Validation: Zod di semua API route boundaries.
 - Logging: wide-event pattern di semua route handler — `try/catch/finally`, `newEvent()` di awal, `evt.emit()` di finally. Lihat `docs/logging.md`.
 - Schema source of truth: `supabase/migrations/*.sql`.
-- Image: client compress dulu (`lib/compress.ts`) sebelum upload — diterapkan di Plan 2.
+- Image: client compress dulu (`lib/compress.ts`) sebelum upload — max width dari `NEXT_PUBLIC_IMAGE_MAX_WIDTH` env (default 1600, range 256-4096).
 - Auth: pages dalam `app/(app)/` harus auth; `app/(auth)/` public.
 - Soft delete: `transactions` pakai `deleted_at` timestamp (cron cleanup >7 hari). `menus` pakai `is_active=false` (permanent, preserve FK).
 - Next.js 16: konsultasi `node_modules/next/dist/docs/01-app/` sebelum menulis route handler / middleware / server actions / dynamic APIs (banyak breaking changes vs versi sebelumnya).
+
+## OCR system (single-model + responseSchema, shipped 2026-06-30 + 2026-07-01)
+
+- **Model**: `gemini-3.5-flash` only, single attempt (no fallback). Env `GEMINI_FAST_MODEL` override. Kalau gagal → `EMPTY_RESULT`, kasir input manual via "+ Tambah item".
+- **Prompt**: `lib/prompts.ts` — short-key JSON output (m/q/n/c/a/t/cn/tn). Zod `.transform()` re-expand ke long-key untuk consumer code. Instruksi menu enum tidak di prompt lagi.
+- **Schema**: `buildScanResponseSchema(menus)` = Gemini `responseSchema` config, constrain `m` + `a[].m` ke enum menu names. **Enum values gratis di input tokens** (verified via `scripts/verify-response-schema.mjs`).
+- **Wide-event log**: `ocr_attempts[]` include `input_tokens`, `output_tokens`, `total_tokens` per attempt. `ocr_fell_back` always false (kept untuk log-shape backward compat).
+- **Image tok quirk**: Gemini 3.5 Flash charge HARD MIN ~1089 tok untuk apapun inline image (bahkan thumbnail 192×256). Kompresi/crop **tidak** turunkan bill di model ini. Cuma bantu bandwidth kasir HP.
+- **Cost hari ini** (150 tx/hari): ~1512 tok input, ~150-200 tok output, ~540k IDR/bulan.
 
 ## Print system (Phase 1+2+3 shipped 2026-06-25, primary agent + pending state 2026-06-26)
 

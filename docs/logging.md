@@ -77,10 +77,10 @@ Contoh `scanNota`:
 
 ```ts
 export async function scanNota(...): Promise<{ result: ScanResult; meta: ScanMeta }> {
-  // ... try primary model, try fallback ...
+  // ... single-model attempt (per plan 2026-06-30) — no fallback ...
   return {
     result,
-    meta: { attempts, final_model, fell_back },
+    meta: { attempts, final_model, fell_back }, // fell_back always false; kept for log-shape backward compat
   };
 }
 ```
@@ -90,7 +90,7 @@ Caller (route handler) menarik meta ke event:
 ```ts
 const { result: ocr, meta: ocrMeta } = await scanNota(...);
 evt.merge({
-  ocr_attempts: ocrMeta.attempts,
+  ocr_attempts: ocrMeta.attempts, // token usage per attempt: input_tokens, output_tokens
   ocr_final_model: ocrMeta.final_model,
   ocr_fell_back: ocrMeta.fell_back,
 });
