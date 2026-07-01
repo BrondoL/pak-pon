@@ -34,12 +34,13 @@ describe('OCR_SYSTEM_PROMPT', () => {
 });
 
 describe('buildMenuRefText', () => {
-  it('lists menus with price + category', () => {
+  it('lists menu names only (no category, no price)', () => {
     const text = buildMenuRefText(sampleMenus);
     expect(text).toContain('Pecel Lele');
-    expect(text).toContain('makanan');
-    expect(text).toContain('16000');
     expect(text).toContain('Es Teh');
+    // Token-saver: jangan kirim metadata yang tidak dipakai Gemini
+    expect(text).not.toMatch(/makanan|minuman/);
+    expect(text).not.toMatch(/Rp|16000|6000/);
   });
   it('returns a string even for empty menu list', () => {
     expect(typeof buildMenuRefText([])).toBe('string');

@@ -31,14 +31,9 @@ Tugas:
 2. handwritten_total: angka total di bawah nota. PENTING: total ditulis dalam SATUAN RIBUAN. "92" = 92000, "92.000" = 92000. Return rupiah penuh, atau 0 kalau tidak terbaca.
 3. customer_name, table_no: isi dari kolom "Nama" dan "No. Meja". null kalau kosong.`;
 
-/**
- * Build the text portion that gives Gemini the menu master as reference.
- */
 export function buildMenuRefText(menus: MenuRef[]): string {
   if (menus.length === 0) return 'Daftar menu master kosong.';
-  const lines = menus.map(
-    (m) => `- ${m.name} (${m.category}) Rp${m.price}`
-  );
+  const lines = menus.map((m) => `- ${m.name}`);
   return `Daftar menu master (gunakan nama PERSIS seperti tertulis di sini):\n${lines.join('\n')}`;
 }
 
