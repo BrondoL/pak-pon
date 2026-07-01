@@ -31,6 +31,12 @@ describe('OCR_SYSTEM_PROMPT', () => {
   it('prioritizes not missing items over per-item certainty', () => {
     expect(OCR_SYSTEM_PROMPT.toLowerCase()).toContain('miss');
   });
+
+  it('stays under ~1800 char (token budget guardrail)', () => {
+    // Baseline 2026-06-30: prompt ~2400 char → ~600 tokens.
+    // Target post-trim: <1800 char → ~300-400 tokens.
+    expect(OCR_SYSTEM_PROMPT.length).toBeLessThan(1800);
+  });
 });
 
 describe('buildMenuRefText', () => {

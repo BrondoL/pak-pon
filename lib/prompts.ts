@@ -7,29 +7,23 @@ export type MenuRef = {
   price: number;
 };
 
-export const OCR_SYSTEM_PROMPT = `Anda adalah OCR untuk nota warung Pecel Lele Pak Pon.
+export const OCR_SYSTEM_PROMPT = `OCR nota Pak Pon. Qty handwritten di kolom "Banyak nya"; cek SEMUA baris termasuk pensil tipis.
 
-Nota: kolom MENU pre-printed, kasir tulis tangan qty di kolom "Banyak nya" (atau kadang di kolom paling kanan). Cek SEMUA baris, termasuk angka faint/pensil tipis.
+PRIORITAS: jangan miss item. Tebak qty/menu yang ragu daripada skip.
 
-PRIORITAS UTAMA: jangan miss item. Lebih baik tebak qty/menu yang ragu daripada skip item yang ada angka qty-nya.
+LOOK-ALIKE (pasangan yang sering tertukar — kalau kata penentu tidak terbaca jelas, confidence WAJIB <=70 + sertakan alternatives):
+- "X goreng" vs "X bakar" (Ayam, Ayam Kampung, Bebek, Burung Dara, Nila)
+- "Es X" vs "X panas" vs "X tawar" (Teh)
 
-LOOK-ALIKE WARNING (KRITIS — pasangan menu yang sering tertukar):
-- "X goreng" vs "X bakar": Ayam goreng/bakar, Ayam Kampung goreng/bakar, Bebek goreng/bakar, Burung Dara goreng/bakar, Nila goreng/bakar
-- "Es X" vs "X panas" / "X tawar": Es Teh vs Teh Panas vs Teh Panas Tawar vs Es Teh Tawar
-Kalau Anda TIDAK BISA BACA DENGAN JELAS kata penentu (goreng/bakar/es/panas/tawar), Anda WAJIB:
-  - Set confidence <= 70 (bahkan kalau nama lainnya jelas)
-  - Sertakan alternatives berisi pasangan look-alike-nya
-Lebih baik flag berlebihan daripada salah identifikasi.
-
-Tugas:
-1. items[]: ekstrak SEMUA baris yang ada angka qty (tulisan tangan). Skip kalau qty kosong.
-   - menu_name: HARUS PERSIS sama dengan salah satu nama di daftar master. Jangan paraphrase/singkat.
-   - qty: angka positif dari tulisan tangan.
-   - notes: anotasi tulisan tangan di sebelah menu (cth "D P", "tanpa sambel"). Kalau ga jelas maknanya, masukkan tulisan mentahnya. null kalau kosong.
-   - confidence (OPSIONAL, 0-100): kasih kalau Anda ragu DI BAGIAN APAPUN. Khusus look-alike pairs di atas, confidence WAJIB <= 70 kalau kata penentu tidak jelas. Skip field cuma kalau benar-benar yakin >= 95%.
-   - alternatives (max 2): SERTAKAN setiap kali ada kemungkinan look-alike (pasangan goreng/bakar atau es/panas dari menu yang sama). Pilih dari daftar master saja. Skip cuma kalau menu sangat unik (tidak ada pasangan look-alike).
-2. handwritten_total: angka total di bawah nota. PENTING: total ditulis dalam SATUAN RIBUAN. "92" = 92000, "92.000" = 92000. Return rupiah penuh, atau 0 kalau tidak terbaca.
-3. customer_name, table_no: isi dari kolom "Nama" dan "No. Meja". null kalau kosong.`;
+Output:
+1. items[]: tiap baris dengan qty handwritten. Skip kalau qty kosong.
+   - menu_name: HARUS persis dari daftar master di bawah.
+   - qty: angka positif.
+   - notes: anotasi handwritten (cth "PAHA", "tanpa sambel"). Kalau ga jelas, tulis mentahnya. null kalau kosong.
+   - confidence (0-100, opsional): isi kalau ragu. Skip cuma kalau yakin >=95%.
+   - alternatives (max 2 dari daftar master, opsional): sertakan untuk look-alike pairs.
+2. handwritten_total: angka total bawah nota. SATUAN RIBUAN — "92"=92000. Return rupiah penuh, 0 kalau tidak terbaca.
+3. customer_name, table_no: dari kolom "Nama" & "No. Meja". null kalau kosong.`;
 
 export function buildMenuRefText(menus: MenuRef[]): string {
   if (menus.length === 0) return 'Daftar menu master kosong.';
