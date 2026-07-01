@@ -47,11 +47,9 @@ app/(app)/setup/ai-usage/
 lib/
   ai-usage.ts                    # recordUsageDaily(), aggregateSummary(), type AiUsageRow
   pricing.ts                     # estimateCostIdr() env-based
-  wib-date.ts                    # ADD/EXTEND kalau belum: formatDateWIB(Date) → 'YYYY-MM-DD',
-                                 # todayWIB(), firstDayOfMonthWIB(date), subtractDaysWIB(date, n),
-                                 # formatMonthWIB(date) → 'Juli 2026'.
-                                 # Cek helper existing dulu (lib/currency.ts precedent). Jangan
-                                 # duplikasi kalau sebagian sudah ada di util lain.
+  date.ts                        # existing — sudah ada businessDate(), currentBusinessDate(),
+                                 # businessDatesInMonth(), parseYmd(), parseYm().
+                                 # Reuse ini; TIDAK bikin helper baru untuk WIB.
 supabase/migrations/
   0028_ai_usage_daily.sql
 components/ui/
@@ -80,14 +78,10 @@ CREATE TABLE ai_usage_daily (
 
 CREATE INDEX ai_usage_daily_date_desc ON ai_usage_daily (date DESC);
 
--- Auto-touch updated_at.
--- IMPLEMENTATION-PHASE CHECK: cek `supabase/migrations/*.sql` sebelumnya untuk
--- pastikan function `touch_updated_at()` sudah ada. Kalau tidak ada (nama beda,
--- atau belum pernah dibuat), inline update via ON CONFLICT SET updated_at=now()
--- di RPC di bawah sudah cukup — drop trigger ini.
+-- Auto-touch updated_at (function `set_updated_at` sudah ada di migrasi 0001).
 CREATE TRIGGER ai_usage_daily_touch
   BEFORE UPDATE ON ai_usage_daily
-  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- Atomic upsert increment RPC
 CREATE OR REPLACE FUNCTION increment_ai_usage_daily(
@@ -166,8 +160,8 @@ export function pricingSnapshot() {
 ### `lib/ai-usage.ts` (baru)
 
 ```ts
-import { createServerSupabase } from './supabase-server';  // sesuaikan import existing
-import { formatDateWIB } from './wib-date';                // atau helper existing
+import { getSupabaseServer } from './supabase/server';
+import { businessDate } from './date';
 
 type Attempt = { input_tokens?: number; output_tokens?: number; total_tokens?: number };
 
@@ -187,9 +181,9 @@ export async function recordUsageDaily(args: RecordArgs): Promise<void> {
     // Kalau ga ada token sama sekali (misal error sebelum call Gemini), skip
     if (input === 0 && output === 0) return;
 
-    const dateWIB = formatDateWIB(args.requestStartedAt ?? new Date());
+    const dateWIB = businessDate(args.requestStartedAt ?? new Date());
 
-    const supabase = await createServerSupabase();
+    const supabase = await getSupabaseServer();
     const { error } = await supabase.rpc('increment_ai_usage_daily', {
       p_date: dateWIB,
       p_scan: 1,
@@ -263,7 +257,7 @@ Existing finally block:
 export const dynamic = 'force-dynamic';
 
 export default async function AiUsagePage() {
-  const supabase = await createServerSupabase();
+  const supabase = await getSupabaseServer();
   const today = todayWIB();  // YYYY-MM-DD
   const monthStart = firstDayOfMonthWIB(today);
   const thirtyDaysAgo = subtractDaysWIB(today, 29);
@@ -369,14 +363,14 @@ npx shadcn@latest add dropdown-menu
 
 ## 9. Testing
 
-**Unit tests** (`tests/`):
-- `pricing.test.ts` — `estimateCostIdr` dengan input/output tokens & rate default → assert rounding & math.
-- `ai-usage.test.ts` — mock supabase, verify `recordUsageDaily`:
+**Unit tests** (colocated dengan source, contoh `lib/pricing.test.ts` — pattern existing di project):
+- `lib/pricing.test.ts` — `estimateCostIdr` dengan input/output tokens & rate default → assert rounding & math.
+- `lib/ai-usage.test.ts` — mock supabase, verify `recordUsageDaily`:
   - Skip kalau attempts kosong.
   - Skip kalau input=output=0.
   - Failed=true → `p_fail=1, p_success=0`.
   - Sum multiple attempts benar.
-- `aggregate.test.ts` — `aggregateSummary` sum bigint (string) rows correctly.
+  - `aggregateSummary` sum bigint (string) rows correctly.
 
 **Manual smoke** (dev):
 - Jalankan `npm run dev`, upload 3-5 nota (mix sukses & gagal), buka `/setup/ai-usage`, verify:
