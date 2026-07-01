@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getSupabaseServer } from '@/lib/supabase/server';
-import { scanNota } from '@/lib/gemini';
+import { scanNota, type ScanMeta } from '@/lib/gemini';
 import { newEvent, tagStatus } from '@/lib/logger';
+import { recordUsageDaily } from '@/lib/ai-usage';
 import type { MenuRef } from '@/lib/prompts';
 import { detectThousandsMissing } from '@/lib/total-parser';
 
@@ -10,6 +11,8 @@ const STORAGE_BUCKET = 'notas';
 
 export async function POST(request: NextRequest) {
   const evt = newEvent('POST /api/scan');
+  const requestStartedAt = new Date();
+  let ocrMeta: ScanMeta | undefined;
   try {
     const supabase = await getSupabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
@@ -76,7 +79,8 @@ export async function POST(request: NextRequest) {
     evt.set('menus_count', menus.length);
 
     const base64 = Buffer.from(imageBuffer).toString('base64');
-    const { result: ocr, meta: ocrMeta } = await scanNota(base64, 'image/jpeg', menus);
+    const { result: ocr, meta } = await scanNota(base64, 'image/jpeg', menus);
+    ocrMeta = meta;
     evt.merge({
       ocr_attempts: ocrMeta.attempts,
       ocr_final_model: ocrMeta.final_model,
@@ -191,5 +195,12 @@ export async function POST(request: NextRequest) {
     throw err;
   } finally {
     evt.emit();
+    if (ocrMeta) {
+      await recordUsageDaily({
+        attempts: ocrMeta.attempts,
+        failed: ocrMeta.final_model === null,
+        requestStartedAt,
+      });
+    }
   }
 }
