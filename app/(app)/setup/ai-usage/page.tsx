@@ -1,6 +1,11 @@
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { currentBusinessDate } from '@/lib/date';
-import { aggregateSummary, type AiUsageRow } from '@/lib/ai-usage';
+import {
+  aggregateSummary,
+  type AiUsageRow,
+  type DailyUsageView,
+} from '@/lib/ai-usage';
+import { estimateCostIdr } from '@/lib/pricing';
 import { SummaryCard } from './summary-card';
 import { AiUsageChart } from './ai-usage-chart';
 import { AiUsageTable } from './ai-usage-table';
@@ -34,10 +39,25 @@ export default async function AiUsagePage() {
     .gte('date', thirtyDaysAgo)
     .order('date', { ascending: false });
 
-  const rows = (data ?? []) as AiUsageRow[];
-  const monthRows = rows.filter((r) => r.date >= monthStart);
+  const raw = (data ?? []) as AiUsageRow[];
+  const monthRows = raw.filter((r) => r.date >= monthStart);
   const summary = aggregateSummary(monthRows);
-  const chartRows = [...rows].reverse();
+
+  const views: DailyUsageView[] = raw.map((r) => {
+    const input = Number(r.input_tokens);
+    const output = Number(r.output_tokens);
+    return {
+      date: r.date,
+      scan_count: r.scan_count,
+      success_count: r.success_count,
+      fail_count: r.fail_count,
+      input,
+      output,
+      total: Number(r.total_tokens),
+      idr: estimateCostIdr(input, output),
+    };
+  });
+  const chartViews = [...views].reverse();
 
   return (
     <div className="mx-auto max-w-4xl p-4 space-y-6">
@@ -49,8 +69,8 @@ export default async function AiUsagePage() {
         </p>
       </div>
       <SummaryCard summary={summary} monthLabel={monthLabel(today)} />
-      <AiUsageChart rows={chartRows} />
-      <AiUsageTable rows={rows} today={today} />
+      <AiUsageChart rows={chartViews} />
+      <AiUsageTable rows={views} today={today} />
     </div>
   );
 }

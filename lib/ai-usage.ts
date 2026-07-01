@@ -25,6 +25,22 @@ export type AiUsageRow = {
   updated_at: string;
 };
 
+/**
+ * Server-computed view of AiUsageRow with tokens coerced to number and IDR
+ * pre-computed. Passed to client components (chart, table) so pricing envs
+ * (non-NEXT_PUBLIC) don't need to reach the browser — avoids hydration mismatch.
+ */
+export type DailyUsageView = {
+  date: string;
+  scan_count: number;
+  success_count: number;
+  fail_count: number;
+  input: number;
+  output: number;
+  total: number;
+  idr: number;
+};
+
 export async function recordUsageDaily(args: RecordUsageArgs): Promise<void> {
   try {
     if (!args.attempts?.length) return;

@@ -1,9 +1,8 @@
 'use client';
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import type { AiUsageRow } from '@/lib/ai-usage';
+import type { DailyUsageView } from '@/lib/ai-usage';
 import { formatRp } from '@/lib/currency';
-import { estimateCostIdr } from '@/lib/pricing';
 
 const compact = new Intl.NumberFormat('id-ID', {
   notation: 'compact',
@@ -15,36 +14,10 @@ function shortDate(ymd: string): string {
   return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
-type ChartRow = {
-  date: string;
-  label: string;
-  input: number;
-  output: number;
-  scan: number;
-  success: number;
-  fail: number;
-  idr: number;
-};
+type ChartRow = DailyUsageView & { label: string };
 
-function toChartRows(rows: AiUsageRow[]): ChartRow[] {
-  return rows.map((r) => {
-    const input = Number(r.input_tokens);
-    const output = Number(r.output_tokens);
-    return {
-      date: r.date,
-      label: shortDate(r.date),
-      input,
-      output,
-      scan: r.scan_count,
-      success: r.success_count,
-      fail: r.fail_count,
-      idr: estimateCostIdr(input, output),
-    };
-  });
-}
-
-export function AiUsageChart({ rows }: { rows: AiUsageRow[] }) {
-  const data = toChartRows(rows);
+export function AiUsageChart({ rows }: { rows: DailyUsageView[] }) {
+  const data: ChartRow[] = rows.map((r) => ({ ...r, label: shortDate(r.date) }));
 
   if (data.length === 0) {
     return (
@@ -82,7 +55,7 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{
     <div className="rounded-md border border-coal/20 bg-white px-3 py-2 text-xs shadow-md">
       <div className="font-semibold text-coal">{row.label}</div>
       <div className="mt-1 space-y-0.5 text-coal">
-        <div>Scan: {row.scan} <span className="text-coal-soft">({row.success} sukses, {row.fail} gagal)</span></div>
+        <div>Scan: {row.scan_count} <span className="text-coal-soft">({row.success_count} sukses, {row.fail_count} gagal)</span></div>
         <div>Input: {compact.format(row.input)}</div>
         <div>Output: {compact.format(row.output)}</div>
         <div>Est. biaya: ~{formatRp(row.idr)}</div>

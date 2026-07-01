@@ -1,8 +1,5 @@
-'use client';
-
-import type { AiUsageRow } from '@/lib/ai-usage';
+import type { DailyUsageView } from '@/lib/ai-usage';
 import { formatRp } from '@/lib/currency';
-import { estimateCostIdr } from '@/lib/pricing';
 
 const compact = new Intl.NumberFormat('id-ID', {
   notation: 'compact',
@@ -14,7 +11,7 @@ function shortDate(ymd: string): string {
   return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
-export function AiUsageTable({ rows, today }: { rows: AiUsageRow[]; today: string }) {
+export function AiUsageTable({ rows, today }: { rows: DailyUsageView[]; today: string }) {
   if (rows.length === 0) return null;
   return (
     <section className="rounded-lg border border-coal/15 bg-white">
@@ -35,9 +32,6 @@ export function AiUsageTable({ rows, today }: { rows: AiUsageRow[]; today: strin
           </thead>
           <tbody>
             {rows.map((r) => {
-              const input = Number(r.input_tokens);
-              const output = Number(r.output_tokens);
-              const idr = estimateCostIdr(input, output);
               const isToday = r.date === today;
               return (
                 <tr
@@ -52,9 +46,9 @@ export function AiUsageTable({ rows, today }: { rows: AiUsageRow[]; today: strin
                   <td className="px-3 py-2 text-right text-coal-soft">
                     {r.success_count} / {r.fail_count}
                   </td>
-                  <td className="px-3 py-2 text-right text-coal">{compact.format(input)}</td>
-                  <td className="px-3 py-2 text-right text-coal">{compact.format(output)}</td>
-                  <td className="px-3 py-2 text-right text-coal">~{formatRp(idr)}</td>
+                  <td className="px-3 py-2 text-right text-coal">{compact.format(r.input)}</td>
+                  <td className="px-3 py-2 text-right text-coal">{compact.format(r.output)}</td>
+                  <td className="px-3 py-2 text-right text-coal">~{formatRp(r.idr)}</td>
                 </tr>
               );
             })}
