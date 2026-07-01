@@ -1,19 +1,34 @@
 import imageCompression from 'browser-image-compression';
 
+const DEFAULT_MAX_WIDTH = 1600;
+
+function readMaxWidth(): number {
+  const raw = process.env.NEXT_PUBLIC_IMAGE_MAX_WIDTH;
+  if (!raw) return DEFAULT_MAX_WIDTH;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 256 || n > 4096) return DEFAULT_MAX_WIDTH;
+  return n;
+}
+
 /**
  * Compress foto nota di browser sebelum upload.
- * Target: 1600px max dimension, JPEG quality 0.8 → biasanya 200-500 KB dari 3-5 MB asli.
+ * Default 1600px, override via NEXT_PUBLIC_IMAGE_MAX_WIDTH env var (range 256-4096).
+ * Nilai lebih rendah = image tokens lebih sedikit di Gemini tapi risk accuracy drop
+ * untuk handwritten qty (pensil tipis).
  * Dipanggil dari PhotoUploader sebelum POST /api/scan.
  */
 export async function compressNotaImage(file: File): Promise<File> {
   return imageCompression(file, {
     maxSizeMB: 0.5,
-    maxWidthOrHeight: 1600,
+    maxWidthOrHeight: readMaxWidth(),
     useWebWorker: true,
     fileType: 'image/jpeg',
     initialQuality: 0.8,
   });
 }
+
+// Exported for tests only — do not use in production code.
+export const __readMaxWidthForTest = readMaxWidth;
 
 const STRETCH_SKIP_RANGE = 220; // if all channels already span >=220, no-op
 
