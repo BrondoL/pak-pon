@@ -174,3 +174,39 @@ Post-deploy, cek 20-30 scan pertama di Vercel log:
 
 - **Phase 2: Template-aware client crop** — kalau A ternyata insufficient (-30% ga cukup), plan lanjutan crop image ke region "items grid" saja. Est additional -20% total.
 - **Phase 3: Gemini context caching** — kalau volume 500+ scan/hari, warm cache jadi viable. Sekarang belum urgent.
+
+## Rollout Result (2026-07-01)
+
+**Shipped:**
+- ✅ A2 responseSchema migration — verified via smoke test + production logs
+- ✅ A1 env var infrastructure — shipped as code, but NOT activated in Vercel prod
+
+**Actual measured savings:**
+
+| Config | image_bytes | input_tokens | Notes |
+|---|---|---|---|
+| Baseline (1600, pre-A2) | 277 KB | 1691 | starting point |
+| A2 shipped (1600) | 277 KB | 1512 | **-179 tok (-10.6%)** ✅ |
+| 1024 + A2 (dev) | 126 KB | 1512 | 0 tok diff dari 1600+A2 |
+| 800 + A2 (dev) | 84 KB | 1512 | 0 tok diff dari 1600+A2 |
+
+**Key finding — A1 gagal deliver token saving:**
+
+Gemini 3.5 Flash image tokenization ternyata tidak proporsional ke image dimensions. Compressing dari 1600 → 800px hanya turunkan bytes (277 → 84 KB, -70%) tapi input_tokens tetap 1512. Kemungkinan model scale image ke fixed tile grid minimum (~768×768) sebelum tokenize — jadi apapun >384px kena ~1000 tok image floor.
+
+Plan assumption (image tok proporsional ke dimensions) → **incorrect**. Value A1 sekarang: bandwidth optimization only (bermanfaat untuk kasir HP dengan sinyal jelek), bukan token cost.
+
+**Decision:**
+- A1 code (`NEXT_PUBLIC_IMAGE_MAX_WIDTH` env var) tetap di codebase sebagai future-proof lever
+- Vercel prod env: unset → default 1600 tetap dipakai
+- Owner bisa flip ke 800 kalau bandwidth kasir jadi masalah
+
+**Bill impact:**
+- Baseline monthly: ~600k IDR
+- Post-A2: ~540k IDR (est -10%)
+- Target awal ~350-400k tidak tercapai. Untuk itu perlu Phase 2 (template crop) atau alternative approach.
+
+**Lessons learned:**
+1. Verify image tokenization empirically SEBELUM design assumption — dokumentasi model tidak selalu match reality per model version
+2. Multi-hypothesis rollout (A2 + A1 parallel) berguna — A1 verified negative fast, tidak block A2 saving
+3. Consumer-code stability approach (Zod transform + `EMPTY_RESULT` shape) memungkinkan aggressive prompt/schema iteration tanpa refactor downstream
