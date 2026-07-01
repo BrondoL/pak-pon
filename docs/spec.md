@@ -7,7 +7,7 @@ Print system revamp (Phase 1+2+3 shipped 2026-06-25): **`docs/superpowers/specs/
 Tech stack:
 - Next.js 16.2 (App Router) + React 19.2 + TypeScript 5 strict
 - Supabase (Postgres + Auth email/password + Storage private bucket `notas`)
-- Gemini `gemini-3.5-flash` (fallback `gemini-3.1-pro-preview`) untuk OCR
+- Gemini `gemini-3.5-flash` untuk OCR (single model, no retry)
 - Vercel deploy (region `sin1` Singapore) + Vercel Cron
 
 Schema, API contract, OCR prompt, env vars, deployment notes → lihat spec lengkap.
