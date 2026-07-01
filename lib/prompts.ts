@@ -89,3 +89,56 @@ export function buildScanSchema(menus: MenuRef[]) {
 }
 
 export type ScanResult = z.infer<ReturnType<typeof buildScanSchema>>;
+
+/**
+ * Build Gemini responseSchema (OpenAPI 3.0 subset) yang constrain output ke:
+ * - `m` (menu_name) hanya salah satu dari master list — no hallucination possible
+ * - Field required minimum: item wajib `m`+`q`, root wajib `i`+`t`
+ * - `n` / `c` / `a` / `cn` / `tn` optional supaya Gemini bisa omit null (token saver)
+ *
+ * Menu enum di sini tidak di-count sebagai input tokens (verified 2026-07-01
+ * via scripts/verify-response-schema.mjs).
+ */
+export function buildScanResponseSchema(menus: MenuRef[]) {
+  const menuNames = menus.map((m) => m.name);
+  const menuNameProp: Record<string, unknown> =
+    menuNames.length > 0
+      ? { type: 'string', enum: menuNames }
+      : { type: 'string' };
+
+  const altSchema = {
+    type: 'object',
+    properties: {
+      m: menuNameProp,
+    },
+    required: ['m'],
+  };
+
+  return {
+    type: 'object',
+    properties: {
+      i: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            m: menuNameProp,
+            q: { type: 'integer' },
+            n: { type: 'string' },
+            c: { type: 'integer' },
+            a: {
+              type: 'array',
+              items: altSchema,
+              maxItems: 2,
+            },
+          },
+          required: ['m', 'q'],
+        },
+      },
+      t: { type: 'integer' },
+      cn: { type: 'string' },
+      tn: { type: 'string' },
+    },
+    required: ['i', 't'],
+  };
+}
