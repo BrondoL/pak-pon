@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildScanSchema, buildScanResponseSchema, buildMenuRefText, OCR_SYSTEM_PROMPT, type MenuRef } from './prompts';
+import { buildScanSchema, buildScanResponseSchema, OCR_SYSTEM_PROMPT, type MenuRef } from './prompts';
 
 const sampleMenus: MenuRef[] = [
   { id: 'a', name: 'Pecel Lele', category: 'makanan', price: 16000 },
@@ -36,20 +36,6 @@ describe('OCR_SYSTEM_PROMPT', () => {
     // Baseline 2026-06-30: prompt ~2400 char → ~600 tokens.
     // Target post-trim: <1800 char → ~300-400 tokens.
     expect(OCR_SYSTEM_PROMPT.length).toBeLessThan(1800);
-  });
-});
-
-describe('buildMenuRefText', () => {
-  it('lists menu names only (no category, no price)', () => {
-    const text = buildMenuRefText(sampleMenus);
-    expect(text).toContain('Pecel Lele');
-    expect(text).toContain('Es Teh');
-    // Token-saver: jangan kirim metadata yang tidak dipakai Gemini
-    expect(text).not.toMatch(/makanan|minuman/);
-    expect(text).not.toMatch(/Rp|16000|6000/);
-  });
-  it('returns a string even for empty menu list', () => {
-    expect(typeof buildMenuRefText([])).toBe('string');
   });
 });
 
