@@ -66,8 +66,8 @@ export function AiUsageChart({ rows }: { rows: AiUsageRow[] }) {
             <YAxis tickFormatter={(v) => compact.format(Number(v))} tick={{ fontSize: 11 }} width={48} />
             <Tooltip content={<ChartTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Bar dataKey="input" stackId="tok" fill="#c99a2e" name="Input" />
-            <Bar dataKey="output" stackId="tok" fill="#a13c1e" name="Output" />
+            <Bar dataKey="input" stackId="tok" fill="var(--color-gold-dark)" name="Input" />
+            <Bar dataKey="output" stackId="tok" fill="var(--color-brick-dark)" name="Output" />
           </BarChart>
         </ResponsiveContainer>
       </div>
