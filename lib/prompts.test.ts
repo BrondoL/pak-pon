@@ -245,4 +245,32 @@ describe('buildScanSchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('accepts item with omitted n (token-saver: Gemini skip null keys)', () => {
+    const schema = buildScanSchema(sampleMenus);
+    const result = schema.safeParse({
+      i: [{ m: 'Pecel Lele', q: 1 }],
+      t: 16000,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.items[0].notes).toBeNull();
+      expect(result.data.customer_name).toBeNull();
+      expect(result.data.table_no).toBeNull();
+    }
+  });
+
+  it('normalizes omitted cn/tn to null in transform output', () => {
+    const schema = buildScanSchema(sampleMenus);
+    const result = schema.safeParse({
+      i: [{ m: 'Pecel Lele', q: 1, n: null }],
+      t: 0,
+      // cn + tn omitted entirely
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.customer_name).toBeNull();
+      expect(result.data.table_no).toBeNull();
+    }
+  });
 });

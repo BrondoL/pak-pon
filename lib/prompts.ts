@@ -17,18 +17,17 @@ LOOK-ALIKE (pasangan yang sering tertukar — kalau kata penentu tidak terbaca j
 
 Output JSON (PAKAI KEY PENDEK PERSIS):
 {
-  "i":[{"m":"<menu_name dari master>","q":<int>0,"n":"<notes>"|null,"c":<0-100, opsional>,"a":[{"m":"<alt>"}] max 2 opsional}],
-  "t":<handwritten_total rupiah penuh, "92"=92000, 0 kalau tidak terbaca>,
-  "cn":"<customer_name>"|null,
-  "tn":"<table_no>"|null
+  "i":[{"m":"<menu_name>","q":<int>,"n":"<notes>","c":<0-100>,"a":[{"m":"<alt>"}]}],
+  "t":<total>, "cn":"<customer_name>", "tn":"<table_no>"
 }
 
 Aturan:
 1. Item: skip kalau qty kosong. "m" HARUS persis dari master.
-2. notes "n": anotasi handwritten (cth "PAHA"). Kalau ga jelas, tulis mentahnya. null kalau kosong.
-3. confidence "c" (0-100, opsional): isi kalau ragu. Skip cuma kalau yakin >=95%.
-4. alternatives "a" (max 2 dari master, opsional): sertakan untuk look-alike.
-5. Total "t": SATUAN RIBUAN — "92"=92000.`;
+2. notes "n": anotasi handwritten (cth "PAHA"). Kalau ga jelas, tulis mentahnya.
+3. confidence "c" (0-100): isi kalau ragu. Skip cuma kalau yakin >=95%.
+4. alternatives "a" (max 2 dari master): sertakan untuk look-alike.
+5. Total "t": convert ke rupiah penuh (SATUAN RIBUAN) — "92"=92000, "92.000"=92000. 0 kalau tak terbaca.
+6. OPTIMASI: skip field kalau null/kosong. Jangan return "n":null / "cn":null / "tn":null / "c":null / "a":[] — omit key-nya aja.`;
 
 export function buildMenuRefText(menus: MenuRef[]): string {
   if (menus.length === 0) return 'Daftar menu master kosong.';
@@ -57,24 +56,26 @@ export function buildScanSchema(menus: MenuRef[]) {
     })
   );
 
+  // n / cn / tn optional supaya Gemini bisa omit key kalau null (token saver).
+  // Transform normalize back to null untuk consumer code yang expect nullable.
   return z.object({
     i: z.array(
       z.object({
         m: menuNameSchema,
         q: z.number().int().positive(),
-        n: z.string().nullable(),
+        n: z.string().nullable().optional(),
         c: confidenceSchema.optional(),
         a: z.array(altItemSchema).max(2).optional(),
       })
     ),
     t: z.number().int().nonnegative(),
-    cn: z.string().nullable(),
-    tn: z.string().nullable(),
+    cn: z.string().nullable().optional(),
+    tn: z.string().nullable().optional(),
   }).transform((d) => ({
     items: d.i.map((it) => ({
       menu_name: it.m,
       qty: it.q,
-      notes: it.n,
+      notes: it.n ?? null,
       confidence: it.c,
       alternatives: it.a?.map((a) => ({
         menu_name: a.m,
@@ -82,8 +83,8 @@ export function buildScanSchema(menus: MenuRef[]) {
       })),
     })),
     handwritten_total: d.t,
-    customer_name: d.cn,
-    table_no: d.tn,
+    customer_name: d.cn ?? null,
+    table_no: d.tn ?? null,
   }));
 }
 
