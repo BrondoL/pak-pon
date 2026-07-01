@@ -23,7 +23,10 @@
       "Bash(rtk ls *)",
       "Bash(rtk grep *)",
       "Bash(rtk read *)",
-      "Bash(rtk find *)"
+      "Bash(rtk find *)",
+      "Bash(rtk npx *)",
+      "Bash(rtk git *)",
+      "Bash(awk 'NR==7' /home/brondol/Downloads/pak-pon/.env.local)"
     ]
   },
   "enabledPlugins": {
