@@ -19,7 +19,7 @@ export default async function ReviewPage({
 
   const { data: tx, error: txError } = await supabase
     .from('transactions')
-    .select('id, status, handwritten_total, customer_name, table_no, created_at, scan_image_path, rescanned_at')
+    .select('id, status, handwritten_total, customer_name, table_no, created_at, scan_image_path')
     .eq('id', id)
     .is('deleted_at', null)
     .single();
@@ -58,7 +58,6 @@ export default async function ReviewPage({
         customer_name: tx.customer_name,
         table_no: tx.table_no,
         created_at: tx.created_at,
-        rescanned_at: tx.rescanned_at,
       }}
       initialItems={items ?? []}
       menus={menus}
