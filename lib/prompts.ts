@@ -19,9 +19,9 @@ Output JSON dengan key pendek (schema define required + enum menu):
 - i[]: items. Tiap item minimum {"m","q"}. Skip item kalau qty kosong.
 - m: menu — schema batasi ke daftar master, tidak perlu paraphrase.
 - q: qty positif integer.
-- n: notes anotasi handwritten (cth "PAHA"). Kalau ga jelas, tulis mentahnya. Skip kalau kosong.
+- n: HANYA anotasi handwritten yang ditulis kasir di nota (cth "PAHA", "tanpa sambel"). Kalau ga jelas maknanya, tulis mentahnya. JANGAN taruh reasoning/penjelasan/meta-komentar tentang OCR di sini. Skip kalau tidak ada anotasi.
 - c: confidence 0-100. Isi kalau ragu. Skip kalau yakin >=95%.
-- a: alternatives max 2 (schema enforce enum). Sertakan untuk look-alike pairs.
+- a: alternatives (array of {"m":"<menu>"}), max 2. WAJIB isi untuk look-alike ambigu. Contoh: {"m":"Ayam bakar","c":70,"a":[{"m":"Ayam goreng"}]}. JANGAN taruh alternatif di dalam "n".
 - t: total. HANYA angka yang ditulis kasir di bagian bawah nota (label "Total"/"Jumlah"). Kalau kasir TIDAK menulis total, t:0. JANGAN hitung sendiri dari items. Convert ke rupiah penuh (SATUAN RIBUAN) — "92"=92000, "92.000"=92000.
 - cn, tn: dari kolom "Nama" & "No. Meja". Skip kalau kosong.`;
 
