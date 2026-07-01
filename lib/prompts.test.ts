@@ -31,15 +31,22 @@ describe('OCR_SYSTEM_PROMPT', () => {
   it('prioritizes not missing items over per-item certainty', () => {
     expect(OCR_SYSTEM_PROMPT.toLowerCase()).toContain('miss');
   });
+
+  it('stays under ~1800 char (token budget guardrail)', () => {
+    // Baseline 2026-06-30: prompt ~2400 char → ~600 tokens.
+    // Target post-trim: <1800 char → ~300-400 tokens.
+    expect(OCR_SYSTEM_PROMPT.length).toBeLessThan(1800);
+  });
 });
 
 describe('buildMenuRefText', () => {
-  it('lists menus with price + category', () => {
+  it('lists menu names only (no category, no price)', () => {
     const text = buildMenuRefText(sampleMenus);
     expect(text).toContain('Pecel Lele');
-    expect(text).toContain('makanan');
-    expect(text).toContain('16000');
     expect(text).toContain('Es Teh');
+    // Token-saver: jangan kirim metadata yang tidak dipakai Gemini
+    expect(text).not.toMatch(/makanan|minuman/);
+    expect(text).not.toMatch(/Rp|16000|6000/);
   });
   it('returns a string even for empty menu list', () => {
     expect(typeof buildMenuRefText([])).toBe('string');
@@ -47,29 +54,53 @@ describe('buildMenuRefText', () => {
 });
 
 describe('buildScanSchema', () => {
-  it('accepts valid Gemini-like response with confidence + alternatives', () => {
+  it('accepts valid Gemini-like response with confidence + alternatives (short keys)', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      items: [
-        { menu_name: 'Pecel Lele', qty: 3, notes: null, confidence: 95, alternatives: [] },
-        { menu_name: 'Es Teh', qty: 2, notes: 'dingin', confidence: 60, alternatives: [
-          { menu_name: 'Pecel Lele', confidence: 30 },
+      i: [
+        { m: 'Pecel Lele', q: 3, n: null, c: 95, a: [] },
+        { m: 'Es Teh', q: 2, n: 'dingin', c: 60, a: [
+          { m: 'Pecel Lele', c: 30 },
         ] },
       ],
-      handwritten_total: 60000,
-      customer_name: null,
-      table_no: null,
+      t: 60000,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(true);
+  });
+
+  it('transforms short-key input to long-key output', () => {
+    const schema = buildScanSchema(sampleMenus);
+    const result = schema.safeParse({
+      i: [
+        { m: 'Pecel Lele', q: 3, n: null },
+        { m: 'Es Teh', q: 2, n: 'dingin', c: 60, a: [{ m: 'Pecel Lele' }] },
+      ],
+      t: 60000,
+      cn: null,
+      tn: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.items[0].menu_name).toBe('Pecel Lele');
+      expect(result.data.items[0].qty).toBe(3);
+      expect(result.data.items[0].notes).toBeNull();
+      expect(result.data.items[1].confidence).toBe(60);
+      expect(result.data.items[1].alternatives?.[0]).toEqual({ menu_name: 'Pecel Lele', confidence: undefined });
+      expect(result.data.handwritten_total).toBe(60000);
+      expect(result.data.customer_name).toBeNull();
+      expect(result.data.table_no).toBeNull();
+    }
   });
 
   it('rejects menu_name not in master list', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      items: [{ menu_name: 'Burger', qty: 1, notes: null, confidence: 90, alternatives: [] }],
-      handwritten_total: 50000,
-      customer_name: null,
-      table_no: null,
+      i: [{ m: 'Burger', q: 1, n: null, c: 90, a: [] }],
+      t: 50000,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(false);
   });
@@ -77,10 +108,10 @@ describe('buildScanSchema', () => {
   it('rejects qty < 1', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      items: [{ menu_name: 'Pecel Lele', qty: 0, notes: null, confidence: 90, alternatives: [] }],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      i: [{ m: 'Pecel Lele', q: 0, n: null, c: 90, a: [] }],
+      t: 0,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(false);
   });
@@ -88,36 +119,36 @@ describe('buildScanSchema', () => {
   it('rejects confidence out of 0-100 range', () => {
     const schema = buildScanSchema(sampleMenus);
     expect(schema.safeParse({
-      items: [{ menu_name: 'Pecel Lele', qty: 1, notes: null, confidence: 150, alternatives: [] }],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      i: [{ m: 'Pecel Lele', q: 1, n: null, c: 150, a: [] }],
+      t: 0,
+      cn: null,
+      tn: null,
     }).success).toBe(false);
     expect(schema.safeParse({
-      items: [{ menu_name: 'Pecel Lele', qty: 1, notes: null, confidence: -1, alternatives: [] }],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      i: [{ m: 'Pecel Lele', q: 1, n: null, c: -1, a: [] }],
+      t: 0,
+      cn: null,
+      tn: null,
     }).success).toBe(false);
   });
 
   it('rejects more than 2 alternatives', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      items: [{
-        menu_name: 'Pecel Lele',
-        qty: 1,
-        notes: null,
-        confidence: 50,
-        alternatives: [
-          { menu_name: 'Es Teh', confidence: 30 },
-          { menu_name: 'Es Teh', confidence: 20 },
-          { menu_name: 'Es Teh', confidence: 10 },
+      i: [{
+        m: 'Pecel Lele',
+        q: 1,
+        n: null,
+        c: 50,
+        a: [
+          { m: 'Es Teh', c: 30 },
+          { m: 'Es Teh', c: 20 },
+          { m: 'Es Teh', c: 10 },
         ],
       }],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      t: 0,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(false);
   });
@@ -125,10 +156,10 @@ describe('buildScanSchema', () => {
   it('accepts item without confidence or alternatives (both optional)', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      items: [{ menu_name: 'Pecel Lele', qty: 1, notes: null }],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      i: [{ m: 'Pecel Lele', q: 1, n: null }],
+      t: 0,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(true);
   });
@@ -136,16 +167,16 @@ describe('buildScanSchema', () => {
   it('accepts alternative without confidence (Gemini sometimes omits it)', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      items: [{
-        menu_name: 'Pecel Lele',
-        qty: 1,
-        notes: null,
-        confidence: 85,
-        alternatives: [{ menu_name: 'Es Teh' }],
+      i: [{
+        m: 'Pecel Lele',
+        q: 1,
+        n: null,
+        c: 85,
+        a: [{ m: 'Es Teh' }],
       }],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      t: 0,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(true);
   });
@@ -153,36 +184,36 @@ describe('buildScanSchema', () => {
   it('accepts string-shaped alternatives (some Gemini versions return shorthand)', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      items: [{
-        menu_name: 'Pecel Lele',
-        qty: 1,
-        notes: null,
-        confidence: 60,
-        alternatives: ['Es Teh'],
+      i: [{
+        m: 'Pecel Lele',
+        q: 1,
+        n: null,
+        c: 60,
+        a: ['Es Teh'],
       }],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      t: 0,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.items[0].alternatives?.[0]).toEqual({ menu_name: 'Es Teh' });
+      expect(result.data.items[0].alternatives?.[0]).toEqual({ menu_name: 'Es Teh', confidence: undefined });
     }
   });
 
   it('rejects string alternative with menu_name not in master list', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      items: [{
-        menu_name: 'Pecel Lele',
-        qty: 1,
-        notes: null,
-        confidence: 60,
-        alternatives: ['Burger'],
+      i: [{
+        m: 'Pecel Lele',
+        q: 1,
+        n: null,
+        c: 60,
+        a: ['Burger'],
       }],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      t: 0,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(false);
   });
@@ -190,16 +221,16 @@ describe('buildScanSchema', () => {
   it('rejects alternative with menu_name not in master list', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      items: [{
-        menu_name: 'Pecel Lele',
-        qty: 1,
-        notes: null,
-        confidence: 50,
-        alternatives: [{ menu_name: 'Burger', confidence: 30 }],
+      i: [{
+        m: 'Pecel Lele',
+        q: 1,
+        n: null,
+        c: 50,
+        a: [{ m: 'Burger', c: 30 }],
       }],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      t: 0,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(false);
   });
@@ -207,10 +238,10 @@ describe('buildScanSchema', () => {
   it('handles empty menu list', () => {
     const schema = buildScanSchema([]);
     const result = schema.safeParse({
-      items: [],
-      handwritten_total: 0,
-      customer_name: null,
-      table_no: null,
+      i: [],
+      t: 0,
+      cn: null,
+      tn: null,
     });
     expect(result.success).toBe(true);
   });

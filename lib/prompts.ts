@@ -7,45 +7,37 @@ export type MenuRef = {
   price: number;
 };
 
-export const OCR_SYSTEM_PROMPT = `Anda adalah OCR untuk nota warung Pecel Lele Pak Pon.
+export const OCR_SYSTEM_PROMPT = `OCR nota Pak Pon. Qty handwritten di kolom "Banyak nya"; cek SEMUA baris termasuk pensil tipis.
 
-Nota: kolom MENU pre-printed, kasir tulis tangan qty di kolom "Banyak nya" (atau kadang di kolom paling kanan). Cek SEMUA baris, termasuk angka faint/pensil tipis.
+PRIORITAS: jangan miss item. Tebak qty/menu yang ragu daripada skip.
 
-PRIORITAS UTAMA: jangan miss item. Lebih baik tebak qty/menu yang ragu daripada skip item yang ada angka qty-nya.
+LOOK-ALIKE (pasangan yang sering tertukar — kalau kata penentu tidak terbaca jelas, confidence WAJIB <=70 + sertakan alternatives):
+- "X goreng" vs "X bakar" (Ayam, Ayam Kampung, Bebek, Burung Dara, Nila)
+- "Es X" vs "X panas" vs "X tawar" (Teh)
 
-LOOK-ALIKE WARNING (KRITIS — pasangan menu yang sering tertukar):
-- "X goreng" vs "X bakar": Ayam goreng/bakar, Ayam Kampung goreng/bakar, Bebek goreng/bakar, Burung Dara goreng/bakar, Nila goreng/bakar
-- "Es X" vs "X panas" / "X tawar": Es Teh vs Teh Panas vs Teh Panas Tawar vs Es Teh Tawar
-Kalau Anda TIDAK BISA BACA DENGAN JELAS kata penentu (goreng/bakar/es/panas/tawar), Anda WAJIB:
-  - Set confidence <= 70 (bahkan kalau nama lainnya jelas)
-  - Sertakan alternatives berisi pasangan look-alike-nya
-Lebih baik flag berlebihan daripada salah identifikasi.
+Output JSON (PAKAI KEY PENDEK PERSIS):
+{
+  "i":[{"m":"<menu_name dari master>","q":<int>0,"n":"<notes>"|null,"c":<0-100, opsional>,"a":[{"m":"<alt>"}] max 2 opsional}],
+  "t":<handwritten_total rupiah penuh, "92"=92000, 0 kalau tidak terbaca>,
+  "cn":"<customer_name>"|null,
+  "tn":"<table_no>"|null
+}
 
-Tugas:
-1. items[]: ekstrak SEMUA baris yang ada angka qty (tulisan tangan). Skip kalau qty kosong.
-   - menu_name: HARUS PERSIS sama dengan salah satu nama di daftar master. Jangan paraphrase/singkat.
-   - qty: angka positif dari tulisan tangan.
-   - notes: anotasi tulisan tangan di sebelah menu (cth "D P", "tanpa sambel"). Kalau ga jelas maknanya, masukkan tulisan mentahnya. null kalau kosong.
-   - confidence (OPSIONAL, 0-100): kasih kalau Anda ragu DI BAGIAN APAPUN. Khusus look-alike pairs di atas, confidence WAJIB <= 70 kalau kata penentu tidak jelas. Skip field cuma kalau benar-benar yakin >= 95%.
-   - alternatives (max 2): SERTAKAN setiap kali ada kemungkinan look-alike (pasangan goreng/bakar atau es/panas dari menu yang sama). Pilih dari daftar master saja. Skip cuma kalau menu sangat unik (tidak ada pasangan look-alike).
-2. handwritten_total: angka total di bawah nota. PENTING: total ditulis dalam SATUAN RIBUAN. "92" = 92000, "92.000" = 92000. Return rupiah penuh, atau 0 kalau tidak terbaca.
-3. customer_name, table_no: isi dari kolom "Nama" dan "No. Meja". null kalau kosong.`;
+Aturan:
+1. Item: skip kalau qty kosong. "m" HARUS persis dari master.
+2. notes "n": anotasi handwritten (cth "PAHA"). Kalau ga jelas, tulis mentahnya. null kalau kosong.
+3. confidence "c" (0-100, opsional): isi kalau ragu. Skip cuma kalau yakin >=95%.
+4. alternatives "a" (max 2 dari master, opsional): sertakan untuk look-alike.
+5. Total "t": SATUAN RIBUAN — "92"=92000.`;
 
-/**
- * Build the text portion that gives Gemini the menu master as reference.
- */
 export function buildMenuRefText(menus: MenuRef[]): string {
   if (menus.length === 0) return 'Daftar menu master kosong.';
-  const lines = menus.map(
-    (m) => `- ${m.name} (${m.category}) Rp${m.price}`
-  );
+  const lines = menus.map((m) => `- ${m.name}`);
   return `Daftar menu master (gunakan nama PERSIS seperti tertulis di sini):\n${lines.join('\n')}`;
 }
 
-/**
- * Build a Zod schema where menu_name is constrained to the master list (enum).
- * Memaksa Gemini memilih dari daftar valid → mencegah hallucination.
- */
+// Schema menerima short-key output dari Gemini (m/q/n/c/a/t/cn/tn) lalu
+// .transform() re-expand ke shape long-key supaya consumer code tidak berubah.
 export function buildScanSchema(menus: MenuRef[]) {
   const menuNames = menus.map((m) => m.name);
 
@@ -56,33 +48,43 @@ export function buildScanSchema(menus: MenuRef[]) {
 
   const confidenceSchema = z.number().int().min(0).max(100);
 
-  // Tolerate AI returning alternatives as either [{menu_name, confidence?}]
-  // (the documented shape) OR ["MenuName"] (shorthand some Gemini versions emit).
-  // Coerce string → {menu_name} before validation.
+  // Alternatives bisa `{m, c?}` atau shorthand "MenuName" — coerce string → {m}.
   const altItemSchema = z.preprocess(
-    (v) => (typeof v === 'string' ? { menu_name: v } : v),
+    (v) => (typeof v === 'string' ? { m: v } : v),
     z.object({
-      menu_name: menuNameSchema,
-      confidence: confidenceSchema.optional(),
+      m: menuNameSchema,
+      c: confidenceSchema.optional(),
     })
   );
 
   return z.object({
-    items: z.array(
+    i: z.array(
       z.object({
-        menu_name: menuNameSchema,
-        qty: z.number().int().positive(),
-        notes: z.string().nullable(),
-        // Both optional so AI can skip them on certain items without breaking schema.
-        // Trade: less attention budget on confidence reasoning → more on item detection.
-        confidence: confidenceSchema.optional(),
-        alternatives: z.array(altItemSchema).max(2).optional(),
+        m: menuNameSchema,
+        q: z.number().int().positive(),
+        n: z.string().nullable(),
+        c: confidenceSchema.optional(),
+        a: z.array(altItemSchema).max(2).optional(),
       })
     ),
-    handwritten_total: z.number().int().nonnegative(),
-    customer_name: z.string().nullable(),
-    table_no: z.string().nullable(),
-  });
+    t: z.number().int().nonnegative(),
+    cn: z.string().nullable(),
+    tn: z.string().nullable(),
+  }).transform((d) => ({
+    items: d.i.map((it) => ({
+      menu_name: it.m,
+      qty: it.q,
+      notes: it.n,
+      confidence: it.c,
+      alternatives: it.a?.map((a) => ({
+        menu_name: a.m,
+        confidence: a.c,
+      })),
+    })),
+    handwritten_total: d.t,
+    customer_name: d.cn,
+    table_no: d.tn,
+  }));
 }
 
 export type ScanResult = z.infer<ReturnType<typeof buildScanSchema>>;

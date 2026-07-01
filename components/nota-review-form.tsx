@@ -9,14 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
@@ -33,7 +30,6 @@ type Transaction = {
   customer_name: string | null;
   table_no: string | null;
   created_at: string;
-  rescanned_at: string | null;
 };
 
 type PrinterTarget = 'dapur' | 'minuman';
@@ -174,7 +170,6 @@ export function NotaReviewForm({
   const [handwrittenTotal, setHandwrittenTotal] = useState<number | null>(transaction.handwritten_total);
   const [thousandsDismissed, setThousandsDismissed] = useState(false);
   const [thousandsApplying, setThousandsApplying] = useState(false);
-  const [rescanning, setRescanning] = useState(false);
   // Modal "Cetak ulang ke dapur" — saat edit confirmed tx + items existing dimodifikasi.
   const [modificationModal, setModificationModal] = useState<ModalContext | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -239,26 +234,6 @@ export function NotaReviewForm({
       )
     );
     toast.success(`Diganti ke ${newMenu.name}`);
-  }
-
-  async function handleRescan() {
-    setRescanning(true);
-    try {
-      const res = await fetch(`/api/transactions/${transaction.id}/rescan`, {
-        method: 'POST',
-      });
-      if (!res.ok) {
-        const data: { error?: string } = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? 'rescan-failed');
-      }
-      toast.success('Rescan selesai — memuat ulang halaman…');
-      // Hard reload to re-fetch server-rendered data with fresh items/header
-      window.location.reload();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'rescan-failed';
-      toast.error(`Gagal rescan: ${message}. Coba lagi.`);
-      setRescanning(false);
-    }
   }
 
   async function applyThousands() {
@@ -456,7 +431,7 @@ export function NotaReviewForm({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         {scanUrl && (
-          <div className="lg:sticky lg:top-4 lg:self-start space-y-3">
+          <div className="lg:sticky lg:top-4 lg:self-start">
             <Card variant="paper" className="overflow-hidden">
               <ZoomableNotaImage
                 src={scanUrl}
@@ -464,33 +439,6 @@ export function NotaReviewForm({
                 imgClassName="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
               />
             </Card>
-            <AlertDialog>
-              <AlertDialogTrigger
-                disabled={rescanning || pending || thousandsApplying || !!transaction.rescanned_at}
-                className="w-full"
-                render={<Button type="button" variant="secondary" />}
-              >
-                {rescanning
-                  ? '🔄 Scan ulang dengan Pro…'
-                  : transaction.rescanned_at
-                  ? '🔄 Scan ulang sudah dipakai (1x max)'
-                  : '🔄 Scan ulang dengan Pro'}
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Scan ulang dengan model Pro?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Pakai model yang lebih akurat tapi lebih lambat & lebih mahal. Semua item dan total akan diganti dengan hasil scan baru, edit manual yang sudah dilakukan akan hilang. Hanya bisa dipakai <strong>1x</strong> per transaksi.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={rescanning}>Batal</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleRescan} disabled={rescanning}>
-                    {rescanning ? 'Memproses…' : 'Ya, scan ulang'}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
           </div>
         )}
 
@@ -596,13 +544,13 @@ export function NotaReviewForm({
             <Button
               variant="secondary"
               onClick={() => router.push('/')}
-              disabled={pending || rescanning}
+              disabled={pending}
             >
               Batal
             </Button>
             <Button
               onClick={handleConfirm}
-              disabled={pending || thousandsApplying || rescanning || items.length === 0}
+              disabled={pending || thousandsApplying || items.length === 0}
               className="flex-1"
             >
               {pending ? 'Menyimpan…' : '✓ Simpan & Cetak'}

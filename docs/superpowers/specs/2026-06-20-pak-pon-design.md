@@ -82,7 +82,7 @@ Internal web app untuk warung **Pecel Lele Pak Pon** (Bandar Lampung). Bukan pub
 | 7 | Handwritten total | OCR ekstrak juga → warning kalau ≠ sum items, sum items = source of truth | Field `handwritten_total` di transaction header |
 | 8 | Akun login | 1 akun share via Supabase Auth email/password | No signup page, no user table tambahan |
 | 9 | Retensi foto | Hapus barengan transaksi hard-delete (>7 hari setelah soft-delete) | Cron job hapus storage juga |
-| 10 | Gemini model | `gemini-3.5-flash` (fallback `gemini-3.1-pro-preview` kalau Flash return kosong) | Latency 2-5 dtk, ~10-20× murah dari Pro |
+| 10 | Gemini model | `gemini-3.5-flash` only — single attempt, no fallback (lihat plan 2026-06-30-ocr-token-reduction.md) | Latency 2-5 dtk |
 | 11 | Compression | Client-side 1600px max + JPEG quality 0.8 | Library: `browser-image-compression` |
 | 12 | OCR upload flow | All-server-mediated (FormData ke API route) | Simpel, 1 round-trip dari tablet |
 
@@ -344,7 +344,7 @@ Semua route: validate input dengan Zod, check auth via `createServerClient(cooki
 ### Model selection
 
 - **Primary**: `gemini-3.5-flash` (latency 2-5s, low cost, supports structured JSON via responseSchema)
-- **Fallback**: `gemini-3.1-pro-preview` — dipanggil sekali kalau Flash return `items=[]` atau `handwritten_total=0`
+- **No fallback**: per plan 2026-06-30 — kalau Flash gagal, request return EMPTY_RESULT; kasir bisa hapus tx + scan ulang manual via /scan
 
 ### Why Flash is sufficient
 
@@ -394,15 +394,9 @@ export async function scanNota(base64Image: string, menus: Menu[]) {
     generation_config: { thinking_level: 'minimal' },
   });
 
-  let result = await callModel('gemini-3.5-flash');
-  let parsed = ScanResult.parse(JSON.parse(result.output_text));
-
-  // Fallback ke Pro kalau Flash gagal
-  if (parsed.items.length === 0 || parsed.handwritten_total === 0) {
-    result = await callModel('gemini-3.1-pro-preview');
-    parsed = ScanResult.parse(JSON.parse(result.output_text));
-  }
-
+  const result = await callModel('gemini-3.5-flash');
+  const parsed = ScanResult.parse(JSON.parse(result.output_text));
+  // Fallback ke Pro dihapus 2026-06-30 — lihat plan.
   return parsed;
 }
 ```
