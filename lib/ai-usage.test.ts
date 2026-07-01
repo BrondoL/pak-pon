@@ -14,7 +14,8 @@ vi.mock('./date', () => ({
   businessDate: vi.fn().mockReturnValue('2026-07-02'),
 }));
 
-import { recordUsageDaily } from './ai-usage';
+import { recordUsageDaily, aggregateSummary } from './ai-usage';
+import type { AiUsageRow } from './ai-usage';
 
 describe('recordUsageDaily', () => {
   beforeEach(() => {
@@ -91,5 +92,38 @@ describe('recordUsageDaily', () => {
     ).resolves.toBeUndefined();
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+});
+
+describe('aggregateSummary', () => {
+  it('returns zeros for empty array', () => {
+    expect(aggregateSummary([])).toEqual({
+      scan: 0, success: 0, fail: 0, input: 0, output: 0, total: 0,
+    });
+  });
+
+  it('sums rows with number tokens', () => {
+    const rows: AiUsageRow[] = [
+      { date: '2026-07-01', scan_count: 10, success_count: 9, fail_count: 1,
+        input_tokens: 1000, output_tokens: 200, total_tokens: 1200,
+        created_at: '', updated_at: '' },
+      { date: '2026-07-02', scan_count: 5, success_count: 5, fail_count: 0,
+        input_tokens: 500, output_tokens: 100, total_tokens: 600,
+        created_at: '', updated_at: '' },
+    ];
+    expect(aggregateSummary(rows)).toEqual({
+      scan: 15, success: 14, fail: 1, input: 1500, output: 300, total: 1800,
+    });
+  });
+
+  it('sums rows with string bigint tokens', () => {
+    const rows: AiUsageRow[] = [
+      { date: '2026-07-01', scan_count: 10, success_count: 10, fail_count: 0,
+        input_tokens: '1000', output_tokens: '200', total_tokens: '1200',
+        created_at: '', updated_at: '' },
+    ];
+    expect(aggregateSummary(rows)).toEqual({
+      scan: 10, success: 10, fail: 0, input: 1000, output: 200, total: 1200,
+    });
   });
 });

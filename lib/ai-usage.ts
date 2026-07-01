@@ -50,3 +50,26 @@ export async function recordUsageDaily(args: RecordUsageArgs): Promise<void> {
     console.warn('[ai-usage] recordUsageDaily threw', err);
   }
 }
+
+export type UsageSummary = {
+  scan: number;
+  success: number;
+  fail: number;
+  input: number;
+  output: number;
+  total: number;
+};
+
+export function aggregateSummary(rows: AiUsageRow[]): UsageSummary {
+  return rows.reduce<UsageSummary>(
+    (acc, r) => ({
+      scan: acc.scan + r.scan_count,
+      success: acc.success + r.success_count,
+      fail: acc.fail + r.fail_count,
+      input: acc.input + Number(r.input_tokens),
+      output: acc.output + Number(r.output_tokens),
+      total: acc.total + Number(r.total_tokens),
+    }),
+    { scan: 0, success: 0, fail: 0, input: 0, output: 0, total: 0 }
+  );
+}
