@@ -26,7 +26,7 @@ Aturan:
 2. notes "n": anotasi handwritten (cth "PAHA"). Kalau ga jelas, tulis mentahnya.
 3. confidence "c" (0-100): isi kalau ragu. Skip cuma kalau yakin >=95%.
 4. alternatives "a" (max 2 dari master): sertakan untuk look-alike.
-5. Total "t": convert ke rupiah penuh (SATUAN RIBUAN) — "92"=92000, "92.000"=92000. 0 kalau tak terbaca.
+5. Total "t": HANYA angka yang ditulis kasir di bagian bawah nota (label "Total"/"Jumlah"). Kalau kasir TIDAK menulis total, "t":0. JANGAN hitung sendiri dari items. Kalau ada, convert ke rupiah penuh (SATUAN RIBUAN) — "92"=92000, "92.000"=92000.
 6. OPTIMASI: skip field kalau null/kosong. Jangan return "n":null / "cn":null / "tn":null / "c":null / "a":[] — omit key-nya aja.`;
 
 export function buildMenuRefText(menus: MenuRef[]): string {
