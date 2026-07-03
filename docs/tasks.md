@@ -90,12 +90,25 @@ Plan: `docs/superpowers/plans/2026-07-01-ocr-image-schema-optimization.md`, spec
 - [x] `NEXT_PUBLIC_IMAGE_MAX_WIDTH` env var (default 1600, code-only lever)
 - [x] Smoke verify image tok scaling (`scripts/verify-crop-tokens.mjs`)
 
-**Hasil**: 1879 → 1512 tok (-19% dari Round-1, total -40% dari 2530 baseline). Bill ~540k IDR/bulan.
+**Hasil**: 1879 → 1512 tok (-19% dari Round-1, total -40% dari 2530 baseline). Bill ~540k IDR/bulan (estimate lama — belum count thinking tok, corrected di Round 3).
+
+### Round 3: Thinking-level fix + accurate billing + alt removal (2026-07-03)
+Konteks: web `output_tokens` (18.2k) mismatch Google dashboard (83.7k) — ternyata `thinkingBudget: 0` di code silently ignored karena Gemini 3.x pake `thinkingLevel`, bukan `thinkingBudget`. Model tetep mikir default `medium` → thinking tokens ~570/req di-bill sebagai output tapi ga tercatat.
+- [x] Migrasi 0029: kolom `ai_usage_daily.thoughts_tokens bigint`, RPC signature include `p_thoughts`
+- [x] `lib/gemini.ts` capture `usage.thoughtsTokenCount`; `output_tokens = candidates + thoughts` (match dashboard 1:1)
+- [x] `lib/gemini.ts` swap `thinkingBudget: 0` → `thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL }` (Gemini 3.x correct API)
+- [x] UI `/setup/ai-usage` tambah kolom "Thinking"
+- [x] Migrasi 0030: drop `transaction_items.alternatives` — feature "chip swap AI" dihapus, kasir edit manual via ✏️ modal. `a` field di prompt/schema/UI dihilangin. `confidence` tier highlight tetap.
+- [x] A/B `medium` vs `minimal` (5 foto identik): akurasi 100% match, cost/scan −78% ($0.0167 → $0.0036), latency −75% (9.9s → 2.5s). Keep `minimal` permanent.
+
+**Hasil**: cost real (dengan thinking) `medium` ~1.35M IDR/bulan (150 tx/hari) → `minimal` **~292k IDR/bulan** (~65 IDR/scan). Selisih **~1M IDR/bulan hemat**. Latency kasir 4× lebih cepat. Task OCR menu-enum-constrained ternyata ga butuh reasoning berat.
 
 ### Findings kritis (documented di spec)
 - Gemini 3.5 Flash charge HARD MINIMUM ~1089 tok untuk apapun inline image (verified via cropping/resize test — bahkan 192×256 thumbnail 9KB tetap 1089 tok). **Image manipulation tidak turunkan bill.** Phase 2 (template crop) killed.
 - `responseSchema` enum values = free input tokens.
-- `a` field usage inconsistent di Flash 3.5 (stochastic — kadang isi, kadang dump ke `n`).
+- `a` field usage inconsistent di Flash 3.5 (stochastic — kadang isi, kadang dump ke `n`). Feature dihapus 2026-07-03.
+- **Gemini 3.x pake `thinkingLevel` (minimal/low/medium/high, default medium), BUKAN `thinkingBudget`** — kalau salah pilih, silently ignored + tetep di-bill. Thinking tokens dibill sebagai output ($9/1M).
+- Untuk task dengan `responseSchema` menu-enum ketat, `thinkingLevel: 'minimal'` cukup — reasoning berat ga dibutuhin. A/B evidence 2026-07-03.
 
 ### Opsi cost-reduction lanjutan (belum urgent)
 - Model switch: coba `gemini-flash-lite` atau `gemini-2.0-flash` — different pricing tier

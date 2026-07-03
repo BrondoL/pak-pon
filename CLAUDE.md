@@ -41,11 +41,13 @@ See:
 ## OCR system (single-model + responseSchema, shipped 2026-06-30 + 2026-07-01)
 
 - **Model**: `gemini-3.5-flash` only, single attempt (no fallback). Env `GEMINI_FAST_MODEL` override. Kalau gagal → `EMPTY_RESULT`, kasir input manual via "+ Tambah item".
-- **Prompt**: `lib/prompts.ts` — short-key JSON output (m/q/n/c/a/t/cn/tn). Zod `.transform()` re-expand ke long-key untuk consumer code. Instruksi menu enum tidak di prompt lagi.
-- **Schema**: `buildScanResponseSchema(menus)` = Gemini `responseSchema` config, constrain `m` + `a[].m` ke enum menu names. **Enum values gratis di input tokens** (verified via `scripts/verify-response-schema.mjs`).
-- **Wide-event log**: `ocr_attempts[]` include `input_tokens`, `output_tokens`, `total_tokens` per attempt. `ocr_fell_back` always false (kept untuk log-shape backward compat).
+- **Prompt**: `lib/prompts.ts` — short-key JSON output (m/q/n/c/t/cn/tn). Zod `.transform()` re-expand ke long-key untuk consumer code. Instruksi menu enum tidak di prompt lagi. Field `a` (alternatives) di-remove per 2026-07-03 — UX pakai swap manual via ✏️ modal saja.
+- **Schema**: `buildScanResponseSchema(menus)` = Gemini `responseSchema` config, constrain `m` ke enum menu names. **Enum values gratis di input tokens** (verified via `scripts/verify-response-schema.mjs`).
+- **Thinking config**: `thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL }`. Gemini 3.x **tidak honor** `thinkingBudget` (itu API 2.5 — silently ignored di 3.x). Level = minimal/low/medium/high, default medium. A/B 2026-07-03 (5 foto × medium+minimal) → akurasi 100% match, cost −78%, latency −75%. Stuck di minimal.
+- **Wide-event log**: `ocr_attempts[]` include `input_tokens`, `output_tokens` (candidates + thoughts), `thoughts_tokens`, `total_tokens` per attempt. `ocr_fell_back` always false (kept untuk log-shape backward compat).
 - **Image tok quirk**: Gemini 3.5 Flash charge HARD MIN ~1089 tok untuk apapun inline image (bahkan thumbnail 192×256). Kompresi/crop **tidak** turunkan bill di model ini. Cuma bantu bandwidth kasir HP.
-- **Cost hari ini** (150 tx/hari): ~1512 tok input, ~150-200 tok output, ~540k IDR/bulan.
+- **Cost baseline `minimal`** (2026-07-03, A/B 5 scan): avg 1,452 tok input + 157 tok output/scan (0 thinking) = **~$0.0036/scan** ≈ **65 IDR/scan**. Proyeksi 150 scan/hari: **~292k IDR/bulan** (@18000). Latency avg ~2.5 detik (medium: ~9.9 detik).
+- **Cost tracking**: `ai_usage_daily.output_tokens = candidatesTokenCount + thoughtsTokenCount` (match dashboard Google 1:1). `thoughts_tokens` di-kolom terpisah biar bisa lihat porsi thinking.
 
 ## Print system (Phase 1+2+3 shipped 2026-06-25, primary agent + pending state 2026-06-26)
 
