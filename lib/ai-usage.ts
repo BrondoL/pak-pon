@@ -4,6 +4,7 @@ import { businessDate } from './date';
 export type Attempt = {
   input_tokens?: number;
   output_tokens?: number;
+  thoughts_tokens?: number;
   total_tokens?: number;
 };
 
@@ -20,6 +21,7 @@ export type AiUsageRow = {
   fail_count: number;
   input_tokens: number | string;
   output_tokens: number | string;
+  thoughts_tokens: number | string;
   total_tokens: number | string;
   created_at: string;
   updated_at: string;
@@ -37,6 +39,7 @@ export type DailyUsageView = {
   fail_count: number;
   input: number;
   output: number;
+  thoughts: number;
   total: number;
   idr: number;
 };
@@ -47,6 +50,7 @@ export async function recordUsageDaily(args: RecordUsageArgs): Promise<void> {
 
     const input = args.attempts.reduce((s, a) => s + (a.input_tokens ?? 0), 0);
     const output = args.attempts.reduce((s, a) => s + (a.output_tokens ?? 0), 0);
+    const thoughts = args.attempts.reduce((s, a) => s + (a.thoughts_tokens ?? 0), 0);
     const total = args.attempts.reduce((s, a) => s + (a.total_tokens ?? 0), 0);
     if (input === 0 && output === 0) return;
 
@@ -59,6 +63,7 @@ export async function recordUsageDaily(args: RecordUsageArgs): Promise<void> {
       p_fail: args.failed ? 1 : 0,
       p_input: input,
       p_output: output,
+      p_thoughts: thoughts,
       p_total: total,
     });
     if (error) console.warn('[ai-usage] upsert failed', error);
@@ -73,6 +78,7 @@ export type UsageSummary = {
   fail: number;
   input: number;
   output: number;
+  thoughts: number;
   total: number;
 };
 
@@ -84,8 +90,9 @@ export function aggregateSummary(rows: AiUsageRow[]): UsageSummary {
       fail: acc.fail + r.fail_count,
       input: acc.input + Number(r.input_tokens),
       output: acc.output + Number(r.output_tokens),
+      thoughts: acc.thoughts + Number(r.thoughts_tokens ?? 0),
       total: acc.total + Number(r.total_tokens),
     }),
-    { scan: 0, success: 0, fail: 0, input: 0, output: 0, total: 0 }
+    { scan: 0, success: 0, fail: 0, input: 0, output: 0, thoughts: 0, total: 0 }
   );
 }

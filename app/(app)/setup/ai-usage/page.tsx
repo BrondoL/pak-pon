@@ -46,6 +46,7 @@ export default async function AiUsagePage() {
   const views: DailyUsageView[] = raw.map((r) => {
     const input = Number(r.input_tokens);
     const output = Number(r.output_tokens);
+    const thoughts = Number(r.thoughts_tokens ?? 0);
     return {
       date: r.date,
       scan_count: r.scan_count,
@@ -53,6 +54,7 @@ export default async function AiUsagePage() {
       fail_count: r.fail_count,
       input,
       output,
+      thoughts,
       total: Number(r.total_tokens),
       idr: estimateCostIdr(input, output),
     };

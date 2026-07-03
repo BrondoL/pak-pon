@@ -19,6 +19,7 @@ export type ScanAttempt = {
 
   input_tokens?: number;
   output_tokens?: number;
+  thoughts_tokens?: number;
   total_tokens?: number;
 };
 
@@ -92,8 +93,15 @@ export async function scanNota(
 
   const usage = response.usageMetadata;
   if (usage) {
+    // Gemini 3.x charges thoughtsTokenCount at output rate even though `thinkingBudget: 0`
+    // is set — the model doesn't honor budget=0 for structured output. Roll them into
+    // output_tokens so billing math matches the Google Cloud dashboard; keep the raw
+    // thoughts count in its own field for visibility.
+    const candidates = usage.candidatesTokenCount ?? 0;
+    const thoughts = usage.thoughtsTokenCount ?? 0;
     attempt.input_tokens = usage.promptTokenCount;
-    attempt.output_tokens = usage.candidatesTokenCount;
+    attempt.output_tokens = candidates + thoughts;
+    attempt.thoughts_tokens = thoughts;
     attempt.total_tokens = usage.totalTokenCount;
   }
 

@@ -27,6 +27,7 @@ export function AiUsageTable({ rows, today }: { rows: DailyUsageView[]; today: s
               <th className="px-3 py-2 text-right font-medium">Sukses/Gagal</th>
               <th className="px-3 py-2 text-right font-medium">Input</th>
               <th className="px-3 py-2 text-right font-medium">Output</th>
+              <th className="px-3 py-2 text-right font-medium" title="Bagian output yang dipakai model buat mikir. Sudah termasuk di Output.">Thinking</th>
               <th className="px-3 py-2 text-right font-medium">Est. IDR</th>
             </tr>
           </thead>
@@ -48,6 +49,7 @@ export function AiUsageTable({ rows, today }: { rows: DailyUsageView[]; today: s
                   </td>
                   <td className="px-3 py-2 text-right text-coal">{compact.format(r.input)}</td>
                   <td className="px-3 py-2 text-right text-coal">{compact.format(r.output)}</td>
+                  <td className="px-3 py-2 text-right text-coal-soft">{compact.format(r.thoughts)}</td>
                   <td className="px-3 py-2 text-right text-coal">~{formatRp(r.idr)}</td>
                 </tr>
               );

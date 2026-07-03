@@ -38,7 +38,7 @@ describe('recordUsageDaily', () => {
 
   it('records success (failed=false) with success=1, fail=0', async () => {
     await recordUsageDaily({
-      attempts: [{ input_tokens: 500, output_tokens: 100, total_tokens: 600 }],
+      attempts: [{ input_tokens: 500, output_tokens: 700, thoughts_tokens: 600, total_tokens: 1200 }],
       failed: false,
     });
     expect(mockRpc).toHaveBeenCalledWith('increment_ai_usage_daily', {
@@ -47,8 +47,9 @@ describe('recordUsageDaily', () => {
       p_success: 1,
       p_fail: 0,
       p_input: 500,
-      p_output: 100,
-      p_total: 600,
+      p_output: 700,
+      p_thoughts: 600,
+      p_total: 1200,
     });
   });
 
@@ -62,6 +63,7 @@ describe('recordUsageDaily', () => {
       p_fail: 1,
       p_input: 1089,
       p_output: 0,
+      p_thoughts: 0,
       p_total: 1089,
     }));
   });
@@ -69,15 +71,16 @@ describe('recordUsageDaily', () => {
   it('sums multiple attempts (retry scenario) — hypothetical multi-attempt', async () => {
     await recordUsageDaily({
       attempts: [
-        { input_tokens: 500, output_tokens: 100, total_tokens: 600 },
-        { input_tokens: 500, output_tokens: 120, total_tokens: 620 },
+        { input_tokens: 500, output_tokens: 700, thoughts_tokens: 600, total_tokens: 1200 },
+        { input_tokens: 500, output_tokens: 720, thoughts_tokens: 600, total_tokens: 1220 },
       ],
       failed: false,
     });
     expect(mockRpc).toHaveBeenCalledWith('increment_ai_usage_daily', expect.objectContaining({
       p_input: 1000,
-      p_output: 220,
-      p_total: 1220,
+      p_output: 1420,
+      p_thoughts: 1200,
+      p_total: 2420,
     }));
   });
 
@@ -98,32 +101,32 @@ describe('recordUsageDaily', () => {
 describe('aggregateSummary', () => {
   it('returns zeros for empty array', () => {
     expect(aggregateSummary([])).toEqual({
-      scan: 0, success: 0, fail: 0, input: 0, output: 0, total: 0,
+      scan: 0, success: 0, fail: 0, input: 0, output: 0, thoughts: 0, total: 0,
     });
   });
 
   it('sums rows with number tokens', () => {
     const rows: AiUsageRow[] = [
       { date: '2026-07-01', scan_count: 10, success_count: 9, fail_count: 1,
-        input_tokens: 1000, output_tokens: 200, total_tokens: 1200,
+        input_tokens: 1000, output_tokens: 800, thoughts_tokens: 600, total_tokens: 1800,
         created_at: '', updated_at: '' },
       { date: '2026-07-02', scan_count: 5, success_count: 5, fail_count: 0,
-        input_tokens: 500, output_tokens: 100, total_tokens: 600,
+        input_tokens: 500, output_tokens: 400, thoughts_tokens: 300, total_tokens: 900,
         created_at: '', updated_at: '' },
     ];
     expect(aggregateSummary(rows)).toEqual({
-      scan: 15, success: 14, fail: 1, input: 1500, output: 300, total: 1800,
+      scan: 15, success: 14, fail: 1, input: 1500, output: 1200, thoughts: 900, total: 2700,
     });
   });
 
   it('sums rows with string bigint tokens', () => {
     const rows: AiUsageRow[] = [
       { date: '2026-07-01', scan_count: 10, success_count: 10, fail_count: 0,
-        input_tokens: '1000', output_tokens: '200', total_tokens: '1200',
+        input_tokens: '1000', output_tokens: '800', thoughts_tokens: '600', total_tokens: '1800',
         created_at: '', updated_at: '' },
     ];
     expect(aggregateSummary(rows)).toEqual({
-      scan: 10, success: 10, fail: 0, input: 1000, output: 200, total: 1200,
+      scan: 10, success: 10, fail: 0, input: 1000, output: 800, thoughts: 600, total: 1800,
     });
   });
 });
