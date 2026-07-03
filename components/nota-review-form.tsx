@@ -174,11 +174,6 @@ export function NotaReviewForm({
   const [modificationModal, setModificationModal] = useState<ModalContext | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const menusByName = useMemo(
-    () => new Map(menus.map((m) => [m.name, m])),
-    [menus]
-  );
-
   const computedSum = items.reduce(
     (acc, it) => acc + it.unit_price_snapshot * it.qty,
     0
@@ -216,24 +211,6 @@ export function NotaReviewForm({
   function removeItem(localId: string) {
     setItems((prev) => prev.filter((p) => p._localId !== localId));
     setEditing(null);
-  }
-
-  function swapMenu(localId: string, newMenu: MenuOption) {
-    setItems((prev) =>
-      prev.map((it) =>
-        it._localId === localId
-          ? {
-              ...it,
-              menu_id: newMenu.id,
-              menu_name_snapshot: newMenu.name,
-              unit_price_snapshot: newMenu.price,
-              confidence: null,
-              alternatives: [],
-            }
-          : it
-      )
-    );
-    toast.success(`Diganti ke ${newMenu.name}`);
   }
 
   async function applyThousands() {
@@ -286,7 +263,6 @@ export function NotaReviewForm({
         notes: it.notes,
         sort_order: idx,
         confidence: it.confidence,
-        alternatives: it.alternatives ?? [],
       })),
     };
     try {
@@ -425,7 +401,7 @@ export function NotaReviewForm({
           Periksa <span className="italic">nota</span>
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-coal-soft">
-          Pastikan item dan jumlah sudah benar. Item kuning/merah perlu lebih teliti. Klik chip alternatif untuk ganti menu cepat.
+          Pastikan item dan jumlah sudah benar. Item kuning/merah perlu lebih teliti — klik ✏️ untuk edit.
         </p>
       </div>
 
@@ -509,10 +485,8 @@ export function NotaReviewForm({
                 <NotaItemRow
                   key={it._localId}
                   item={it}
-                  menusByName={menusByName}
                   onEdit={() => setEditing(it)}
                   onDelete={() => removeItem(it._localId)}
-                  onSwapMenu={swapMenu}
                 />
               ))}
             </ul>

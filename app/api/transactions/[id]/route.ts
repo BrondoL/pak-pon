@@ -10,11 +10,6 @@ const STORAGE_BUCKET = 'notas';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const NOT_FOUND_CODE = 'PGRST116';
 
-const AlternativeSchema = z.object({
-  menu_name: z.string(),
-  confidence: z.number().int().min(0).max(100).optional(),
-});
-
 const PatchSchema = z.object({
   status: z.enum(['pending_review', 'confirmed']).optional(),
   customer_name: z.string().nullable().optional(),
@@ -29,7 +24,6 @@ const PatchSchema = z.object({
         notes: z.string().nullable().default(null),
         sort_order: z.number().int().default(0),
         confidence: z.number().int().min(0).max(100).nullable().optional(),
-        alternatives: z.array(AlternativeSchema).max(2).optional(),
       })
     )
     .optional(),

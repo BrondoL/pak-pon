@@ -67,7 +67,7 @@ describe('computeReplaceItems', () => {
     expect(result.rows[1].sort_order).toBe(3);
   });
 
-  it('passes through confidence + alternatives from requested when present', () => {
+  it('passes through confidence from requested when present', () => {
     const requested: RequestedItem[] = [
       {
         menu_id: 'menu-pecel',
@@ -75,24 +75,21 @@ describe('computeReplaceItems', () => {
         notes: null,
         sort_order: 0,
         confidence: 62,
-        alternatives: [{ menu_name: 'Nasi', confidence: 20 }],
       },
     ];
     const result = computeReplaceItems({ existing, requested, menus });
     expect(result.rows[0].confidence).toBe(62);
-    expect(result.rows[0].alternatives).toEqual([{ menu_name: 'Nasi', confidence: 20 }]);
   });
 
-  it('defaults confidence + alternatives to null when not provided', () => {
+  it('defaults confidence to null when not provided', () => {
     const requested: RequestedItem[] = [
       { menu_id: 'menu-pecel', qty: 1, notes: null, sort_order: 0 },
     ];
     const result = computeReplaceItems({ existing, requested, menus });
     expect(result.rows[0].confidence).toBeNull();
-    expect(result.rows[0].alternatives).toBeNull();
   });
 
-  it('passes through explicit null confidence + empty alternatives (user-edited item)', () => {
+  it('passes through explicit null confidence (user-edited item)', () => {
     const requested: RequestedItem[] = [
       {
         menu_id: 'menu-pecel',
@@ -100,12 +97,10 @@ describe('computeReplaceItems', () => {
         notes: null,
         sort_order: 0,
         confidence: null,
-        alternatives: [],
       },
     ];
     const result = computeReplaceItems({ existing, requested, menus });
     expect(result.rows[0].confidence).toBeNull();
-    expect(result.rows[0].alternatives).toEqual([]);
   });
 
   describe('printed_*_at preservation', () => {
@@ -161,7 +156,6 @@ describe('buildItemInsertRows', () => {
     notes: null,
     sort_order: 0,
     confidence: null,
-    alternatives: null,
     printed_dapur_at: null,
     printed_minuman_at: null,
   };

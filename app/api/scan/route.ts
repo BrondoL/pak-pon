@@ -110,7 +110,6 @@ export async function POST(request: NextRequest) {
           notes: item.notes,
           sort_order: idx,
           confidence: item.confidence ?? null,
-          alternatives: item.alternatives ?? null,
         };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);

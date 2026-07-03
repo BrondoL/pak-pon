@@ -4,11 +4,6 @@ export type MenuRef = {
   price: number;
 };
 
-export type Alternative = {
-  menu_name: string;
-  confidence?: number;
-};
-
 export type ExistingItem = {
   id: string;
   menu_id: string;
@@ -27,7 +22,6 @@ export type RequestedItem = {
   notes: string | null;
   sort_order: number;
   confidence?: number | null;
-  alternatives?: Alternative[];
 };
 
 export type ItemRow = {
@@ -41,7 +35,6 @@ export type ItemRow = {
   notes: string | null;
   sort_order: number;
   confidence: number | null;
-  alternatives: Alternative[] | null;
   // Carry forward print-tracking flags supaya "Cetak tambahan" tahu mana yang
   // sudah dicetak. Null untuk item baru (akan diset oleh trigger saat job done).
   printed_dapur_at: string | null;
@@ -80,7 +73,7 @@ export function buildItemInsertRows(
  * Untuk setiap requested item:
  * - Kalau punya `id` yang cocok dengan existing → preserve `unit_price_snapshot` lama
  * - Kalau no `id` atau id tidak cocok → snapshot harga sekarang dari menus
- * - confidence + alternatives di-passthrough apa adanya (default null kalau tidak dikirim)
+ * - confidence di-passthrough apa adanya (default null kalau tidak dikirim)
  *
  * Throw kalau ada requested item dengan menu_id yang tidak ada di menus.
  */
@@ -112,7 +105,6 @@ export function computeReplaceItems(input: {
       notes: req.notes,
       sort_order: req.sort_order,
       confidence: req.confidence ?? null,
-      alternatives: req.alternatives ?? null,
       printed_dapur_at: matchedExisting?.printed_dapur_at ?? null,
       printed_minuman_at: matchedExisting?.printed_minuman_at ?? null,
     };

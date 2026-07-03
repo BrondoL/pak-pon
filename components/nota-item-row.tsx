@@ -2,10 +2,6 @@
 
 import { Button } from '@/components/ui/button';
 import { formatRp } from '@/lib/currency';
-import type { Alternative } from '@/lib/transactions';
-import type { MenuOption } from './nota-item-modal';
-
-export type { Alternative };
 
 export type NotaItem = {
   id?: string;
@@ -16,7 +12,6 @@ export type NotaItem = {
   notes: string | null;
   sort_order: number;
   confidence: number | null;
-  alternatives: Alternative[] | null;
   _localId: string;
 };
 
@@ -42,32 +37,15 @@ const TIER_CLASS: Record<Exclude<Tier, null>, { row: string; badge: string }> = 
 
 export function NotaItemRow({
   item,
-  menusByName,
   onEdit,
   onDelete,
-  onSwapMenu,
 }: {
   item: NotaItem;
-  menusByName: Map<string, MenuOption>;
   onEdit: () => void;
   onDelete: () => void;
-  onSwapMenu: (localId: string, newMenu: MenuOption) => void;
 }) {
   const tier = tierOf(item.confidence);
   const tierClass = tier ? TIER_CLASS[tier] : null;
-
-  // Filter alternatives: skip if name matches primary or menu not in master (inactive/removed)
-  const validAlts = (item.alternatives ?? []).filter(
-    (alt) =>
-      alt.menu_name !== item.menu_name_snapshot &&
-      menusByName.has(alt.menu_name)
-  );
-
-  // Show alts whenever AI bothered to suggest them — even on high-confidence items.
-  // Rationale: AI's self-reported confidence is unreliable on look-alike pairs
-  // (goreng/bakar). If AI noticed an alt is plausible, surfacing it is cheap and
-  // gives kasir a one-click correction option.
-  const showAlts = validAlts.length > 0;
 
   return (
     <li className={['px-5 py-3.5', tierClass?.row ?? ''].join(' ')}>
@@ -104,32 +82,7 @@ export function NotaItemRow({
         </div>
       </div>
 
-      {showAlts && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          {tierClass && (
-            <span className={['font-semibold', tierClass.badge].join(' ')}>
-              ⚠ {item.confidence}%
-            </span>
-          )}
-          <span className="text-clay">Mungkin:</span>
-          {validAlts.map((alt) => {
-            const altMenu = menusByName.get(alt.menu_name)!;
-            return (
-              <button
-                key={alt.menu_name}
-                type="button"
-                onClick={() => onSwapMenu(item._localId, altMenu)}
-                aria-label={`Ganti ke ${altMenu.name}`}
-                className="rounded-md border border-clay-soft bg-paper-soft px-2 py-1 text-coal transition-colors hover:border-coal hover:bg-cream"
-              >
-                {altMenu.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {tierClass && !showAlts && (
+      {tierClass && (
         <div className="mt-2 text-xs">
           <span className={['font-semibold', tierClass.badge].join(' ')}>
             ⚠ {item.confidence}% — periksa item ini

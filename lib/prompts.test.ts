@@ -16,8 +16,8 @@ describe('OCR_SYSTEM_PROMPT', () => {
     expect(OCR_SYSTEM_PROMPT.toLowerCase()).toContain('confidence');
   });
 
-  it('mentions alternatives as an optional per-item field', () => {
-    expect(OCR_SYSTEM_PROMPT.toLowerCase()).toContain('alternatives');
+  it('does not instruct AI to emit alternatives (feature removed 2026-07-03)', () => {
+    expect(OCR_SYSTEM_PROMPT.toLowerCase()).not.toContain('alternatives');
   });
 
   it('instructs AI that handwritten_total is in thousands', () => {
@@ -40,14 +40,12 @@ describe('OCR_SYSTEM_PROMPT', () => {
 });
 
 describe('buildScanSchema', () => {
-  it('accepts valid Gemini-like response with confidence + alternatives (short keys)', () => {
+  it('accepts valid Gemini-like response with confidence (short keys)', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
       i: [
-        { m: 'Pecel Lele', q: 3, n: null, c: 95, a: [] },
-        { m: 'Es Teh', q: 2, n: 'dingin', c: 60, a: [
-          { m: 'Pecel Lele', c: 30 },
-        ] },
+        { m: 'Pecel Lele', q: 3, n: null, c: 95 },
+        { m: 'Es Teh', q: 2, n: 'dingin', c: 60 },
       ],
       t: 60000,
       cn: null,
@@ -61,7 +59,7 @@ describe('buildScanSchema', () => {
     const result = schema.safeParse({
       i: [
         { m: 'Pecel Lele', q: 3, n: null },
-        { m: 'Es Teh', q: 2, n: 'dingin', c: 60, a: [{ m: 'Pecel Lele' }] },
+        { m: 'Es Teh', q: 2, n: 'dingin', c: 60 },
       ],
       t: 60000,
       cn: null,
@@ -73,7 +71,6 @@ describe('buildScanSchema', () => {
       expect(result.data.items[0].qty).toBe(3);
       expect(result.data.items[0].notes).toBeNull();
       expect(result.data.items[1].confidence).toBe(60);
-      expect(result.data.items[1].alternatives?.[0]).toEqual({ menu_name: 'Pecel Lele', confidence: undefined });
       expect(result.data.handwritten_total).toBe(60000);
       expect(result.data.customer_name).toBeNull();
       expect(result.data.table_no).toBeNull();
@@ -83,7 +80,7 @@ describe('buildScanSchema', () => {
   it('rejects menu_name not in master list', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      i: [{ m: 'Burger', q: 1, n: null, c: 90, a: [] }],
+      i: [{ m: 'Burger', q: 1, n: null, c: 90 }],
       t: 50000,
       cn: null,
       tn: null,
@@ -94,7 +91,7 @@ describe('buildScanSchema', () => {
   it('rejects qty < 1', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
-      i: [{ m: 'Pecel Lele', q: 0, n: null, c: 90, a: [] }],
+      i: [{ m: 'Pecel Lele', q: 0, n: null, c: 90 }],
       t: 0,
       cn: null,
       tn: null,
@@ -105,41 +102,20 @@ describe('buildScanSchema', () => {
   it('rejects confidence out of 0-100 range', () => {
     const schema = buildScanSchema(sampleMenus);
     expect(schema.safeParse({
-      i: [{ m: 'Pecel Lele', q: 1, n: null, c: 150, a: [] }],
+      i: [{ m: 'Pecel Lele', q: 1, n: null, c: 150 }],
       t: 0,
       cn: null,
       tn: null,
     }).success).toBe(false);
     expect(schema.safeParse({
-      i: [{ m: 'Pecel Lele', q: 1, n: null, c: -1, a: [] }],
+      i: [{ m: 'Pecel Lele', q: 1, n: null, c: -1 }],
       t: 0,
       cn: null,
       tn: null,
     }).success).toBe(false);
   });
 
-  it('rejects more than 2 alternatives', () => {
-    const schema = buildScanSchema(sampleMenus);
-    const result = schema.safeParse({
-      i: [{
-        m: 'Pecel Lele',
-        q: 1,
-        n: null,
-        c: 50,
-        a: [
-          { m: 'Es Teh', c: 30 },
-          { m: 'Es Teh', c: 20 },
-          { m: 'Es Teh', c: 10 },
-        ],
-      }],
-      t: 0,
-      cn: null,
-      tn: null,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts item without confidence or alternatives (both optional)', () => {
+  it('accepts item without confidence (optional)', () => {
     const schema = buildScanSchema(sampleMenus);
     const result = schema.safeParse({
       i: [{ m: 'Pecel Lele', q: 1, n: null }],
@@ -148,77 +124,6 @@ describe('buildScanSchema', () => {
       tn: null,
     });
     expect(result.success).toBe(true);
-  });
-
-  it('accepts alternative without confidence (Gemini sometimes omits it)', () => {
-    const schema = buildScanSchema(sampleMenus);
-    const result = schema.safeParse({
-      i: [{
-        m: 'Pecel Lele',
-        q: 1,
-        n: null,
-        c: 85,
-        a: [{ m: 'Es Teh' }],
-      }],
-      t: 0,
-      cn: null,
-      tn: null,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts string-shaped alternatives (some Gemini versions return shorthand)', () => {
-    const schema = buildScanSchema(sampleMenus);
-    const result = schema.safeParse({
-      i: [{
-        m: 'Pecel Lele',
-        q: 1,
-        n: null,
-        c: 60,
-        a: ['Es Teh'],
-      }],
-      t: 0,
-      cn: null,
-      tn: null,
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.items[0].alternatives?.[0]).toEqual({ menu_name: 'Es Teh', confidence: undefined });
-    }
-  });
-
-  it('rejects string alternative with menu_name not in master list', () => {
-    const schema = buildScanSchema(sampleMenus);
-    const result = schema.safeParse({
-      i: [{
-        m: 'Pecel Lele',
-        q: 1,
-        n: null,
-        c: 60,
-        a: ['Burger'],
-      }],
-      t: 0,
-      cn: null,
-      tn: null,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects alternative with menu_name not in master list', () => {
-    const schema = buildScanSchema(sampleMenus);
-    const result = schema.safeParse({
-      i: [{
-        m: 'Pecel Lele',
-        q: 1,
-        n: null,
-        c: 50,
-        a: [{ m: 'Burger', c: 30 }],
-      }],
-      t: 0,
-      cn: null,
-      tn: null,
-    });
-    expect(result.success).toBe(false);
   });
 
   it('handles empty menu list', () => {
@@ -272,22 +177,20 @@ describe('buildScanResponseSchema', () => {
     expect(itemSchema.required).toEqual(expect.arrayContaining(['m', 'q']));
   });
 
-  it('marks n / c / a / cn / tn as optional (not in required)', () => {
+  it('marks n / c / cn / tn as optional (not in required)', () => {
     const schema = buildScanResponseSchema(sampleMenus);
     const props = schema.properties as Record<string, { items?: { required?: string[] } }>;
     const itemRequired = props.i.items!.required!;
     expect(itemRequired).not.toContain('n');
     expect(itemRequired).not.toContain('c');
-    expect(itemRequired).not.toContain('a');
     expect(schema.required).not.toContain('cn');
     expect(schema.required).not.toContain('tn');
   });
 
-  it('constrains alternatives.m to menu enum too', () => {
+  it('does not expose `a` (alternatives) on item schema — feature removed 2026-07-03', () => {
     const schema = buildScanResponseSchema(sampleMenus);
-    const props = schema.properties as Record<string, { items?: { properties?: Record<string, { items?: { properties?: Record<string, { enum?: string[] }> } }> } }>;
-    const altItemSchema = props.i.items!.properties!.a.items!;
-    expect(altItemSchema.properties!.m.enum).toEqual(['Pecel Lele', 'Es Teh']);
+    const props = schema.properties as Record<string, { items?: { properties?: Record<string, unknown> } }>;
+    expect(props.i.items!.properties!.a).toBeUndefined();
   });
 
   it('handles empty menu list (no enum constraint)', () => {

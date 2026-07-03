@@ -27,7 +27,7 @@ export default async function ReviewPage({
 
   const { data: items } = await supabase
     .from('transaction_items')
-    .select('id, menu_id, menu_name_snapshot, unit_price_snapshot, qty, notes, sort_order, confidence, alternatives')
+    .select('id, menu_id, menu_name_snapshot, unit_price_snapshot, qty, notes, sort_order, confidence')
     .eq('transaction_id', id)
     .order('sort_order');
 
