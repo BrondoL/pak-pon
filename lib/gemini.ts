@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { buildScanSchema, buildScanResponseSchema, OCR_SYSTEM_PROMPT, type MenuRef, type ScanResult } from './prompts';
 
 // Single model only — fallback Pro dihapus per plan 2026-06-30.
@@ -78,7 +78,12 @@ export async function scanNota(
         responseMimeType: 'application/json',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         responseSchema: responseSchema as any,
-        thinkingConfig: { thinkingBudget: 0 },
+        // Gemini 3.x pakai `thinkingLevel` (minimal/low/medium/high, default medium),
+        // BUKAN `thinkingBudget` (itu API 2.5 — silently ignored di 3.x).
+        // A/B 2026-07-03: 5 foto identik di medium vs minimal → akurasi item/qty/total
+        // 100% match, cost/scan turun 78% ($0.017 → $0.004), latency turun 4× (9.9s → 2.5s).
+        // Task OCR menu-enum-constrained ternyata ga butuh reasoning berat. Sticking with minimal.
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
       },
     });
   } catch (err) {
