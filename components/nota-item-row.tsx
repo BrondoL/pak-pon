@@ -56,7 +56,7 @@ export function NotaItemRow({
             <span className="text-xs text-clay">× {item.qty}</span>
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-clay">
-            <span>{formatRp(item.unit_price_snapshot)} ea</span>
+            <span>{formatRp(item.unit_price_snapshot)} </span>
             {item.notes && (
               <>
                 <span className="text-clay-soft">·</span>
