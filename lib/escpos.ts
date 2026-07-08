@@ -292,6 +292,15 @@ export function renderCustomerReceipt(
     const right = formatRupiah(lineTotal);
     parts.push(encodeText(rightAlignLine(left, right, lineWidth)));
     parts.push(lineFeed(1));
+
+    // Show ONLY paid chips (price_delta > 0). Zero-delta chips + free-text notes
+    // are kitchen-only — customer doesn't need dapur instructions.
+    const paidChips = (item.applied_chips ?? []).filter((c) => c.price_delta > 0);
+    if (paidChips.length > 0) {
+      const chipText = paidChips.map((c) => c.label).join(', ');
+      parts.push(encodeText(`   ${chipText}`));
+      parts.push(lineFeed(1));
+    }
   }
 
   // 5. Totals block

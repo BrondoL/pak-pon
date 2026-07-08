@@ -259,6 +259,53 @@ describe('renderKitchenTicket with applied_chips', () => {
   });
 });
 
+describe('renderCustomerReceipt with applied_chips', () => {
+  const baseInput: TicketInput = {
+    daily_seq: 42,
+    created_at: new Date('2026-07-08T10:00:00+07:00'),
+    customer_name: null,
+    table_no: '5',
+    is_takeaway: false,
+    items: [{
+      qty: 2,
+      name: 'Ayam Goreng',
+      unit_price: 25000,
+      note: 'pisah nasinya',
+      applied_chips: [
+        { label: 'Dada', price_delta: 3000 },
+        { label: 'Goreng garing', price_delta: 0 },
+      ],
+    }],
+  };
+
+  it('shows only chips with price_delta > 0', () => {
+    const bytes = renderCustomerReceipt(baseInput, DEFAULT_PRINTER_SETTINGS);
+    const text = new TextDecoder().decode(bytes);
+    expect(text).toContain('Dada');
+    expect(text).not.toContain('Goreng garing');
+  });
+
+  it('never shows free-text notes on customer receipt', () => {
+    const bytes = renderCustomerReceipt(baseInput, DEFAULT_PRINTER_SETTINGS);
+    const text = new TextDecoder().decode(bytes);
+    expect(text).not.toContain('pisah nasinya');
+  });
+
+  it('skips chip line if all chips zero-price', () => {
+    const input = {
+      ...baseInput,
+      items: [{
+        ...baseInput.items[0],
+        applied_chips: [{ label: 'Goreng garing', price_delta: 0 }],
+      }],
+    };
+    const bytes = renderCustomerReceipt(input, DEFAULT_PRINTER_SETTINGS);
+    const text = new TextDecoder().decode(bytes);
+    expect(text).not.toContain('Goreng garing');
+    expect(text).not.toContain('Dada');
+  });
+});
+
 describe('uint8ToBase64', () => {
   it('encodes empty array as empty string', () => {
     expect(uint8ToBase64(new Uint8Array([]))).toBe('');
