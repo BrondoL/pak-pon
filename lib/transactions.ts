@@ -1,3 +1,5 @@
+import type { AppliedChip } from './menu-chips';
+
 export type MenuRef = {
   id: string;
   name: string;
@@ -10,6 +12,7 @@ export type ExistingItem = {
   unit_price_snapshot: number;
   qty: number;
   notes: string | null;
+  applied_chips: AppliedChip[];
   sort_order: number;
   printed_dapur_at: string | null;
   printed_minuman_at: string | null;
@@ -20,6 +23,7 @@ export type RequestedItem = {
   menu_id: string;
   qty: number;
   notes: string | null;
+  applied_chips?: AppliedChip[];
   sort_order: number;
   confidence?: number | null;
 };
@@ -33,6 +37,7 @@ export type ItemRow = {
   unit_price_snapshot: number;
   qty: number;
   notes: string | null;
+  applied_chips: AppliedChip[];
   sort_order: number;
   confidence: number | null;
   // Carry forward print-tracking flags supaya "Cetak tambahan" tahu mana yang
@@ -71,8 +76,13 @@ export function buildItemInsertRows(
  * Compute rows untuk "replace items" PATCH transaksi.
  *
  * Untuk setiap requested item:
- * - Kalau punya `id` yang cocok dengan existing → preserve `unit_price_snapshot` lama
+ * - Kalau punya `id` yang cocok dengan existing DAN applied_chips tidak berubah
+ *   → preserve `unit_price_snapshot` lama (frozen at create time)
+ * - Kalau id cocok tapi chips berubah (kasir toggle chip) → recompute
+ *   = menu.price + sum(chip.price_delta)
  * - Kalau no `id` atau id tidak cocok → snapshot harga sekarang dari menus
+ *   + chip delta sum
+ * - `applied_chips` default ke [] kalau tidak dikirim (backward-compat pre-chip)
  * - confidence di-passthrough apa adanya (default null kalau tidak dikirim)
  *
  * Throw kalau ada requested item dengan menu_id yang tidak ada di menus.
@@ -92,7 +102,22 @@ export function computeReplaceItems(input: {
     }
 
     const matchedExisting = req.id ? existingById.get(req.id) : undefined;
-    const unit_price_snapshot = matchedExisting?.unit_price_snapshot ?? menu.price;
+    const applied_chips = req.applied_chips ?? [];
+
+    // Unit price snapshot: preserve frozen existing snapshot UNLESS chip
+    // selection changed (kasir toggle chip on existing item). If chips
+    // changed OR item is new, recompute = menu.price + sum(chip.price_delta).
+    const existingChipsKey = matchedExisting
+      ? matchedExisting.applied_chips.map((c) => c.label).sort().join('|')
+      : '';
+    const requestedChipsKey = applied_chips.map((c) => c.label).sort().join('|');
+    const chipsChanged = existingChipsKey !== requestedChipsKey;
+
+    const chipDeltaSum = applied_chips.reduce((s, c) => s + c.price_delta, 0);
+    const unit_price_snapshot =
+      matchedExisting && !chipsChanged
+        ? matchedExisting.unit_price_snapshot
+        : menu.price + chipDeltaSum;
 
     return {
       // Preserve id supaya printed_*_at di trigger Postgres tetap match item
@@ -103,6 +128,7 @@ export function computeReplaceItems(input: {
       unit_price_snapshot,
       qty: req.qty,
       notes: req.notes,
+      applied_chips,
       sort_order: req.sort_order,
       confidence: req.confidence ?? null,
       printed_dapur_at: matchedExisting?.printed_dapur_at ?? null,

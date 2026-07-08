@@ -7,8 +7,8 @@ const menus: MenuRef[] = [
 ];
 
 const existing: ExistingItem[] = [
-  { id: 'item-1', menu_id: 'menu-pecel', unit_price_snapshot: 15000, qty: 2, notes: null,   sort_order: 0, printed_dapur_at: '2026-06-25T01:00:00Z', printed_minuman_at: null },
-  { id: 'item-2', menu_id: 'menu-nasi',  unit_price_snapshot: 6500,  qty: 3, notes: 'less', sort_order: 1, printed_dapur_at: null,                     printed_minuman_at: null },
+  { id: 'item-1', menu_id: 'menu-pecel', unit_price_snapshot: 15000, qty: 2, notes: null,   applied_chips: [], sort_order: 0, printed_dapur_at: '2026-06-25T01:00:00Z', printed_minuman_at: null },
+  { id: 'item-2', menu_id: 'menu-nasi',  unit_price_snapshot: 6500,  qty: 3, notes: 'less', applied_chips: [], sort_order: 1, printed_dapur_at: null,                     printed_minuman_at: null },
 ];
 
 describe('computeReplaceItems', () => {
@@ -154,6 +154,7 @@ describe('buildItemInsertRows', () => {
     unit_price_snapshot: 16000,
     qty: 1,
     notes: null,
+    applied_chips: [],
     sort_order: 0,
     confidence: null,
     printed_dapur_at: null,
@@ -186,5 +187,67 @@ describe('buildItemInsertRows', () => {
   it('treats empty string id as missing (defensive)', () => {
     const out = buildItemInsertRows([{ ...baseRow, id: '' }], 'tx-1');
     expect('id' in out[0]).toBe(false);
+  });
+});
+
+describe('computeReplaceItems with applied_chips', () => {
+  const menus = [{ id: 'm1', name: 'Ayam', price: 22000 }];
+  const existing = [{
+    id: 'i1',
+    menu_id: 'm1',
+    unit_price_snapshot: 25000,
+    qty: 2,
+    notes: null,
+    applied_chips: [{ label: 'Dada', price_delta: 3000 }],
+    sort_order: 0,
+    printed_dapur_at: null,
+    printed_minuman_at: null,
+  }];
+
+  it('preserves applied_chips for existing item unchanged', () => {
+    const result = computeReplaceItems({
+      existing,
+      requested: [{
+        id: 'i1',
+        menu_id: 'm1',
+        qty: 2,
+        notes: null,
+        applied_chips: [{ label: 'Dada', price_delta: 3000 }],
+        sort_order: 0,
+      }],
+      menus,
+    });
+    expect(result.rows[0].applied_chips).toEqual([{ label: 'Dada', price_delta: 3000 }]);
+    expect(result.rows[0].unit_price_snapshot).toBe(25000);
+  });
+
+  it('uses new applied_chips when requested changes', () => {
+    const result = computeReplaceItems({
+      existing,
+      requested: [{
+        id: 'i1',
+        menu_id: 'm1',
+        qty: 2,
+        notes: null,
+        applied_chips: [{ label: 'Paha', price_delta: 0 }],
+        sort_order: 0,
+      }],
+      menus,
+    });
+    expect(result.rows[0].applied_chips).toEqual([{ label: 'Paha', price_delta: 0 }]);
+  });
+
+  it('defaults to empty array when no chips passed', () => {
+    const result = computeReplaceItems({
+      existing: [],
+      requested: [{
+        menu_id: 'm1',
+        qty: 1,
+        notes: null,
+        sort_order: 0,
+      }],
+      menus,
+    });
+    expect(result.rows[0].applied_chips).toEqual([]);
   });
 });
