@@ -15,13 +15,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { formatRp } from '@/lib/currency';
-import { renderKitchenTicket, uint8ToBase64 } from '@/lib/escpos';
+import { dispatchKitchenPrintJob, type PrintTarget } from '@/lib/print-dispatch';
 import { PosMenuPicker } from './pos-menu-picker';
 import { PosItemConfigModal, type PosCartItemDraft } from './pos-item-config-modal';
 
 type CartRow = PosCartItemDraft & { _localId: string };
-
-type PrinterTarget = 'dapur' | 'minuman';
 
 function splitByTarget<T extends { category: PosCartItemDraft['category'] }>(cart: T[]) {
   const dapur: T[] = [];
@@ -31,49 +29,6 @@ function splitByTarget<T extends { category: PosCartItemDraft['category'] }>(car
     else dapur.push(it);
   }
   return { dapur, minuman };
-}
-
-async function submitPrintJob(args: {
-  tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null; is_takeaway: boolean };
-  target: PrinterTarget;
-  items: Array<CartRow & { id: string }>;
-  printerSettings: PrinterSettings;
-}): Promise<{ ok: boolean; offline: boolean }> {
-  const bytes = renderKitchenTicket(
-    {
-      daily_seq: args.tx.daily_seq ?? 0,
-      created_at: new Date(args.tx.created_at),
-      customer_name: args.tx.customer_name,
-      table_no: args.tx.table_no,
-      is_takeaway: args.tx.is_takeaway,
-      items: args.items.map((i) => ({
-        qty: i.qty,
-        name: i.menu_name_snapshot,
-        unit_price: i.unit_price_snapshot,
-        note: i.notes,
-        applied_chips: i.applied_chips,
-      })),
-    },
-    args.printerSettings,
-  );
-  const bytes_b64 = uint8ToBase64(bytes);
-  try {
-    const res = await fetch('/api/print/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tx_id: args.tx.id,
-        target: args.target,
-        trigger: 'auto',
-        item_ids: args.items.map((i) => i.id),
-        bytes_b64,
-      }),
-    });
-    if (res.ok) return { ok: true, offline: false };
-    return { ok: false, offline: res.status === 503 };
-  } catch {
-    return { ok: false, offline: false };
-  }
 }
 
 export function PosClient({
@@ -170,13 +125,13 @@ export function PosClient({
         id: data.items[idx]?.id ?? crypto.randomUUID(),
       }));
       const split = splitByTarget(cartWithIds);
-      const jobs: Promise<{ target: PrinterTarget; ok: boolean; offline: boolean }>[] = [];
+      const jobs: Promise<{ target: PrintTarget; ok: boolean; offline: boolean }>[] = [];
       if (split.dapur.length > 0) {
-        jobs.push(submitPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur, printerSettings })
+        jobs.push(dispatchKitchenPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur, trigger: 'auto', printerSettings })
           .then((r) => ({ ...r, target: 'dapur' as const })));
       }
       if (split.minuman.length > 0) {
-        jobs.push(submitPrintJob({ tx: data.transaction, target: 'minuman', items: split.minuman, printerSettings })
+        jobs.push(dispatchKitchenPrintJob({ tx: data.transaction, target: 'minuman', items: split.minuman, trigger: 'auto', printerSettings })
           .then((r) => ({ ...r, target: 'minuman' as const })));
       }
       const results = await Promise.all(jobs);

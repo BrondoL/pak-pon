@@ -20,7 +20,7 @@ import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
 import { ZoomableNotaImage } from './zoomable-nota-image';
-import { renderKitchenTicket, uint8ToBase64 } from '@/lib/escpos';
+import { dispatchKitchenPrintJob, type PrintTarget, type PrintTrigger } from '@/lib/print-dispatch';
 import { detectThousandsMissing } from '@/lib/total-parser';
 import type { PrinterSettings } from '@/lib/printer-settings';
 
@@ -33,8 +33,6 @@ type Transaction = {
   is_takeaway: boolean;
   created_at: string;
 };
-
-type PrinterTarget = 'dapur' | 'minuman';
 
 type ItemForQueue = {
   id: string;
@@ -108,50 +106,6 @@ function detectModalContext(
     }
   }
   return { modified, newItems };
-}
-
-async function submitPrintJob(args: {
-  tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null; is_takeaway: boolean };
-  target: PrinterTarget;
-  items: ItemForQueue[];
-  trigger: 'auto' | 'auto_additional' | 'reprint';
-  printerSettings: PrinterSettings;
-}): Promise<{ ok: boolean; offline: boolean }> {
-  const bytes = renderKitchenTicket(
-    {
-      daily_seq: args.tx.daily_seq ?? 0,
-      created_at: new Date(args.tx.created_at),
-      customer_name: args.tx.customer_name,
-      table_no: args.tx.table_no,
-      is_takeaway: args.tx.is_takeaway,
-      items: args.items.map((i) => ({
-        qty: i.qty,
-        name: i.menu_name_snapshot,
-        unit_price: i.unit_price_snapshot,
-        note: i.notes,
-        applied_chips: i.applied_chips,
-      })),
-    },
-    args.printerSettings,
-  );
-  const bytes_b64 = uint8ToBase64(bytes);
-  try {
-    const res = await fetch('/api/print/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tx_id: args.tx.id,
-        target: args.target,
-        trigger: args.trigger,
-        item_ids: args.items.map((i) => i.id),
-        bytes_b64,
-      }),
-    });
-    if (res.ok) return { ok: true, offline: false };
-    return { ok: false, offline: res.status === 503 };
-  } catch {
-    return { ok: false, offline: false };
-  }
 }
 
 export function NotaReviewForm({
@@ -350,12 +304,12 @@ export function NotaReviewForm({
 
       // Per target: kalau reprint mode (user pilih cetak ulang via modal) →
       // full reprint semua items target. Else → auto/auto_additional delta.
-      function buildJob(target: PrinterTarget, targetItems: ItemForQueue[]): { items: ItemForQueue[]; trigger: 'auto' | 'auto_additional' | 'reprint' } | null {
+      function buildJob(target: PrintTarget, targetItems: ItemForQueue[]): { items: ItemForQueue[]; trigger: PrintTrigger } | null {
         if (targetItems.length === 0) return null;
         if (reprint[target]) {
           return { items: targetItems, trigger: 'reprint' };
         }
-        const trigger: 'auto' | 'auto_additional' = wasConfirmedBefore ? 'auto_additional' : 'auto';
+        const trigger: PrintTrigger = wasConfirmedBefore ? 'auto_additional' : 'auto';
         const filtered = wasConfirmedBefore
           ? targetItems.filter((i) => (target === 'dapur' ? i.printed_dapur_at : i.printed_minuman_at) === null)
           : targetItems;
@@ -366,16 +320,16 @@ export function NotaReviewForm({
       const dapurJob = buildJob('dapur', split.dapur);
       const minumanJob = buildJob('minuman', split.minuman);
 
-      const submitJobs: Promise<{ target: PrinterTarget; ok: boolean; offline: boolean; trigger: string }>[] = [];
+      const submitJobs: Promise<{ target: PrintTarget; ok: boolean; offline: boolean; trigger: string }>[] = [];
       if (dapurJob) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'dapur', items: dapurJob.items, trigger: dapurJob.trigger, printerSettings })
+          dispatchKitchenPrintJob({ tx: data.transaction, target: 'dapur', items: dapurJob.items, trigger: dapurJob.trigger, printerSettings })
             .then((r) => ({ ...r, target: 'dapur' as const, trigger: dapurJob.trigger })),
         );
       }
       if (minumanJob) {
         submitJobs.push(
-          submitPrintJob({ tx: data.transaction, target: 'minuman', items: minumanJob.items, trigger: minumanJob.trigger, printerSettings })
+          dispatchKitchenPrintJob({ tx: data.transaction, target: 'minuman', items: minumanJob.items, trigger: minumanJob.trigger, printerSettings })
             .then((r) => ({ ...r, target: 'minuman' as const, trigger: minumanJob.trigger })),
         );
       }

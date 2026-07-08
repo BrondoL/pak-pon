@@ -8,6 +8,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { formatRp } from '@/lib/currency';
+import { ChipPicker } from '@/components/chip-picker';
 import type { MenuOption } from '@/components/nota-item-modal';
 
 export type PosCartItemDraft = {
@@ -44,55 +45,6 @@ export function PosItemConfigModal({
   }, [menu, selectedChipLabels]);
 
   const effectiveUnitPrice = menu.price + chipDelta;
-
-  const groups = useMemo(() => {
-    const mutex = new Map<string, typeof menu.chips>();
-    const free: typeof menu.chips = [];
-    for (const c of menu.chips) {
-      if (c.mutex_group) {
-        const arr = mutex.get(c.mutex_group) ?? [];
-        arr.push(c);
-        mutex.set(c.mutex_group, arr);
-      } else {
-        free.push(c);
-      }
-    }
-    for (const arr of mutex.values()) arr.sort((a, b) => a.sort_order - b.sort_order);
-    free.sort((a, b) => a.sort_order - b.sort_order);
-    const mutexSections = Array.from(mutex.entries())
-      .map(([name, list]) => ({ name, list, minOrder: list[0]?.sort_order ?? 0 }))
-      .sort((a, b) => a.minOrder - b.minOrder);
-    return { mutexSections, free };
-  }, [menu]);
-
-  function toggleFreeChip(label: string) {
-    setSelectedChipLabels((prev) =>
-      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]
-    );
-  }
-  function pickMutexChip(groupChips: typeof menu.chips, label: string) {
-    const groupLabels = new Set(groupChips.map((c) => c.label));
-    setSelectedChipLabels((prev) => {
-      const without = prev.filter((l) => !groupLabels.has(l));
-      return prev.includes(label) ? without : [...without, label];
-    });
-  }
-  function renderChip(label: string, priceDelta: number, isSelected: boolean, onClick: () => void) {
-    const display = priceDelta > 0 ? `${label} +${Math.round(priceDelta / 1000)}k` : label;
-    return (
-      <button
-        key={label}
-        type="button"
-        onClick={onClick}
-        className={[
-          'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-          isSelected ? 'border-coal bg-coal text-paper' : 'border-clay-soft bg-paper-soft text-coal hover:bg-cream',
-        ].join(' ')}
-      >
-        {display}
-      </button>
-    );
-  }
 
   function handleSave() {
     if (qty < 1) return;
@@ -132,27 +84,12 @@ export function PosItemConfigModal({
             </div>
           </div>
 
-          {groups.mutexSections.map((section) => (
-            <div key={section.name}>
-              <Label className="mb-2 block text-xs uppercase tracking-wide text-clay">
-                {section.name} (pilih satu)
-              </Label>
-              <div className="flex flex-wrap gap-2">
-                {section.list.map((c) =>
-                  renderChip(c.label, c.price_delta, selectedChipLabels.includes(c.label), () => pickMutexChip(section.list, c.label))
-                )}
-              </div>
-            </div>
-          ))}
-          {groups.free.length > 0 && (
-            <div>
-              <Label className="mb-2 block text-xs uppercase tracking-wide text-clay">Pilihan cepat</Label>
-              <div className="flex flex-wrap gap-2">
-                {groups.free.map((c) =>
-                  renderChip(c.label, c.price_delta, selectedChipLabels.includes(c.label), () => toggleFreeChip(c.label))
-                )}
-              </div>
-            </div>
+          {menu.chips.length > 0 && (
+            <ChipPicker
+              chips={menu.chips}
+              selectedLabels={selectedChipLabels}
+              onChange={setSelectedChipLabels}
+            />
           )}
 
           <div>

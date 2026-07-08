@@ -8,7 +8,7 @@ import {
   buildAppliedChipsSnapshot,
   validateChipMutex,
   sumChipPriceDeltas,
-  type MenuChip,
+  fetchChipsByMenu,
 } from '@/lib/menu-chips';
 import { CreatePosTransactionSchema } from './_schemas';
 
@@ -56,20 +56,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data: chipsData, error: chipsErr } = await supabase
-      .from('menu_chips')
-      .select('id, menu_id, label, price_delta, mutex_group, sort_order')
-      .in('menu_id', menuIds);
-    if (chipsErr) {
+    let chipsByMenu;
+    try {
+      chipsByMenu = await fetchChipsByMenu(supabase, menuIds);
+    } catch (err) {
       tagStatus(evt, 500);
-      evt.error(chipsErr);
-      return NextResponse.json({ error: chipsErr.message }, { status: 500 });
-    }
-    const chipsByMenu = new Map<string, MenuChip[]>();
-    for (const c of chipsData ?? []) {
-      const list = chipsByMenu.get(c.menu_id) ?? [];
-      list.push(c as MenuChip);
-      chipsByMenu.set(c.menu_id, list);
+      evt.error(err);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : 'chip_fetch_failed' },
+        { status: 500 },
+      );
     }
 
     // Snapshot + validate per item.

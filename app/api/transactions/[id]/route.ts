@@ -5,7 +5,7 @@ import { buildItemInsertRows, computeReplaceItems, type ExistingItem, type MenuR
 import {
   buildAppliedChipsSnapshot,
   validateChipMutex,
-  type MenuChip,
+  fetchChipsByMenu,
 } from '@/lib/menu-chips';
 import { newEvent, tagStatus, type RequestEvent } from '@/lib/logger';
 import { computeNextDailySeq } from '@/lib/daily-seq';
@@ -288,20 +288,19 @@ async function replaceItems(
 
   // Fetch chips only for referenced menus (avoid full-table scan).
   const menuIds = Array.from(new Set(requestedItems.map((r) => r.menu_id)));
-  const { data: chipsData, error: chipsError } = await supabase
-    .from('menu_chips')
-    .select('id, menu_id, label, price_delta, mutex_group, sort_order')
-    .in('menu_id', menuIds);
-  if (chipsError) {
+  let chipsByMenu;
+  try {
+    chipsByMenu = await fetchChipsByMenu(supabase, menuIds);
+  } catch (err) {
     tagStatus(evt, 500);
-    evt.error(chipsError);
-    return { kind: 'error', response: NextResponse.json({ error: chipsError.message }, { status: 500 }) };
-  }
-  const chipsByMenu = new Map<string, MenuChip[]>();
-  for (const c of chipsData ?? []) {
-    const list = chipsByMenu.get(c.menu_id) ?? [];
-    list.push(c as MenuChip);
-    chipsByMenu.set(c.menu_id, list);
+    evt.error(err);
+    return {
+      kind: 'error',
+      response: NextResponse.json(
+        { error: err instanceof Error ? err.message : 'chip_fetch_failed' },
+        { status: 500 },
+      ),
+    };
   }
 
   // Snapshot chip_labels → applied_chips per item.

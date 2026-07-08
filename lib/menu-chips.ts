@@ -7,6 +7,40 @@ export type MenuChip = {
   sort_order: number;
 };
 
+/**
+ * Minimal shape of the Supabase client used by chip fetch helpers. Kept as
+ * `unknown`-friendly `any` so any client returned by `getSupabaseServer()` /
+ * `getSupabaseAdmin()` satisfies it — full generic parameters trip the
+ * PostgREST query-builder inference (TS2589: excessively deep). Runtime shape
+ * still enforced by the query below.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseClientLike = any;
+
+/**
+ * Fetch chips for a set of menus and group them by menu id. Throws on DB error
+ * so the caller can log via its wide-event handler + return an appropriate
+ * error response. Empty `menuIds` returns an empty map without hitting the DB.
+ */
+export async function fetchChipsByMenu(
+  supabase: SupabaseClientLike,
+  menuIds: string[],
+): Promise<Map<string, MenuChip[]>> {
+  const byMenu = new Map<string, MenuChip[]>();
+  if (menuIds.length === 0) return byMenu;
+  const { data, error } = await supabase
+    .from('menu_chips')
+    .select('id, menu_id, label, price_delta, mutex_group, sort_order')
+    .in('menu_id', menuIds);
+  if (error) throw new Error(error.message);
+  for (const c of (data ?? []) as MenuChip[]) {
+    const list = byMenu.get(c.menu_id) ?? [];
+    list.push(c);
+    byMenu.set(c.menu_id, list);
+  }
+  return byMenu;
+}
+
 export type AppliedChip = {
   label: string;
   price_delta: number;
