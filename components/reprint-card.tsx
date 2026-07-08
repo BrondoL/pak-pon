@@ -25,6 +25,7 @@ type TxBase = {
   created_at: string;
   customer_name: string | null;
   table_no: string | null;
+  is_takeaway: boolean;
 };
 
 type Trigger =
@@ -48,6 +49,7 @@ async function submitJob(args: {
     created_at: new Date(args.tx.created_at),
     customer_name: args.tx.customer_name,
     table_no: args.tx.table_no,
+    is_takeaway: args.tx.is_takeaway,
     items: args.items.map((i) => ({
       qty: i.qty,
       name: i.menu_name_snapshot,

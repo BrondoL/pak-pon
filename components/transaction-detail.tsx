@@ -39,6 +39,7 @@ type Transaction = {
   handwritten_total: number | null;
   customer_name: string | null;
   table_no: string | null;
+  is_takeaway: boolean;
   created_at: string;
   daily_seq?: number | null;
 };
@@ -151,15 +152,22 @@ export function TransactionDetail({
             )}
           </div>
         </div>
-        {isDraft ? (
-          <span className="rounded-full bg-mustard-faint px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-coal">
-            Draft — belum dikonfirmasi
-          </span>
-        ) : (
-          <span className="rounded-full bg-leaf/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-leaf">
-            ✓ Confirmed
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {transaction.is_takeaway && (
+            <span className="rounded-full bg-gold-faint px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gold-dark">
+              📦 Bungkus
+            </span>
+          )}
+          {isDraft ? (
+            <span className="rounded-full bg-mustard-faint px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-coal">
+              Draft — belum dikonfirmasi
+            </span>
+          ) : (
+            <span className="rounded-full bg-leaf/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-leaf">
+              ✓ Confirmed
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
@@ -251,6 +259,7 @@ export function TransactionDetail({
                 created_at: transaction.created_at,
                 customer_name: transaction.customer_name,
                 table_no: transaction.table_no,
+                is_takeaway: transaction.is_takeaway,
               }}
               items={items.map((it) => ({
                 id: it.id,

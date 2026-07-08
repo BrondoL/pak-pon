@@ -16,6 +16,7 @@ type SearchParams = {
   date_to?: string;
   q?: string;
   status?: string;
+  takeaway?: string;
   page?: string;
 };
 
@@ -48,6 +49,8 @@ export default async function TransactionsPage({
   const q = (sp.q ?? '').trim();
   const statusFilter =
     sp.status === 'pending_review' || sp.status === 'confirmed' ? sp.status : null;
+  const takeawayFilter =
+    sp.takeaway === 'yes' ? true : sp.takeaway === 'no' ? false : null;
 
   const fromIso = businessDayRange(dateFrom).start;
   const toIso = businessDayRange(dateTo).end;
@@ -61,6 +64,7 @@ export default async function TransactionsPage({
     .lt('created_at', toIso);
   if (q !== '') summaryQuery = summaryQuery.ilike('customer_name', `%${q}%`);
   if (statusFilter) summaryQuery = summaryQuery.eq('status', statusFilter);
+  if (takeawayFilter !== null) summaryQuery = summaryQuery.eq('is_takeaway', takeawayFilter);
 
   const { data: allMatching } = await summaryQuery;
 
@@ -81,7 +85,7 @@ export default async function TransactionsPage({
   let listQuery = supabase
     .from('transactions')
     .select(
-      'id, created_at, status, customer_name, table_no, handwritten_total, transaction_items(qty, unit_price_snapshot)',
+      'id, created_at, status, customer_name, table_no, handwritten_total, is_takeaway, transaction_items(qty, unit_price_snapshot)',
       { count: 'exact' }
     )
     .is('deleted_at', null)
@@ -91,6 +95,7 @@ export default async function TransactionsPage({
 
   if (q !== '') listQuery = listQuery.ilike('customer_name', `%${q}%`);
   if (statusFilter) listQuery = listQuery.eq('status', statusFilter);
+  if (takeawayFilter !== null) listQuery = listQuery.eq('is_takeaway', takeawayFilter);
 
   const offset = (page - 1) * PAGE_SIZE;
   listQuery = listQuery.range(offset, offset + PAGE_SIZE - 1);
@@ -107,6 +112,7 @@ export default async function TransactionsPage({
       customer_name: tx.customer_name,
       table_no: tx.table_no,
       handwritten_total: tx.handwritten_total,
+      is_takeaway: tx.is_takeaway,
       total,
       item_count: lines.length,
     };
@@ -114,7 +120,7 @@ export default async function TransactionsPage({
 
   const totalMatching = (allMatching ?? []).length;
   const rangeLabel = formatRangeLabel(dateFrom, dateTo);
-  const hasActiveFilter = q !== '' || statusFilter !== null;
+  const hasActiveFilter = q !== '' || statusFilter !== null || takeawayFilter !== null;
 
   return (
     <div className="space-y-8">

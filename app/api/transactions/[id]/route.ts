@@ -15,6 +15,7 @@ const PatchSchema = z.object({
   customer_name: z.string().nullable().optional(),
   table_no: z.string().nullable().optional(),
   handwritten_total: z.number().int().nonnegative().nullable().optional(),
+  is_takeaway: z.boolean().optional(),
   items: z
     .array(
       z.object({
@@ -123,6 +124,7 @@ export async function PATCH(
       patch_set_customer_name: parsed.data.customer_name !== undefined,
       patch_set_table_no: parsed.data.table_no !== undefined,
       patch_set_handwritten_total: parsed.data.handwritten_total !== undefined,
+      patch_set_is_takeaway: parsed.data.is_takeaway ?? null,
     });
 
     const headerStatus = await applyHeaderUpdate(supabase, id, parsed.data, evt);
@@ -229,6 +231,7 @@ async function applyHeaderUpdate(
     headerUpdate.handwritten_total = patch.handwritten_total;
     evt.set('total_changed', true);
   }
+  if (patch.is_takeaway !== undefined) headerUpdate.is_takeaway = patch.is_takeaway;
 
   if (Object.keys(headerUpdate).length === 0) return { kind: 'ok' };
 

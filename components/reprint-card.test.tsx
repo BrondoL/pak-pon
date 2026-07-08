@@ -12,6 +12,7 @@ const txBase = {
   created_at: '2026-06-23T07:32:00.000Z',
   customer_name: 'Pak Budi',
   table_no: '5',
+  is_takeaway: false,
 };
 
 // Helper to build item with optional flags.

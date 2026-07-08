@@ -19,6 +19,7 @@ export function DateFilter() {
   const dateTo = sp.get('date_to') ?? dateFrom;
   const q = sp.get('q') ?? '';
   const status = sp.get('status') ?? '';
+  const takeaway = sp.get('takeaway') ?? '';
 
   // Local mirror of `q` so the input stays responsive while typing;
   // the URL (and thus server query) is only updated after debounce.
@@ -69,7 +70,7 @@ export function DateFilter() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <div>
           <Label htmlFor="date_from">Dari tanggal</Label>
           <Input
@@ -110,6 +111,19 @@ export function DateFilter() {
               <SelectItem value="all">Semua</SelectItem>
               <SelectItem value="confirmed">Confirmed</SelectItem>
               <SelectItem value="pending_review">Pending Review</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="takeaway">Bungkus</Label>
+          <Select value={takeaway || 'all'} onValueChange={(v) => update('takeaway', v === 'all' ? '' : String(v))}>
+            <SelectTrigger id="takeaway" className="mt-2 w-full">
+              <SelectValue placeholder="Semua" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua</SelectItem>
+              <SelectItem value="yes">Bungkus</SelectItem>
+              <SelectItem value="no">Makan sini</SelectItem>
             </SelectContent>
           </Select>
         </div>

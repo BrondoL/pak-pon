@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -29,6 +30,7 @@ type Transaction = {
   handwritten_total: number | null;
   customer_name: string | null;
   table_no: string | null;
+  is_takeaway: boolean;
   created_at: string;
 };
 
@@ -103,7 +105,7 @@ function detectModalContext(
 }
 
 async function submitPrintJob(args: {
-  tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null };
+  tx: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null; is_takeaway: boolean };
   target: PrinterTarget;
   items: ItemForQueue[];
   trigger: 'auto' | 'auto_additional' | 'reprint';
@@ -115,6 +117,7 @@ async function submitPrintJob(args: {
       created_at: new Date(args.tx.created_at),
       customer_name: args.tx.customer_name,
       table_no: args.tx.table_no,
+      is_takeaway: args.tx.is_takeaway,
       items: args.items.map((i) => ({
         qty: i.qty,
         name: i.menu_name_snapshot,
@@ -163,6 +166,7 @@ export function NotaReviewForm({
   );
   const [customerName, setCustomerName] = useState<string>(transaction.customer_name ?? '');
   const [tableNo, setTableNo] = useState<string>(transaction.table_no ?? '');
+  const [isTakeaway, setIsTakeaway] = useState<boolean>(transaction.is_takeaway);
   const [editing, setEditing] = useState<NotaItem | null>(null);
   const [adding, setAdding] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -245,9 +249,21 @@ export function NotaReviewForm({
   async function handleConfirm() {
     setSubmitError(null);
     // Edit save (tx sudah confirmed) + ada items existing yang dimodifikasi
-    // (qty/menu/notes) → tampilkan modal pilihan reprint, bukan langsung save.
+    // (qty/menu/notes) atau flag bungkus di-toggle → tampilkan modal pilihan
+    // reprint. Kalau bungkus berubah, mark semua target existing jadi modified
+    // supaya dapur/minuman dikasih tiket baru dengan/tanpa banner BUNGKUS.
     if (transaction.status === 'confirmed') {
       const ctx = detectModalContext(initialItems, items, menus);
+      const takeawayChanged = isTakeaway !== transaction.is_takeaway;
+      if (takeawayChanged) {
+        const categoryByMenuId = new Map(menus.map((m) => [m.id, m.category]));
+        for (const it of items) {
+          if (!it.id) continue;
+          const cat = categoryByMenuId.get(it.menu_id);
+          if (cat === 'makanan' || cat === 'nasi') ctx.modified.dapur = true;
+          else if (cat === 'minuman') ctx.modified.minuman = true;
+        }
+      }
       if (ctx.modified.dapur || ctx.modified.minuman) {
         setModificationModal(ctx);
         return;
@@ -262,6 +278,7 @@ export function NotaReviewForm({
       status: 'confirmed' as const,
       customer_name: customerName.trim() === '' ? null : customerName.trim(),
       table_no: tableNo.trim() === '' ? null : tableNo.trim(),
+      is_takeaway: isTakeaway,
       items: items.map((it, idx) => ({
         id: it.id,
         menu_id: it.menu_id,
@@ -288,6 +305,7 @@ export function NotaReviewForm({
           created_at: string;
           customer_name: string | null;
           table_no: string | null;
+          is_takeaway: boolean;
         };
         items: Array<{
           id: string;
@@ -448,6 +466,34 @@ export function NotaReviewForm({
                 />
               </div>
             </div>
+
+            <label
+              htmlFor="takeaway-switch"
+              className={[
+                'mt-4 flex cursor-pointer items-center justify-between gap-4 rounded-lg border px-4 py-3 transition-colors',
+                isTakeaway
+                  ? 'border-gold/60 bg-gold-faint'
+                  : 'border-clay-soft/60 bg-paper',
+              ].join(' ')}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 font-medium text-coal">
+                  <span aria-hidden>📦</span>
+                  <span>Dibungkus</span>
+                </div>
+                <p className="mt-0.5 text-xs text-coal-soft">
+                  {isTakeaway
+                    ? 'Tiket dapur akan bertanda BUNGKUS besar.'
+                    : 'Nyalakan kalau nota ini pesanan bungkus (bukan makan sini).'}
+                </p>
+              </div>
+              <Switch
+                id="takeaway-switch"
+                checked={isTakeaway}
+                onCheckedChange={setIsTakeaway}
+                aria-label="Tandai transaksi sebagai dibungkus"
+              />
+            </label>
           </Card>
 
           {showThousandsBanner && suggestThousands.suggest && (

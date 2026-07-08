@@ -13,6 +13,7 @@ export type TxRow = {
   customer_name: string | null;
   table_no: string | null;
   handwritten_total: number | null;
+  is_takeaway: boolean;
   total: number;
   item_count: number;
 };
@@ -117,6 +118,11 @@ export function TransactionList({
                         {tx.table_no && (
                           <span className="rounded bg-clay-mist/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-coal-soft">
                             Meja {tx.table_no}
+                          </span>
+                        )}
+                        {tx.is_takeaway && (
+                          <span className="rounded-full bg-gold-faint px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gold-dark">
+                            📦 Bungkus
                           </span>
                         )}
                         {tx.status === 'pending_review' && (

@@ -25,6 +25,7 @@ export type TicketInput = {
   created_at: Date;
   customer_name: string | null;
   table_no: string | null;
+  is_takeaway?: boolean;
   items: Array<{
     qty: number;
     name: string;
@@ -142,6 +143,18 @@ export function renderKitchenTicket(
     parts.push(BOLD_OFF);
   }
 
+  // BUNGKUS banner — DOUBLE SIZE + bold + centered. Ditaruh sebelum info block
+  // supaya jadi hal pertama yang dilihat dapur waktu tiket keluar (biar packing beda).
+  if (input.is_takeaway) {
+    parts.push(ALIGN_CENTER);
+    parts.push(BOLD_ON);
+    parts.push(DOUBLE_SIZE_ON);
+    parts.push(encodeText('*** BUNGKUS ***'));
+    parts.push(DOUBLE_SIZE_OFF);
+    parts.push(BOLD_OFF);
+    parts.push(lineFeed(1));
+  }
+
   // Info block.
   parts.push(ALIGN_LEFT);
   parts.push(encodeText(heavySeparator));
@@ -156,6 +169,10 @@ export function renderKitchenTicket(
   }
   if (input.table_no) {
     parts.push(encodeText(labelLine('Meja', input.table_no, labelWidth)));
+    parts.push(lineFeed(1));
+  }
+  if (input.is_takeaway) {
+    parts.push(encodeText(labelLine('Tipe', 'BUNGKUS', labelWidth)));
     parts.push(lineFeed(1));
   }
   parts.push(encodeText(heavySeparator));
@@ -237,6 +254,10 @@ export function renderCustomerReceipt(
   }
   if (input.table_no) {
     parts.push(encodeText(labelLine('Meja', input.table_no, labelWidth)));
+    parts.push(lineFeed(1));
+  }
+  if (input.is_takeaway) {
+    parts.push(encodeText(labelLine('Tipe', 'Bungkus', labelWidth)));
     parts.push(lineFeed(1));
   }
 
