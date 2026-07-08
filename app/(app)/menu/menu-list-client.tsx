@@ -15,6 +15,14 @@ import {
 import { formatRp } from '@/lib/currency';
 import { MenuForm, type MenuFormValues } from '@/components/menu-form';
 
+type MenuChip = {
+  id: string;
+  label: string;
+  price_delta: number;
+  mutex_group: string | null;
+  sort_order: number;
+};
+
 type Menu = {
   id: string;
   name: string;
@@ -22,6 +30,7 @@ type Menu = {
   price: number;
   sort_order: number;
   is_active: boolean;
+  chips?: MenuChip[];
 };
 
 const CATEGORY_LABEL: Record<Menu['category'], string> = {
@@ -98,7 +107,7 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
             Sumber kebenaran harga & nama menu. Dipakai OCR untuk mencocokkan item dari nota.
           </p>
         </div>
-        <Button onClick={() => setEditing({ category: 'makanan', sort_order: 0 })}>
+        <Button onClick={() => setEditing({ category: 'makanan', sort_order: 0, chips: [] })}>
           + Menu baru
         </Button>
       </div>
@@ -145,7 +154,7 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
             dari yang paling sering dijual.
           </p>
           <div className="mt-6">
-            <Button onClick={() => setEditing({ category: 'makanan', sort_order: 0 })}>
+            <Button onClick={() => setEditing({ category: 'makanan', sort_order: 0, chips: [] })}>
               + Tambah menu pertama
             </Button>
           </div>
@@ -191,6 +200,11 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
                               nonaktif
                             </span>
                           )}
+                          {m.chips && m.chips.length > 0 && (
+                            <span className="rounded-full bg-cream px-2 py-0.5 text-[10px] text-clay">
+                              {m.chips.length} pilihan
+                            </span>
+                          )}
                         </div>
                         <div className="mt-0.5 flex items-center gap-2 text-xs text-clay">
                           <span className="font-display text-sm tracking-tight text-coal-soft">
@@ -227,7 +241,21 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => setEditing(m)}
+                            onClick={() => setEditing({
+                              id: m.id,
+                              name: m.name,
+                              category: m.category,
+                              price: m.price,
+                              sort_order: m.sort_order,
+                              is_active: m.is_active,
+                              chips: (m.chips ?? []).map((c) => ({
+                                id: c.id,
+                                label: c.label,
+                                price_delta: c.price_delta,
+                                mutex_group: c.mutex_group ?? '',
+                                sort_order: c.sort_order,
+                              })),
+                            })}
                           >
                             Edit
                           </Button>
