@@ -43,6 +43,7 @@ type ItemForQueue = {
   menu_category: string;
   unit_price_snapshot: number;
   notes: string | null;
+  applied_chips: Array<{ label: string; price_delta: number }>;
   printed_dapur_at: string | null;
   printed_minuman_at: string | null;
 };
@@ -82,6 +83,9 @@ function detectModalContext(
       else if (isMinuman) newItems.minuman += 1;
     }
   }
+  function chipsKey(chips: Array<{ label: string }> | undefined): string {
+    return (chips ?? []).map((c) => c.label).sort().join('|');
+  }
   for (const cur of current) {
     if (!cur.id) {
       // Item baru — count untuk display di modal.
@@ -90,10 +94,12 @@ function detectModalContext(
     }
     const orig = initialById.get(cur.id);
     if (!orig) continue;
+    const chipsChanged = chipsKey(orig.applied_chips) !== chipsKey(cur.applied_chips);
     const changed =
       orig.menu_id !== cur.menu_id ||
       orig.qty !== cur.qty ||
-      orig.notes !== cur.notes;
+      orig.notes !== cur.notes ||
+      chipsChanged;
     if (!changed) continue;
     markTarget(categoryByMenuId.get(cur.menu_id), 'modified');
     // Swap category (e.g. makanan → minuman) → target lama juga affected.
@@ -123,6 +129,7 @@ async function submitPrintJob(args: {
         name: i.menu_name_snapshot,
         unit_price: i.unit_price_snapshot,
         note: i.notes,
+        applied_chips: i.applied_chips,
       })),
     },
     args.printerSettings,
@@ -284,6 +291,7 @@ export function NotaReviewForm({
         menu_id: it.menu_id,
         qty: it.qty,
         notes: it.notes,
+        chip_labels: (it.applied_chips ?? []).map((c) => c.label),
         sort_order: idx,
         confidence: it.confidence,
       })),
@@ -314,6 +322,7 @@ export function NotaReviewForm({
           unit_price_snapshot: number;
           qty: number;
           notes: string | null;
+          applied_chips: Array<{ label: string; price_delta: number }>;
           printed_dapur_at: string | null;
           printed_minuman_at: string | null;
         }>;
@@ -330,6 +339,7 @@ export function NotaReviewForm({
           menu_category: menu?.category ?? 'makanan',
           unit_price_snapshot: it.unit_price_snapshot,
           notes: it.notes,
+          applied_chips: it.applied_chips ?? [],
           printed_dapur_at: it.printed_dapur_at,
           printed_minuman_at: it.printed_minuman_at,
         };

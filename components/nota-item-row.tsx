@@ -10,6 +10,7 @@ export type NotaItem = {
   unit_price_snapshot: number;
   qty: number;
   notes: string | null;
+  applied_chips?: Array<{ label: string; price_delta: number }>;
   sort_order: number;
   confidence: number | null;
   _localId: string;
