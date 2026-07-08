@@ -117,13 +117,28 @@ Konteks: web `output_tokens` (18.2k) mismatch Google dashboard (83.7k) — terny
 
 ---
 
+## Plan 7 — POS Direct Order + Per-Menu Chips ✅ COMPLETE (2026-07-08)
+
+Spec: `docs/superpowers/specs/2026-07-08-pos-direct-order-with-chips-design.md`
+Plan: `docs/superpowers/plans/2026-07-08-pos-direct-order-with-chips.md`
+
+- `/pos` hybrid layout (menu picker grid + cart), single-shot save = `confirmed` + auto-print kitchen (skip pending_review).
+- Table `menu_chips` (label / price_delta ≥0 / mutex_group nullable / sort_order), hard-delete via ON DELETE CASCADE.
+- `applied_chips` jsonb snapshot on `transaction_items` — historical safe, `mutex_group` intentionally NOT snapshotted.
+- Multi-select chip picker dengan mutex_group section (radio behavior per grup, 0-selected allowed) + "Pilihan cepat" section (free multi-select).
+- Kitchen ticket: chip labels (bold) + free-text notes lines. Customer receipt: chip yg `price_delta > 0` only, skip notes.
+- Menu master (`components/menu-form.tsx`) extended inline chip editor. Menu list badge "N pilihan".
+- `POST /api/pos` bikin tx `confirmed` dengan chip snapshot server-side (buildAppliedChipsSnapshot + validateChipMutex from `lib/menu-chips.ts`).
+- `PATCH /api/transactions/[id]` accept `chip_labels` per item + snapshot server-side. `computeReplaceItems` preserve historical unit_price kalau menu + chips unchanged.
+- Existing OCR flow zero-regression — items default `applied_chips = []`.
+- Migration `0032_menu_chips_and_applied.sql` (also makes `scan_image_path` idempotently nullable for POS tx without foto).
+
+---
+
 ## Backlog (belum dijadwalkan)
 
 ### 🍽️ POS / Order entry
-- [ ] **POS direct order** — input order langsung dari menu picker, tanpa foto nota. Komplemen dari /scan untuk dine-in cepat atau saat nota fisik habis.
-  - **Notes per item** — sudah ada `transaction_items.notes` (text nullable, dipakai OCR untuk "DP", "Dada"). POS pakai field yang sama untuk input bebas: "jangan terlalu garing", "tanpa sambel", "extra pedas"
-  - **Quick-pick chips untuk notes** — di modal pick item, kasih chip suggestion umum (Dada, Paha, DP, No sambel, Extra pedas) supaya kasir tap-tap aja tanpa ngetik
-  - **Harga tetap (notes = kitchen instruction, BUKAN variant)** — kalau dada vs paha beda harga, daftarin sebagai menu terpisah di master ("Ayam Goreng Dada" Rp 19k, "Ayam Goreng Paha" Rp 22k). Notes cuma instruksi dapur, tidak ubah harga. Konsisten dengan keputusan Q3 spec utama.
+- [x] **POS direct order + per-menu chips** — shipped 2026-07-08. `/pos` route hybrid layout (menu picker grid + cart), per-menu chips (multi-select + optional `mutex_group` radio behavior + optional `price_delta`), snapshot in `transaction_items.applied_chips` jsonb. Kitchen ticket render chip labels + free-text notes; customer receipt render paid chips only. Menu master extended dengan inline chip editor (label / +Harga / Grup). Spec: `docs/superpowers/specs/2026-07-08-pos-direct-order-with-chips-design.md`. Plan: `docs/superpowers/plans/2026-07-08-pos-direct-order-with-chips.md`.
 - [ ] **Mark menu "habis hari ini"** — toggle harian per menu yang reset jam 12 siang (mengikuti business-day cutoff). Kasir tau lele/ayam stok abis tanpa nelpon dapur. Tidak muncul di POS menu picker, di-flag di OCR scan ("⚠️ menu ini sudah ditandai habis hari ini, masih mau tetap simpan?")
 
 ### 📊 Reporting / Export
