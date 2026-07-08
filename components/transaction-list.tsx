@@ -14,6 +14,7 @@ export type TxRow = {
   table_no: string | null;
   handwritten_total: number | null;
   is_takeaway: boolean;
+  source: 'pos' | 'ocr';
   total: number;
   item_count: number;
 };
@@ -118,6 +119,11 @@ export function TransactionList({
                         {tx.table_no && (
                           <span className="rounded bg-clay-mist/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-coal-soft">
                             Meja {tx.table_no}
+                          </span>
+                        )}
+                        {tx.source === 'pos' && (
+                          <span className="rounded-full bg-leaf/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-leaf">
+                            POS
                           </span>
                         )}
                         {tx.is_takeaway && (

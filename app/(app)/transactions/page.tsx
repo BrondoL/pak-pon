@@ -85,7 +85,7 @@ export default async function TransactionsPage({
   let listQuery = supabase
     .from('transactions')
     .select(
-      'id, created_at, status, customer_name, table_no, handwritten_total, is_takeaway, transaction_items(qty, unit_price_snapshot)',
+      'id, created_at, status, customer_name, table_no, handwritten_total, is_takeaway, scan_image_path, transaction_items(qty, unit_price_snapshot)',
       { count: 'exact' }
     )
     .is('deleted_at', null)
@@ -113,6 +113,10 @@ export default async function TransactionsPage({
       table_no: tx.table_no,
       handwritten_total: tx.handwritten_total,
       is_takeaway: tx.is_takeaway,
+      // scan_image_path === null reliably means POS (created via POST /api/pos).
+      // OCR/scan flow always uploads image first. Retention cron for cleaning
+      // old scan images (backlog) not yet shipped — when it lands, revisit.
+      source: tx.scan_image_path === null ? 'pos' as const : 'ocr' as const,
       total,
       item_count: lines.length,
     };
