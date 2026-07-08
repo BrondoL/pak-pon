@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import type { MenuOption } from '@/components/nota-item-modal';
@@ -92,6 +92,9 @@ export function PosClient({
   const [isTakeaway, setIsTakeaway] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Sync guard against double-tap Simpan — setSubmitting is async so a
+  // rapid second tap can enter handleSave before React commits the state.
+  const submitLock = useRef(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const totalAmount = cart.reduce((s, it) => s + it.unit_price_snapshot * it.qty, 0);
@@ -132,6 +135,8 @@ export function PosClient({
 
   async function handleSave() {
     if (cart.length === 0) return;
+    if (submitLock.current) return;
+    submitLock.current = true;
     setSubmitting(true);
     try {
       const payload = {
@@ -193,6 +198,8 @@ export function PosClient({
       toast.error('Gagal menyimpan pesanan', {
         description: err instanceof Error ? err.message : 'Coba lagi.',
       });
+      // Only release the lock on error — successful save redirects away.
+      submitLock.current = false;
     } finally {
       setSubmitting(false);
     }
