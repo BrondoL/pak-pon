@@ -4,8 +4,9 @@
 -- 1. `menu_chips` — variasi/opsi per menu (mis. "Level 3", "+Nasi", "Pisah")
 --    dgn optional price_delta & mutex_group. Owner CRUD via menu master.
 -- 2. `transaction_items.applied_chips` — snapshot chip yg dipilih kasir saat
---    transaksi (label + price_delta + mutex_group). Snapshot supaya history
---    stabil walau chip config berubah.
+--    transaksi (label + price_delta). Snapshot supaya history stabil walau
+--    chip config berubah. `mutex_group` tidak di-snapshot (cuma constraint
+--    input di picker; snapshot noise-free).
 -- 3. `transactions.scan_image_path` — pastikan nullable krn POS direct order
 --    ga ada foto nota. Idempotent guard (aslinya sudah nullable di 0001, tp
 --    defensive check untuk env yg pernah di-tighten manual).
@@ -36,8 +37,9 @@ CREATE POLICY auth_all_menu_chips ON menu_chips
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- 2. transaction_items.applied_chips
--- Array of { label, price_delta, mutex_group } snapshot. Default [] biar
--- backward-compat dgn row existing.
+-- Array of { label, price_delta } snapshot. mutex_group deliberately
+-- excluded — cuma constraint saat picker input. Default [] biar backward-
+-- compat dgn row existing.
 ALTER TABLE transaction_items
   ADD COLUMN applied_chips jsonb NOT NULL DEFAULT '[]'::jsonb;
 
