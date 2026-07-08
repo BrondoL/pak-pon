@@ -70,7 +70,7 @@ export function PosMenuPicker({
           <button
             key={m.id}
             type="button"
-            onClick={() => onMenuTap(m)}
+            onClick={() => { onMenuTap(m); if (isSearching) setSearch(''); }}
             className="flex h-full w-full flex-col justify-between rounded-lg border border-clay-soft bg-paper-soft p-3 text-left transition-colors hover:bg-cream"
           >
             <div>

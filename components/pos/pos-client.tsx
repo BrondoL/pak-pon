@@ -118,6 +118,10 @@ export function PosClient({
     setCart((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  function handleQtyChange(idx: number, nextQty: number) {
+    setCart((prev) => prev.map((c, i) => (i === idx ? { ...c, qty: nextQty } : c)));
+  }
+
   function handleCancel() {
     if (cart.length === 0) {
       router.push('/');
@@ -239,23 +243,62 @@ export function PosClient({
                 </li>
               )}
               {cart.map((it, idx) => (
-                <li key={it._localId} className="flex items-start gap-3 px-5 py-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-coal">
-                      {it.qty}× {it.menu_name_snapshot}
+                <li key={it._localId} className="px-4 py-3 sm:px-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-coal truncate">{it.menu_name_snapshot}</div>
+                      <div className="mt-0.5 text-xs text-clay">{formatRp(it.unit_price_snapshot)}</div>
+                      {it.applied_chips.length > 0 && (
+                        <p className="mt-0.5 text-xs text-clay">
+                          {it.applied_chips.map((c) => c.label).join(', ')}
+                        </p>
+                      )}
+                      {it.notes && (
+                        <p className="mt-0.5 text-xs italic text-clay-soft">{it.notes}</p>
+                      )}
                     </div>
-                    {it.applied_chips.length > 0 && (
-                      <p className="text-xs text-clay">
-                        {it.applied_chips.map((c) => c.label).join(', ')}
-                      </p>
-                    )}
-                    {it.notes && <p className="text-xs italic text-clay-soft">{it.notes}</p>}
+                    <div className="shrink-0 font-display text-base tracking-tight text-coal tabular-nums">
+                      {formatRp(it.unit_price_snapshot * it.qty)}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-display text-sm text-coal">{formatRp(it.unit_price_snapshot * it.qty)}</div>
-                    <div className="mt-1 flex gap-1">
-                      <button type="button" onClick={() => handleEditItem(idx)} aria-label="Edit item" className="rounded p-1 text-xs hover:bg-cream">✏️</button>
-                      <button type="button" onClick={() => handleDeleteItem(idx)} aria-label="Hapus item" className="rounded p-1 text-xs hover:bg-brick-faint">🗑</button>
+
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <div className="inline-flex items-center rounded-lg border border-clay-soft/60 bg-paper">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleQtyChange(idx, Math.max(1, it.qty - 1))}
+                        disabled={it.qty <= 1}
+                        aria-label={`Kurangi jumlah ${it.menu_name_snapshot}`}
+                        className="rounded-r-none text-lg leading-none"
+                      >
+                        −
+                      </Button>
+                      <span
+                        className="min-w-8 px-1 text-center text-sm font-semibold tabular-nums text-coal"
+                        aria-live="polite"
+                      >
+                        {it.qty}
+                      </span>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleQtyChange(idx, Math.min(99, it.qty + 1))}
+                        disabled={it.qty >= 99}
+                        aria-label={`Tambah jumlah ${it.menu_name_snapshot}`}
+                        className="rounded-l-none text-lg leading-none"
+                      >
+                        +
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button size="icon" variant="ghost" onClick={() => handleEditItem(idx)} aria-label={`Edit ${it.menu_name_snapshot}`}>
+                        ✏️
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={() => handleDeleteItem(idx)} aria-label={`Hapus ${it.menu_name_snapshot}`}>
+                        🗑️
+                      </Button>
                     </div>
                   </div>
                 </li>
@@ -270,15 +313,17 @@ export function PosClient({
             </div>
           </Card>
 
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={handleCancel} disabled={pending || submitting}>Batal</Button>
-            <Button
-              onClick={handleSave}
-              disabled={pending || submitting || cart.length === 0}
-              className="flex-1"
-            >
-              {submitting ? 'Menyimpan…' : '✓ Simpan & Cetak'}
-            </Button>
+          <div className="sticky bottom-0 -mx-4 border-t border-clay-soft/60 bg-paper/95 px-4 py-3 shadow-[0_-8px_16px_-8px_rgba(0,0,0,0.08)] backdrop-blur-sm lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:shadow-none lg:backdrop-blur-none">
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={handleCancel} disabled={pending || submitting}>Batal</Button>
+              <Button
+                onClick={handleSave}
+                disabled={pending || submitting || cart.length === 0}
+                className="flex-1"
+              >
+                {submitting ? 'Menyimpan…' : `✓ Simpan & Cetak ${cart.length > 0 ? formatRp(totalAmount) : ''}`}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
