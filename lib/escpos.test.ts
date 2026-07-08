@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderCustomerReceipt, renderKitchenTicket, uint8ToBase64, type TicketInput } from './escpos';
+import { DEFAULT_PRINTER_SETTINGS } from './printer-settings';
 
 const baseInput: TicketInput = {
   daily_seq: 45,
@@ -211,6 +212,50 @@ describe('renderKitchenTicket', () => {
     const bytes = renderKitchenTicket({ ...baseInput, items: [] });
     const ascii = new TextDecoder('latin1').decode(bytes);
     expect(ascii).toContain('Total Item 0');
+  });
+});
+
+describe('renderKitchenTicket with applied_chips', () => {
+  const baseInput: TicketInput = {
+    daily_seq: 42,
+    created_at: new Date('2026-07-08T10:00:00+07:00'),
+    customer_name: null,
+    table_no: '5',
+    is_takeaway: false,
+    items: [{
+      qty: 2,
+      name: 'Ayam Goreng',
+      unit_price: 25000,
+      note: 'pisah nasinya',
+      applied_chips: [
+        { label: 'Dada', price_delta: 3000 },
+        { label: 'Goreng garing', price_delta: 0 },
+      ],
+    }],
+  };
+
+  it('prints chip labels line before free-text note', () => {
+    const bytes = renderKitchenTicket(baseInput, DEFAULT_PRINTER_SETTINGS);
+    const text = new TextDecoder().decode(bytes);
+    expect(text).toContain('Dada, Goreng garing');
+    expect(text).toContain('pisah nasinya');
+    // Chip line comes before note line.
+    expect(text.indexOf('Dada')).toBeLessThan(text.indexOf('pisah nasinya'));
+  });
+
+  it('skips chip line when applied_chips empty', () => {
+    const input = { ...baseInput, items: [{ ...baseInput.items[0], applied_chips: [] }] };
+    const bytes = renderKitchenTicket(input, DEFAULT_PRINTER_SETTINGS);
+    const text = new TextDecoder().decode(bytes);
+    expect(text).not.toContain('Dada');
+    expect(text).toContain('pisah nasinya');
+  });
+
+  it('skips note line when notes null but chips exist', () => {
+    const input = { ...baseInput, items: [{ ...baseInput.items[0], note: null }] };
+    const bytes = renderKitchenTicket(input, DEFAULT_PRINTER_SETTINGS);
+    const text = new TextDecoder().decode(bytes);
+    expect(text).toContain('Dada, Goreng garing');
   });
 });
 

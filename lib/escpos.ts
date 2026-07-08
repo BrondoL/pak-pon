@@ -20,18 +20,21 @@ import {
   type PrinterSettings,
 } from './printer-settings';
 
+export type RenderItem = {
+  qty: number;
+  name: string;
+  unit_price: number;
+  note: string | null;
+  applied_chips?: Array<{ label: string; price_delta: number }>;
+};
+
 export type TicketInput = {
   daily_seq: number;
   created_at: Date;
   customer_name: string | null;
   table_no: string | null;
   is_takeaway?: boolean;
-  items: Array<{
-    qty: number;
-    name: string;
-    unit_price: number;
-    note: string | null;
-  }>;
+  items: RenderItem[];
 };
 
 // ESC/POS command constants
@@ -178,7 +181,7 @@ export function renderKitchenTicket(
   parts.push(encodeText(heavySeparator));
   parts.push(lineFeed(1));
 
-  // Items in DOUBLE SIZE — qty + name uppercase. Notes in normal size below.
+  // Items in DOUBLE SIZE — qty + name uppercase. Chip labels + notes in normal size below.
   let totalQty = 0;
   for (const item of input.items) {
     totalQty += item.qty;
@@ -186,6 +189,16 @@ export function renderKitchenTicket(
     parts.push(encodeText(`${item.qty}x ${item.name.toUpperCase()}`));
     parts.push(DOUBLE_SIZE_OFF);
     parts.push(lineFeed(1));
+
+    // Chip labels line (all chips — zero + paid). Bold to stand out.
+    if (item.applied_chips && item.applied_chips.length > 0) {
+      const chipText = item.applied_chips.map((c) => c.label).join(', ');
+      parts.push(BOLD_ON);
+      parts.push(encodeText(`  > ${chipText}`));
+      parts.push(BOLD_OFF);
+      parts.push(lineFeed(1));
+    }
+    // Free-text notes line.
     if (item.note) {
       parts.push(encodeText(`  > ${item.note}`));
       parts.push(lineFeed(1));
