@@ -213,6 +213,12 @@ export function NotaReviewForm({
     setEditing(null);
   }
 
+  function changeItemQty(localId: string, nextQty: number) {
+    setItems((prev) =>
+      prev.map((p) => (p._localId === localId ? { ...p, qty: nextQty } : p))
+    );
+  }
+
   async function applyThousands() {
     if (!suggestThousands.suggest) return;
     const newTotal = suggestThousands.suggested_total;
@@ -487,6 +493,7 @@ export function NotaReviewForm({
                   item={it}
                   onEdit={() => setEditing(it)}
                   onDelete={() => removeItem(it._localId)}
+                  onQtyChange={(qty) => changeItemQty(it._localId, qty)}
                 />
               ))}
             </ul>

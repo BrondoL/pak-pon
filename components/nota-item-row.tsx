@@ -35,28 +35,29 @@ const TIER_CLASS: Record<Exclude<Tier, null>, { row: string; badge: string }> = 
   },
 };
 
+const MAX_QTY = 99;
+
 export function NotaItemRow({
   item,
   onEdit,
   onDelete,
+  onQtyChange,
 }: {
   item: NotaItem;
   onEdit: () => void;
   onDelete: () => void;
+  onQtyChange: (nextQty: number) => void;
 }) {
   const tier = tierOf(item.confidence);
   const tierClass = tier ? TIER_CLASS[tier] : null;
 
   return (
-    <li className={['px-5 py-3.5', tierClass?.row ?? ''].join(' ')}>
-      <div className="flex items-center justify-between gap-4">
+    <li className={['px-4 py-3 sm:px-5', tierClass?.row ?? ''].join(' ')}>
+      <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
-            <span className="font-medium text-coal truncate">{item.menu_name_snapshot}</span>
-            <span className="text-xs text-clay">× {item.qty}</span>
-          </div>
-          <div className="mt-0.5 flex items-center gap-2 text-xs text-clay">
-            <span>{formatRp(item.unit_price_snapshot)} </span>
+          <div className="font-medium text-coal truncate">{item.menu_name_snapshot}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-clay">
+            <span>{formatRp(item.unit_price_snapshot)}</span>
             {item.notes && (
               <>
                 <span className="text-clay-soft">·</span>
@@ -66,17 +67,47 @@ export function NotaItemRow({
           </div>
         </div>
 
-        <div className="text-right">
-          <div className="font-display text-base tracking-tight text-coal">
-            {formatRp(item.unit_price_snapshot * item.qty)}
-          </div>
+        <div className="shrink-0 font-display text-base tracking-tight text-coal tabular-nums">
+          {formatRp(item.unit_price_snapshot * item.qty)}
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="inline-flex items-center rounded-lg border border-clay-soft/60 bg-paper">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onQtyChange(Math.max(1, item.qty - 1))}
+            disabled={item.qty <= 1}
+            aria-label={`Kurangi jumlah ${item.menu_name_snapshot}`}
+            className="rounded-r-none text-lg leading-none"
+          >
+            −
+          </Button>
+          <span
+            className="min-w-8 px-1 text-center text-sm font-semibold tabular-nums text-coal"
+            aria-live="polite"
+            aria-label={`Jumlah ${item.qty}`}
+          >
+            {item.qty}
+          </span>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onQtyChange(Math.min(MAX_QTY, item.qty + 1))}
+            disabled={item.qty >= MAX_QTY}
+            aria-label={`Tambah jumlah ${item.menu_name_snapshot}`}
+            className="rounded-l-none text-lg leading-none"
+          >
+            +
+          </Button>
         </div>
 
         <div className="flex items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={onEdit} aria-label={`Edit ${item.menu_name_snapshot}`}>
+          <Button size="icon" variant="ghost" onClick={onEdit} aria-label={`Edit ${item.menu_name_snapshot}`}>
             ✏️
           </Button>
-          <Button size="sm" variant="ghost" onClick={onDelete} aria-label={`Hapus ${item.menu_name_snapshot}`}>
+          <Button size="icon" variant="ghost" onClick={onDelete} aria-label={`Hapus ${item.menu_name_snapshot}`}>
             🗑️
           </Button>
         </div>
