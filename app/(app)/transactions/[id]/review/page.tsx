@@ -45,11 +45,28 @@ export default async function ReviewPage({
 
   const { data: menusData } = await supabase
     .from('menus')
-    .select('id, name, category, price')
+    .select(`
+      id, name, category, price,
+      chips:menu_chips(id, label, price_delta, mutex_group, sort_order)
+    `)
     .eq('is_active', true)
     .order('category')
     .order('name');
-  const menus: MenuOption[] = menusData ?? [];
+
+  type MenuRow = {
+    id: string;
+    name: string;
+    category: MenuOption['category'];
+    price: number;
+    chips: MenuOption['chips'] | null;
+  };
+  const menus: MenuOption[] = ((menusData ?? []) as MenuRow[]).map((m) => ({
+    id: m.id,
+    name: m.name,
+    category: m.category,
+    price: m.price,
+    chips: [...(m.chips ?? [])].sort((a, b) => a.sort_order - b.sort_order),
+  }));
 
   let scanUrl: string | null = null;
   if (tx.scan_image_path) {

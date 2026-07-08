@@ -19,6 +19,13 @@ export type MenuOption = {
   name: string;
   category: 'makanan' | 'nasi' | 'minuman';
   price: number;
+  chips: Array<{
+    id: string;
+    label: string;
+    price_delta: number;
+    mutex_group: string | null;
+    sort_order: number;
+  }>;
 };
 
 const CATEGORY_ORDER: MenuOption['category'][] = ['makanan', 'nasi', 'minuman'];
@@ -45,8 +52,32 @@ export function NotaItemModal({
   const [qty, setQty] = useState<number>(initial?.qty ?? 1);
   const [notes, setNotes] = useState<string>(initial?.notes ?? '');
   const [search, setSearch] = useState<string>('');
+  const [selectedChipLabels, setSelectedChipLabels] = useState<string[]>(
+    initial?.applied_chips?.map((c) => c.label) ?? []
+  );
+  // Track which menu the chip selection belongs to so we can reset it
+  // during render (React-recommended pattern) whenever kasir picks a
+  // different menu — chips from previous menu are invalid.
+  const [chipsMenuId, setChipsMenuId] = useState<string>(initial?.menu_id ?? menus[0]?.id ?? '');
+  if (chipsMenuId !== menuId) {
+    setChipsMenuId(menuId);
+    setSelectedChipLabels(
+      initial && menuId === initial.menu_id
+        ? initial.applied_chips?.map((c) => c.label) ?? []
+        : []
+    );
+  }
 
   const selectedMenu = menus.find((m) => m.id === menuId);
+
+  const chipDelta = useMemo(() => {
+    if (!selectedMenu) return 0;
+    return selectedMenu.chips
+      .filter((c) => selectedChipLabels.includes(c.label))
+      .reduce((sum, c) => sum + c.price_delta, 0);
+  }, [selectedMenu, selectedChipLabels]);
+
+  const effectiveUnitPrice = (selectedMenu?.price ?? 0) + chipDelta;
 
   // Default tab: edit item → initial's category. New item → makanan (most-used).
   const [activeCategory, setActiveCategory] = useState<MenuOption['category']>(
@@ -70,19 +101,29 @@ export function NotaItemModal({
 
   function handleSave() {
     if (!selectedMenu || qty < 1) return;
-    // Snapshot follows the selected menu: if kasir picked a different menu mid-edit,
-    // the name + price MUST update. Only preserve old snapshot when menu hasn't changed
-    // (keeps historical price if the menu's master price drifted since first scan).
     const menuChanged = !initial?.id || initial.menu_id !== selectedMenu.id;
+    const applied_chips = selectedMenu.chips
+      .filter((c) => selectedChipLabels.includes(c.label))
+      .map((c) => ({ label: c.label, price_delta: c.price_delta }));
+    // Preserve historical unit_price for unchanged menu + unchanged chips.
+    const origChipsKey = (initial?.applied_chips ?? [])
+      .map((c) => c.label).sort().join('|');
+    const newChipsKey = applied_chips.map((c) => c.label).sort().join('|');
+    const chipsChanged = origChipsKey !== newChipsKey;
+    const preserveOldPrice = !menuChanged && !chipsChanged && initial?.unit_price_snapshot;
+    const chipDeltaSum = applied_chips.reduce((s, c) => s + c.price_delta, 0);
+    const unit_price_snapshot = preserveOldPrice
+      ? initial.unit_price_snapshot
+      : selectedMenu.price + chipDeltaSum;
     onSave({
       id: initial?.id,
       _localId: initial?._localId ?? crypto.randomUUID(),
       menu_id: selectedMenu.id,
       menu_name_snapshot: menuChanged ? selectedMenu.name : initial.menu_name_snapshot,
-      unit_price_snapshot: menuChanged ? selectedMenu.price : initial.unit_price_snapshot,
+      unit_price_snapshot,
       qty,
       notes: notes.trim() === '' ? null : notes,
-      applied_chips: initial?.applied_chips ?? [],
+      applied_chips,
       sort_order: initial?.sort_order ?? 0,
       confidence: null,
     });
@@ -200,10 +241,18 @@ export function NotaItemModal({
                 +
               </Button>
               <span className="ml-auto font-display text-lg text-coal">
-                {selectedMenu ? formatRp(selectedMenu.price * qty) : '—'}
+                {selectedMenu ? formatRp(effectiveUnitPrice * qty) : '—'}
               </span>
             </div>
           </div>
+
+          {selectedMenu && selectedMenu.chips.length > 0 && (
+            <ChipPicker
+              chips={selectedMenu.chips}
+              selectedLabels={selectedChipLabels}
+              onChange={setSelectedChipLabels}
+            />
+          )}
 
           <div>
             <Label htmlFor="notes">Catatan (opsional)</Label>
@@ -232,5 +281,102 @@ export function NotaItemModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ChipPicker({
+  chips,
+  selectedLabels,
+  onChange,
+}: {
+  chips: MenuOption['chips'];
+  selectedLabels: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const groups = useMemo(() => {
+    const mutex = new Map<string, typeof chips>();
+    const free: typeof chips = [];
+    for (const c of chips) {
+      if (c.mutex_group) {
+        const arr = mutex.get(c.mutex_group) ?? [];
+        arr.push(c);
+        mutex.set(c.mutex_group, arr);
+      } else {
+        free.push(c);
+      }
+    }
+    for (const arr of mutex.values()) arr.sort((a, b) => a.sort_order - b.sort_order);
+    free.sort((a, b) => a.sort_order - b.sort_order);
+    const mutexSections = Array.from(mutex.entries())
+      .map(([name, list]) => ({ name, list, minOrder: list[0]?.sort_order ?? 0 }))
+      .sort((a, b) => a.minOrder - b.minOrder);
+    return { mutexSections, free };
+  }, [chips]);
+
+  function toggleFreeChip(label: string) {
+    onChange(
+      selectedLabels.includes(label)
+        ? selectedLabels.filter((l) => l !== label)
+        : [...selectedLabels, label]
+    );
+  }
+
+  function pickMutexChip(groupChips: typeof chips, label: string) {
+    const groupLabels = new Set(groupChips.map((c) => c.label));
+    const withoutGroup = selectedLabels.filter((l) => !groupLabels.has(l));
+    const isCurrentlySelected = selectedLabels.includes(label);
+    onChange(isCurrentlySelected ? withoutGroup : [...withoutGroup, label]);
+  }
+
+  function renderChip(label: string, priceDelta: number, isSelected: boolean, onClick: () => void) {
+    const displayLabel = priceDelta > 0 ? `${label} +${Math.round(priceDelta / 1000)}k` : label;
+    return (
+      <button
+        key={label}
+        type="button"
+        onClick={onClick}
+        className={[
+          'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+          isSelected
+            ? 'border-coal bg-coal text-paper'
+            : 'border-clay-soft bg-paper-soft text-coal hover:bg-cream',
+        ].join(' ')}
+      >
+        {displayLabel}
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {groups.mutexSections.map((section) => (
+        <div key={section.name}>
+          <Label className="mb-2 block text-xs uppercase tracking-wide text-clay">
+            {section.name} (pilih satu)
+          </Label>
+          <div className="flex flex-wrap gap-2">
+            {section.list.map((c) =>
+              renderChip(c.label, c.price_delta, selectedLabels.includes(c.label), () =>
+                pickMutexChip(section.list, c.label)
+              )
+            )}
+          </div>
+        </div>
+      ))}
+      {groups.free.length > 0 && (
+        <div>
+          <Label className="mb-2 block text-xs uppercase tracking-wide text-clay">
+            Pilihan cepat
+          </Label>
+          <div className="flex flex-wrap gap-2">
+            {groups.free.map((c) =>
+              renderChip(c.label, c.price_delta, selectedLabels.includes(c.label), () =>
+                toggleFreeChip(c.label)
+              )
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
