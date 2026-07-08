@@ -16,6 +16,18 @@ const tiles = [
     ),
   },
   {
+    href: '/pos',
+    title: 'Buat Pesanan',
+    subtitle: 'Input langsung tanpa nota',
+    accent: 'gold',
+    glyph: (
+      <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
+        <path d="M7 7h18l-2 14a2 2 0 01-2 2H11a2 2 0 01-2-2L7 7z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="M12 11v-2a4 4 0 018 0v2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: '/transactions',
     title: 'History',
     subtitle: 'Transaksi tersimpan',
@@ -57,6 +69,7 @@ const accentClasses: Record<string, { bg: string; text: string }> = {
   coal:    { bg: 'bg-clay-mist',     text: 'text-coal' },
   mustard: { bg: 'bg-mustard-faint', text: 'text-mustard' },
   leaf:    { bg: 'bg-leaf/10',       text: 'text-leaf' },
+  gold:    { bg: 'bg-gold-faint',    text: 'text-gold' },
 };
 
 export function HomeTiles() {
