@@ -82,6 +82,53 @@ Owner CRUD menu:
 - **HP kasir / owner** (responsif) — layout 1-kolom stacked dengan tombol Simpan sticky di bawah
 - **Login shared** — 1 akun untuk semua (owner + kasir), Supabase Auth
 
+### 2.7. Print Agent — Aplikasi Android pendamping
+
+Aplikasi tambahan **Pak Pon Agent** (native Android) berjalan di **satu HP terpisah** (bisa HP bekas atau tablet kecil) yang terhubung Wi-Fi ke printer thermal LAN. Fungsinya sebagai jembatan antara web app dan printer.
+
+**Kenapa perlu HP terpisah untuk agent?**
+- Printer thermal komunikasinya lewat protokol TCP socket di port 9100 — ga bisa langsung dari browser web
+- HP jadi "controller" yang selalu online, terima instruksi cetak dari web, terus kirim ke printer via Wi-Fi
+- HP ini di taruh di dekat kasir/printer, colok charger, biarkan running
+
+**Fitur utama:**
+- ✅ **Auto-print** — begitu kasir Simpan transaksi di web, notifikasi cetak masuk ke HP agent → printer keluar kertas ~1-2 detik kemudian
+- ✅ **Tahan OS freeze** — Android modern (khususnya merek HP Cina seperti HiOS/MIUI/EMUI) suka mem-freeze aplikasi background untuk hemat baterai. Agent pakai **Firebase Cloud Messaging** yang system-level (Google Play Services) — tetap bisa dibangunkan bahkan saat HP idle atau di-lock screen
+- ✅ **Polling backup** — kalau FCM sekali-sekali telat, agent juga cek database tiap 60 detik untuk cari job yang belum di-cetak
+- ✅ **Heartbeat monitoring** — agent kirim sinyal "saya online" tiap 30 detik ke database. Web tampilkan banner warning kalau agent offline atau stale
+- ✅ **Multi-agent support** — kalau ada 2 HP agent (mis. cadangan), owner bisa pilih 1 sebagai "primary" via web setup page. Cuma primary yang terima print job (no fan-out race)
+- ✅ **Retry from history** — kalau ada print gagal (mis. printer kehabisan kertas), owner buka tab History di agent → tap Retry → cetak ulang tanpa harus edit transaksi di web
+- ✅ **Test print** — tombol test connection di Settings buat pastiin IP printer bener sebelum go-live
+
+**Yang tampil di layar HP agent:**
+- **Status tab** — indikator online/offline, job yang lagi di-process, tombol "Cek pending" manual
+- **History tab** — 50 print job terakhir dengan status (done/failed/pending) + tombol Retry per job
+- **Settings tab** — IP printer dapur + minuman, port (default 9100), auto-start on boot toggle
+
+**Persistent notification** di HP: "Pak Pon Print Agent · Online" biar owner tau agent masih hidup tanpa buka app.
+
+**Yang perlu owner siapkan:**
+1. **1 HP Android** (min Android 8, ada Google Play Services — hampir semua HP bisa)
+2. **1 Printer thermal LAN** dengan port RJ45 atau Wi-Fi (misal EPSON TM-T88 series, Xprinter XP-Q80C, atau clone lokal)
+3. **1 Wi-Fi router** yang bisa jangkau HP agent + printer
+4. **Charger nyala terus** untuk HP agent
+
+**Install & setup (one-time):**
+1. Download APK dari link Google Drive (developer kirim link)
+2. Install ke HP (sideload — perlu izinkan "install dari sumber tidak dikenal")
+3. Buka app → login (email/password sama dengan akun web)
+4. Settings → isi IP printer dapur + minuman → Test → Save
+5. Aktifkan "Auto-start on boot" di Settings supaya kalau HP restart, agent nyala otomatis
+6. Klik Start di Status tab — done
+
+**Statistik teknis print agent:**
+- Native Kotlin + Jetpack Compose (Android modern)
+- Ukuran APK: ~3.5 MB (release build, sudah minified)
+- Min Android version: 8 (Oreo, 2017) — cocok untuk HP tua sekalipun
+- 50 unit tests, semua passing
+- Foreground service always-running (persistent notification supaya tetap alive)
+- Zero cloud dependency selain Supabase + Firebase (semua workflow via HP owner)
+
 ---
 
 ## 3. Arsitektur & Teknologi
@@ -98,7 +145,7 @@ Owner CRUD menu:
 | **Storage foto** | Supabase Storage | Terintegrasi dengan database, murah |
 | **Hosting web** | Vercel | Deploy otomatis dari GitHub, edge network cepat, gratis di tier hobby |
 | **Cron job** | Vercel Cron | Auto cleanup foto lama, print history lama, dsb |
-| **Print agent** | Android native app (Kotlin) | Terhubung ke printer LAN via TCP socket, background service tahan OS freeze |
+| **Print agent** | Android native app (Kotlin + Jetpack Compose) | Terhubung ke printer LAN via TCP socket, background service tahan OS freeze. Deploy di 1 HP terpisah dekat printer. Lihat §2.7 detail. |
 | **Push notification** | Firebase Cloud Messaging (FCM) | Cara paling andal kirim print job ke agent walau HP idle |
 | **Testing** | Vitest | Unit + integration test, saat ini 205 test |
 
@@ -269,13 +316,16 @@ Item ini kalau dikerjakan bisa ditambahkan bertahap, budget per fitur tergantung
 
 ## 7. Statistik teknis (untuk gambaran ke owner)
 
-- **Total baris kode:** ~15.000 baris (TypeScript + Kotlin agent app)
-- **Test coverage:** 205 test otomatis, semua passing
+- **Total baris kode:** ~15.000 baris web + ~4.000 baris Android agent
+- **Test coverage:** 205 test web + 50 test agent = **255 test otomatis**, semua passing
 - **Database:** 32 migrasi (evolusi skema selama ~3 minggu development)
-- **Halaman aplikasi:** 20 route (Home, POS, Scan, Transaksi, Detail, Review, Reports harian, Reports bulanan, Menu master, Setup printer, dll)
+- **Halaman aplikasi web:** 20 route (Home, POS, Scan, Transaksi, Detail, Review, Reports harian, Reports bulanan, Menu master, Setup printer, dll)
 - **Endpoint API:** 25+ endpoint
+- **Halaman aplikasi agent:** 3 tab (Status, History, Settings) + Login screen
+- **Ukuran APK print agent:** ~3.5 MB (release, minified) — min Android 8
 - **Waktu OCR foto nota:** ~2.5 detik/foto (setelah optimasi Gemini thinking level)
 - **Latency print job:** <2 detik dari kasir tap Simpan ke printer keluar kertas (jika agent online)
+- **Heartbeat interval agent:** 30 detik (owner tau agent online/offline near real-time)
 
 ---
 
