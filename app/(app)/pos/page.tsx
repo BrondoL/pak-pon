@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export default async function PosPage() {
   const supabase = await getSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/auth/login');
+  if (!user) redirect('/login');
 
   const [{ data: menusRaw }, printerSettings] = await Promise.all([
     supabase
