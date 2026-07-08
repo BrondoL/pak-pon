@@ -4,6 +4,7 @@ import { SetupMenu } from './setup-menu';
 
 const links = [
   { href: '/scan',         label: 'Scan' },
+  { href: '/pos',          label: 'POS' },
   { href: '/transactions', label: 'History' },
   { href: '/reports',      label: 'Laporan' },
   { href: '/menu',         label: 'Menu' },

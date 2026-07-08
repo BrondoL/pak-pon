@@ -60,7 +60,7 @@ export function PosMenuPicker({
         })}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="grid auto-rows-fr grid-cols-2 gap-2 sm:grid-cols-3">
         {visibleMenus.length === 0 && (
           <p className="col-span-full py-8 text-center text-sm text-clay">
             {isSearching ? `Tidak ada menu cocok dengan "${search.trim()}".` : `Tidak ada menu di ${CATEGORY_LABEL[activeCategory]}.`}
@@ -71,12 +71,14 @@ export function PosMenuPicker({
             key={m.id}
             type="button"
             onClick={() => onMenuTap(m)}
-            className="rounded-lg border border-clay-soft bg-paper-soft p-3 text-left transition-colors hover:bg-cream"
+            className="flex h-full w-full flex-col justify-between rounded-lg border border-clay-soft bg-paper-soft p-3 text-left transition-colors hover:bg-cream"
           >
-            <div className="font-medium text-coal">{m.name}</div>
-            <div className="mt-1 text-xs text-clay">{formatRp(m.price)}</div>
+            <div>
+              <div className="font-medium text-coal">{m.name}</div>
+              <div className="mt-1 text-xs text-clay">{formatRp(m.price)}</div>
+            </div>
             {m.chips.length > 0 && (
-              <div className="mt-1 text-[10px] text-mustard">{m.chips.length} pilihan</div>
+              <div className="mt-2 text-[10px] text-mustard">{m.chips.length} pilihan</div>
             )}
           </button>
         ))}

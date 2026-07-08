@@ -170,7 +170,7 @@ export function TransactionDetail({
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <div className={scanUrl ? 'grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]' : ''}>
         {scanUrl && (
           <div className="lg:sticky lg:top-4 lg:self-start">
             <Card variant="paper" className="overflow-hidden">
