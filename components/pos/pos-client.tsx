@@ -165,7 +165,7 @@ export function PosClient({
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <PosMenuPicker menus={menus} onMenuTap={(m) => { setEditingIdx(null); setPickingMenu(m); }} />
 
-        <div className="space-y-4">
+        <div className="space-y-4 pb-24 lg:pb-0">
           <Card variant="paper" className="p-5">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
@@ -275,8 +275,8 @@ export function PosClient({
             </div>
           </Card>
 
-          <div className="sticky bottom-0 -mx-4 border-t border-clay-soft/60 bg-paper/95 px-4 py-3 shadow-[0_-8px_16px_-8px_rgba(0,0,0,0.08)] backdrop-blur-sm lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:shadow-none lg:backdrop-blur-none">
-            <div className="flex gap-2">
+          <div className="fixed inset-x-0 bottom-0 z-20 border-t border-clay-soft/60 bg-paper/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_16px_-8px_rgba(0,0,0,0.08)] backdrop-blur-sm lg:static lg:z-auto lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:shadow-none lg:backdrop-blur-none">
+            <div className="mx-auto flex max-w-6xl gap-2">
               <Button variant="secondary" onClick={handleCancel} disabled={pending || submitting}>Batal</Button>
               <Button
                 onClick={handleSave}
