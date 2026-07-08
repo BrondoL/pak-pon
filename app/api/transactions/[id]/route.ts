@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { buildItemInsertRows, computeReplaceItems, type ExistingItem, type MenuRef } from '@/lib/transactions';
+import {
+  buildAppliedChipsSnapshot,
+  validateChipMutex,
+  type MenuChip,
+} from '@/lib/menu-chips';
 import { newEvent, tagStatus, type RequestEvent } from '@/lib/logger';
 import { computeNextDailySeq } from '@/lib/daily-seq';
 import { businessDate, businessDayRange } from '@/lib/date';
@@ -23,6 +28,7 @@ const PatchSchema = z.object({
         menu_id: z.string().uuid(),
         qty: z.number().int().positive(),
         notes: z.string().nullable().default(null),
+        chip_labels: z.array(z.string().min(1).max(40)).max(20).default([]),
         sort_order: z.number().int().default(0),
         confidence: z.number().int().min(0).max(100).nullable().optional(),
       })
@@ -263,7 +269,7 @@ async function replaceItems(
 ): Promise<StepResult> {
   const { data: existingItems, error: existingError } = await supabase
     .from('transaction_items')
-    .select('id, menu_id, unit_price_snapshot, qty, notes, sort_order, printed_dapur_at, printed_minuman_at')
+    .select('id, menu_id, unit_price_snapshot, qty, notes, applied_chips, sort_order, printed_dapur_at, printed_minuman_at')
     .eq('transaction_id', id);
   if (existingError) {
     tagStatus(evt, 500);
@@ -280,11 +286,53 @@ async function replaceItems(
     return { kind: 'error', response: NextResponse.json({ error: 'menu_fetch_failed' }, { status: 500 }) };
   }
 
+  // Fetch chips only for referenced menus (avoid full-table scan).
+  const menuIds = Array.from(new Set(requestedItems.map((r) => r.menu_id)));
+  const { data: chipsData, error: chipsError } = await supabase
+    .from('menu_chips')
+    .select('id, menu_id, label, price_delta, mutex_group, sort_order')
+    .in('menu_id', menuIds);
+  if (chipsError) {
+    tagStatus(evt, 500);
+    evt.error(chipsError);
+    return { kind: 'error', response: NextResponse.json({ error: chipsError.message }, { status: 500 }) };
+  }
+  const chipsByMenu = new Map<string, MenuChip[]>();
+  for (const c of chipsData ?? []) {
+    const list = chipsByMenu.get(c.menu_id) ?? [];
+    list.push(c as MenuChip);
+    chipsByMenu.set(c.menu_id, list);
+  }
+
+  // Snapshot chip_labels → applied_chips per item.
+  let resolvedItems;
+  try {
+    resolvedItems = requestedItems.map((item) => {
+      const available = chipsByMenu.get(item.menu_id) ?? [];
+      validateChipMutex(item.chip_labels, available);
+      const applied = buildAppliedChipsSnapshot(item.chip_labels, available);
+      return {
+        ...item,
+        applied_chips: applied,
+      };
+    });
+  } catch (err) {
+    tagStatus(evt, 400);
+    evt.set('reject_reason', 'chip_validation_failed').error(err);
+    return {
+      kind: 'error',
+      response: NextResponse.json(
+        { error: 'chip_validation_failed', details: err instanceof Error ? err.message : 'unknown' },
+        { status: 400 },
+      ),
+    };
+  }
+
   let computed;
   try {
     computed = computeReplaceItems({
       existing: (existingItems ?? []) as ExistingItem[],
-      requested: requestedItems,
+      requested: resolvedItems,
       menus: menusData as MenuRef[],
     });
   } catch (err) {
