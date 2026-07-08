@@ -3,7 +3,6 @@ import {
   buildAppliedChipsSnapshot,
   validateChipMutex,
   type MenuChip,
-  type AppliedChip,
 } from './menu-chips';
 
 const chips: MenuChip[] = [
