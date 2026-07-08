@@ -82,6 +82,7 @@ export function NotaItemModal({
       unit_price_snapshot: menuChanged ? selectedMenu.price : initial.unit_price_snapshot,
       qty,
       notes: notes.trim() === '' ? null : notes,
+      applied_chips: initial?.applied_chips ?? [],
       sort_order: initial?.sort_order ?? 0,
       confidence: null,
     });

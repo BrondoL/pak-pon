@@ -27,9 +27,21 @@ export default async function ReviewPage({
 
   const { data: items } = await supabase
     .from('transaction_items')
-    .select('id, menu_id, menu_name_snapshot, unit_price_snapshot, qty, notes, sort_order, confidence')
+    .select('id, menu_id, menu_name_snapshot, unit_price_snapshot, qty, notes, applied_chips, sort_order, confidence')
     .eq('transaction_id', id)
     .order('sort_order');
+
+  const initialItems = (items ?? []).map((it) => ({
+    id: it.id,
+    menu_id: it.menu_id,
+    menu_name_snapshot: it.menu_name_snapshot,
+    unit_price_snapshot: it.unit_price_snapshot,
+    qty: it.qty,
+    notes: it.notes,
+    applied_chips: it.applied_chips ?? [],
+    sort_order: it.sort_order,
+    confidence: it.confidence,
+  }));
 
   const { data: menusData } = await supabase
     .from('menus')
@@ -60,7 +72,7 @@ export default async function ReviewPage({
         is_takeaway: tx.is_takeaway,
         created_at: tx.created_at,
       }}
-      initialItems={items ?? []}
+      initialItems={initialItems}
       menus={menus}
       scanUrl={scanUrl}
       printerSettings={printerSettings}

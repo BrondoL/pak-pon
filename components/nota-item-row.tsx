@@ -10,7 +10,7 @@ export type NotaItem = {
   unit_price_snapshot: number;
   qty: number;
   notes: string | null;
-  applied_chips?: Array<{ label: string; price_delta: number }>;
+  applied_chips: Array<{ label: string; price_delta: number }>;
   sort_order: number;
   confidence: number | null;
   _localId: string;
@@ -59,13 +59,15 @@ export function NotaItemRow({
           <div className="font-medium text-coal truncate">{item.menu_name_snapshot}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-clay">
             <span>{formatRp(item.unit_price_snapshot)}</span>
-            {item.notes && (
-              <>
-                <span className="text-clay-soft">·</span>
-                <span className="italic">{item.notes}</span>
-              </>
-            )}
           </div>
+          {item.applied_chips.length > 0 && (
+            <p className="mt-0.5 text-xs text-clay">
+              {item.applied_chips.map((c) => c.label).join(', ')}
+            </p>
+          )}
+          {item.notes && (
+            <p className="mt-0.5 text-xs text-clay-soft italic">{item.notes}</p>
+          )}
         </div>
 
         <div className="shrink-0 font-display text-base tracking-tight text-coal tabular-nums">
