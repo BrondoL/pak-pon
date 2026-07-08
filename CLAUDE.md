@@ -16,6 +16,7 @@ See:
 - `docs/superpowers/specs/2026-06-20-pak-pon-design.md` — design spec lengkap (sumber kebenaran)
 - `docs/superpowers/specs/2026-06-25-print-revamp-design.md` — arsitektur print sekarang (kitchen + customer format, FCM-only dispatch, print_history)
 - `docs/superpowers/specs/2026-07-01-ocr-image-schema-optimization-design.md` — arsitektur OCR sekarang (single-model, `responseSchema` menu enum, empirical Gemini image tok findings)
+- `docs/superpowers/specs/2026-07-08-pos-direct-order-with-chips-design.md` — arsitektur POS direct order (`/pos` route) + per-menu chips (mutex_group + price_delta), snapshot `applied_chips` di transaction_items
 
 ## Commands
 
@@ -59,3 +60,14 @@ See:
 - **Audit**: web INSERT `print_history` status=pending saat dispatch; agent UPDATE jadi done/failed via `markDone`/`markFailed` (claim filter `.eq("status","pending")` = no-op kalau sudah ke-update worker lain). Trigger `mark_items_printed_history` fire di transisi pending→done (`AFTER UPDATE OF status`), set `transaction_items.printed_*_at` kalau `item_ids` non-null. Customer print skip flag (item_ids null).
 - **Delta logic**: edit save tx confirmed → cuma items dengan flag NULL yang di-print (`auto_additional`). Items existing dimodifikasi (qty/menu/notes) → modal pilihan reprint full ke target atau skip.
 - **Cleanup**: cron 02:00 WIB hapus `print_history >7 hari`.
+
+## POS direct order + per-menu chips (shipped 2026-07-08)
+
+- **Route `/pos`**: single-page hybrid — menu picker grid (kiri, kategori tabs + search) + cart (kanan, header form nama/meja/bungkus). Tablet landscape primer, HP responsif 1-kolom stacked dengan fixed bottom bar `Simpan & Cetak {total}`. Skip `pending_review` — save langsung `confirmed` + auto-print kitchen. Home tile "Buat Pesanan" + link "POS" di navbar. Edit tx belakangan tetap via `/transactions/[id]/review` existing.
+- **Chips per menu (table `menu_chips`)**: label + `price_delta ≥0` (bigint) + `mutex_group text nullable` + `sort_order`. Owner CRUD via inline editor di `menu-form` (label / +Harga / Grup). Mutex behavior: chip dengan `mutex_group` sama → radio section di picker (pilih satu, boleh 0 selected). `mutex_group = NULL` → multi-select section "Pilihan cepat". Hard-delete di master aman karena snapshot udah frozen.
+- **Snapshot `applied_chips` jsonb** di `transaction_items` (migrasi 0032): `[{label, price_delta}]` frozen at save. `mutex_group` sengaja **tidak** disnapshot (cuma constraint saat picker input, redundan di history). `unit_price_snapshot = base + Σ price_delta`. `computeReplaceItems` preserve historical price kalau menu + chips unchanged; recompute kalau chip diubah saat edit.
+- **`POST /api/pos`** (baru): validate Zod → fetch menus + `fetchChipsByMenu` → `validateChipMutex` + `buildAppliedChipsSnapshot` server-side (client kirim `chip_labels: string[]`, bukan price — cegah tampering) → daily_seq computed sama seperti PATCH confirm → insert tx `confirmed` + items batch. Wide-event `pos_transaction_created` include `chip_count`, `has_free_notes`, `elapsed_ms`. Sync `useRef` lock cegah double-tap create dua tx.
+- **`PATCH /api/transactions/[id]`** extended: `items[].chip_labels` optional (default []). Server snapshot sama seperti POS. `detectModalContext` di review-form pakai `chipsKey` (sorted labels join) untuk deteksi chip change → reprint modal.
+- **Kitchen ticket**: chip labels (bold) di baris terpisah + free-text notes di baris kedua. Customer receipt: **cuma chip `price_delta > 0`** yg tampil (justify harga), zero-delta chip + free-text skip.
+- **Shared helpers** (extract 2026-07-08): `lib/print-dispatch.ts` (`dispatchKitchenPrintJob` dipake POS + review-form), `components/chip-picker.tsx` (dipake `NotaItemModal` + `PosItemConfigModal`), `lib/menu-chips.ts::fetchChipsByMenu` (dipake POST /api/pos + PATCH transactions).
+- **History indicator**: transaction list badge kecil "POS" di baris yg `scan_image_path === null` (proxy: reliable sampai cron retention foto shipped).
