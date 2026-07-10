@@ -109,9 +109,7 @@ export async function scanNota(
     attempt.thoughts_tokens = thoughts;
     attempt.total_tokens = usage.totalTokenCount;
   }
-
-  console.log(usage);
-
+  
   const text = response.text;
   if (!text) {
     attempt.outcome = 'empty_response';
