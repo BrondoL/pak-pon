@@ -88,6 +88,11 @@ export async function POST(request: NextRequest) {
     const anomalyReasons = ocrMeta.attempts
       .map((a) => a.finish_reason)
       .filter((r): r is string => !!r && r !== 'STOP');
+    // Recovered = JSON asli invalid (biasa karena MAX_TOKENS di string loop) tapi
+    // berhasil di-salvage. Filter Vercel Log: `ocr_recovered_from_truncation:true`.
+    // Bukan anomaly murni karena kasir dapet result usable — tapi worth tracking
+    // trendnya (kalau rate naik, model degradation atau schema misconfig).
+    const recoveredCount = ocrMeta.attempts.filter((a) => a.recovered_from_truncation).length;
     evt.merge({
       ocr_attempts: ocrMeta.attempts,
       ocr_final_model: ocrMeta.final_model,
@@ -95,6 +100,7 @@ export async function POST(request: NextRequest) {
       ocr_total_failure: ocrMeta.final_model === null,
       ocr_anomaly: anomalyReasons.length > 0,
       ocr_anomaly_reasons: anomalyReasons.length > 0 ? anomalyReasons : undefined,
+      ocr_recovered_from_truncation: recoveredCount > 0,
       ocr_items_raw: ocr.items.length,
       ocr_handwritten_total: ocr.handwritten_total,
       ocr_customer_name: ocr.customer_name,

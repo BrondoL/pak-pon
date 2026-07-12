@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildScanSchema, buildScanResponseSchema, OCR_SYSTEM_PROMPT, type MenuRef } from './prompts';
+import {
+  buildScanSchema,
+  buildScanResponseSchema,
+  OCR_SYSTEM_PROMPT,
+  repairTruncatedJson,
+  type MenuRef,
+} from './prompts';
 
 const sampleMenus: MenuRef[] = [
   { id: 'a', name: 'Pecel Lele', category: 'makanan', price: 16000 },
@@ -199,5 +205,96 @@ describe('buildScanResponseSchema', () => {
     const menuProp = props.i.items!.properties!.m;
     expect(menuProp.enum).toBeUndefined();
     expect(menuProp.type).toBe('string');
+  });
+
+  it('constrains tn with pattern regex (defense against Gemini maxLength being hint-only)', () => {
+    const schema = buildScanResponseSchema(sampleMenus);
+    const props = schema.properties as Record<string, { pattern?: string; maxLength?: number }>;
+    expect(props.tn.pattern).toBeDefined();
+    expect(props.tn.maxLength).toBe(10);
+  });
+
+  it('constrains cn with pattern regex', () => {
+    const schema = buildScanResponseSchema(sampleMenus);
+    const props = schema.properties as Record<string, { pattern?: string; maxLength?: number }>;
+    expect(props.cn.pattern).toBeDefined();
+    expect(props.cn.maxLength).toBe(40);
+  });
+});
+
+// Repair MAX_TOKENS-truncated JSON where model degenerated in a string field.
+// Observed 2026-07-12: `{"i":[...],"t":0,"cn":"Lili's","tn":"88888888...` (unterminated).
+// Sekarang JSON parse fail → seluruh scan hilang. Repair salvage fields yg valid.
+describe('repairTruncatedJson', () => {
+  it('strips unterminated tn field at end and closes JSON', () => {
+    const truncated = '{"i":[{"m":"Pecel Lele","q":1}],"t":0,"cn":"Lili","tn":"8888888888888888';
+    const repaired = repairTruncatedJson(truncated);
+    expect(repaired).not.toBeNull();
+    expect(() => JSON.parse(repaired!)).not.toThrow();
+    const parsed = JSON.parse(repaired!);
+    expect(parsed.i).toHaveLength(1);
+    expect(parsed.t).toBe(0);
+    expect(parsed.cn).toBe('Lili');
+    expect(parsed.tn).toBeUndefined();
+  });
+
+  it('handles tn as first/only field after root', () => {
+    const truncated = '{"tn":"8888888888';
+    const repaired = repairTruncatedJson(truncated);
+    expect(repaired).not.toBeNull();
+    expect(() => JSON.parse(repaired!)).not.toThrow();
+    expect(JSON.parse(repaired!)).toEqual({});
+  });
+
+  it('handles unterminated cn field (loop can happen there too)', () => {
+    const truncated = '{"i":[{"m":"Pecel Lele","q":1}],"t":0,"cn":"XXXXXXXXXXXXXXXXXXXX';
+    const repaired = repairTruncatedJson(truncated);
+    expect(repaired).not.toBeNull();
+    const parsed = JSON.parse(repaired!);
+    expect(parsed.i).toHaveLength(1);
+    expect(parsed.cn).toBeUndefined();
+  });
+
+  it('handles unterminated item notes field (n) inside items array', () => {
+    // Loop di dalam nested item.n — balance nested {}, [] too.
+    const truncated = '{"i":[{"m":"Pecel Lele","q":1,"n":"dadadadadadadada';
+    const repaired = repairTruncatedJson(truncated);
+    expect(repaired).not.toBeNull();
+    expect(() => JSON.parse(repaired!)).not.toThrow();
+    const parsed = JSON.parse(repaired!);
+    expect(parsed.i).toHaveLength(1);
+    expect(parsed.i[0].m).toBe('Pecel Lele');
+    expect(parsed.i[0].q).toBe(1);
+    expect(parsed.i[0].n).toBeUndefined();
+  });
+
+  it('returns null when no unterminated string field found (nothing to repair)', () => {
+    const valid = '{"i":[{"m":"Pecel Lele","q":1}],"t":0}';
+    expect(repairTruncatedJson(valid)).toBeNull();
+  });
+
+  it('returns null on empty string', () => {
+    expect(repairTruncatedJson('')).toBeNull();
+  });
+
+  it('preserves already-completed sibling string fields', () => {
+    const truncated = '{"i":[{"m":"Pecel Lele","q":1}],"t":50000,"cn":"Anton","tn":"8888888888';
+    const repaired = repairTruncatedJson(truncated);
+    const parsed = JSON.parse(repaired!);
+    expect(parsed.cn).toBe('Anton');
+    expect(parsed.t).toBe(50000);
+  });
+
+  it('repaired output survives full Zod scan schema parse', () => {
+    const truncated = '{"i":[{"m":"Pecel Lele","q":1}],"t":0,"cn":"Lili","tn":"8888888888';
+    const repaired = repairTruncatedJson(truncated);
+    const zodSchema = buildScanSchema(sampleMenus);
+    const parsed = zodSchema.safeParse(JSON.parse(repaired!));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.items).toHaveLength(1);
+      expect(parsed.data.table_no).toBeNull();
+      expect(parsed.data.customer_name).toBe('Lili');
+    }
   });
 });

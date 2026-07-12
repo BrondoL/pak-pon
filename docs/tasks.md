@@ -122,6 +122,18 @@ Konteks: insiden 2026-07-11 — model degenerate loop di field `tn` (no. meja) s
 
 **Hasil**: worst-case bill runaway di-cap ~11 IDR/scan (vs ~2600 IDR pre-fix, 236× reduction). Owner bisa monitor anomaly dari dashboard app sendiri tanpa buka Vercel/AI Studio.
 
+### Round 5: Defense-in-depth + JSON repair salvage (2026-07-12)
+Konteks: insiden Round 4 recur — model tetap degenerate loop di `tn` sampai `MAX_TOKENS` (bill di-cap tapi scan lost total). Root cause: `maxLength` di Gemini 3.x responseSchema treated as HINT, bukan hard cap (verified: `tn` output 685 tok meski `maxLength=20`). Butuh layer preemptive lebih strict + salvage logic.
+- [x] `lib/prompts.ts` `OCR_SYSTEM_PROMPT` tambah "Max 10 karakter" hint di baris `cn, tn` (+~5 tok/scan)
+- [x] `lib/prompts.ts` `buildScanResponseSchema` tambah `pattern` regex di `n`/`cn`/`tn` (strict character class). `tn` maxLength turun 20 → 10.
+- [x] `lib/gemini.ts` `stopSequences: ['8888888','9999999',...,'7777777']` (10 run-of-7 digit) — model auto-stop di ~50 tok kalau loop trigger, `finishReason='STOP'`.
+- [x] `lib/prompts.ts` `repairTruncatedJson()` + `balanceBrackets()` — regex-detect trailing unterminated `,"key":"...` → strip → close `{`/`[`. Salvage MAX_TOKENS truncation.
+- [x] `lib/gemini.ts` `scanNota` — on `JSON.parse` fail, coba `repairTruncatedJson` sebelum bail ke `EMPTY_RESULT`. Success set `attempt.recovered_from_truncation:true`.
+- [x] `app/api/scan/route.ts` wide-event top-level `ocr_recovered_from_truncation` flag (filter Vercel Log biar bisa track trend).
+- [x] `lib/prompts.test.ts` — 8 test baru: repair unterminated tn/cn/n, first-field truncation, nested items, no-op on valid JSON, empty input, integration dengan Zod scan schema.
+
+**Hasil**: verified via replay payload asli (2026-07-12 failure): 6 items + `cn:"Lili's"` **fully recovered**, kasir tinggal isi nomor meja manual. Scan yg tadinya total-loss sekarang usable. Cost overhead: +5 tok/scan input (~$0.00002 ≈ 0 IDR).
+
 ### Opsi cost-reduction lanjutan (belum urgent)
 - Model switch: coba `gemini-flash-lite` atau `gemini-2.0-flash` — different pricing tier
 - Context caching: pad prompt >1024 tok + explicit cache API (perlu verify SDK support)

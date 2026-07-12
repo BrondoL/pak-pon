@@ -1,5 +1,5 @@
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
-import { buildScanSchema, buildScanResponseSchema, OCR_SYSTEM_PROMPT, type MenuRef, type ScanResult } from './prompts';
+import { buildScanSchema, buildScanResponseSchema, OCR_SYSTEM_PROMPT, repairTruncatedJson, type MenuRef, type ScanResult } from './prompts';
 
 // Single model only — fallback Pro dihapus per plan 2026-06-30.
 const MODEL = process.env.GEMINI_FAST_MODEL ?? 'gemini-3.5-flash';
@@ -26,6 +26,12 @@ export type ScanAttempt = {
   // (MAX_TOKENS runaway, SAFETY/RECITATION block, dst). Route handler tag
   // `ocr_anomaly` di wide-event log kalau nilainya bukan STOP.
   finish_reason?: string;
+
+  // True kalau JSON asli invalid (biasanya karena MAX_TOKENS truncation di
+  // string field yg looping), tapi berhasil di-salvage via repairTruncatedJson.
+  // Field yg ke-truncate akan hilang (undefined → null di transform), sisanya
+  // preserved. Wide-event log surface flag ini di route handler untuk observability.
+  recovered_from_truncation?: boolean;
 };
 
 export type ScanMeta = {
@@ -91,6 +97,14 @@ export async function scanNota(
         // Cap 700 = ~43% margin di atas worst case historical, fit sampai ~25-item nota.
         // Worst-case bill kalau trigger: ~11 IDR/scan (vs 2600 IDR pre-fix).
         maxOutputTokens: 700,
+        // Emergency brake untuk degenerate loop: begitu model print 7 digit sama
+        // berturut, generation langsung STOP (bukan MAX_TOKENS) — bill terpotong
+        // di ~50 tok bukan 685. Real content ga akan pernah punya 7 run (total
+        // rupiah max 6 digit, nomor meja max 3 char, qty single digit). Verified
+        // 2026-07-12 dari failure sample: tn ngeloop 685 tok digit "8".
+        // finishReason='STOP' pada trigger jadi tidak flag `ocr_anomaly` di log —
+        // that's OK, JSON repair layer di bawah yang set flag `recovered_from_truncation`.
+        stopSequences: ['8888888', '9999999', '0000000', '1111111', '2222222', '3333333', '4444444', '5555555', '6666666', '7777777'],
         // Gemini 3.x pakai `thinkingLevel` (minimal/low/medium/high, default medium),
         // BUKAN `thinkingBudget` (itu API 2.5 — silently ignored di 3.x).
         // A/B 2026-07-03: 5 foto identik di medium vs minimal → akurasi item/qty/total
@@ -137,10 +151,26 @@ export async function scanNota(
   try {
     parsedJson = JSON.parse(text);
   } catch (err) {
-    attempt.outcome = 'invalid_json';
-    attempt.error_message = err instanceof Error ? err.message : String(err);
-    attempts.push(attempt);
-    return { result: EMPTY_RESULT, meta: { attempts, final_model: null, fell_back: false } };
+    // MAX_TOKENS truncation di string field yg looping → coba salvage sebelum
+    // pass EMPTY_RESULT. Observed 2026-07-12: tn ngeloop 685 tok digit "8"
+    // → JSON invalid → seluruh scan hilang padahal i/t/cn valid sampai byte 685.
+    const repaired = repairTruncatedJson(text);
+    if (repaired) {
+      try {
+        parsedJson = JSON.parse(repaired);
+        attempt.recovered_from_truncation = true;
+      } catch {
+        attempt.outcome = 'invalid_json';
+        attempt.error_message = err instanceof Error ? err.message : String(err);
+        attempts.push(attempt);
+        return { result: EMPTY_RESULT, meta: { attempts, final_model: null, fell_back: false } };
+      }
+    } else {
+      attempt.outcome = 'invalid_json';
+      attempt.error_message = err instanceof Error ? err.message : String(err);
+      attempts.push(attempt);
+      return { result: EMPTY_RESULT, meta: { attempts, final_model: null, fell_back: false } };
+    }
   }
 
   const parsed = schema.safeParse(parsedJson);
