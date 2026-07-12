@@ -91,6 +91,42 @@ describe('recordUsageDaily', () => {
     }));
   });
 
+  it('flags anomaly=1 on stopSequences false positive (finish_reason=STOP + outcome=invalid_json)', async () => {
+    // Skenario: nota total 10jt trigger stopSeq '0000000' → output kepotong di
+    // integer field → JSON parse fail. finish_reason='STOP' tapi outcome fail.
+    // Sebelum fix ini silent (STOP dianggap normal, ga masuk anomaly counter).
+    await recordUsageDaily({
+      attempts: [{ input_tokens: 1500, output_tokens: 50, total_tokens: 1550, finish_reason: 'STOP', outcome: 'invalid_json' }],
+      failed: true,
+    });
+    expect(mockRpc).toHaveBeenCalledWith('increment_ai_usage_daily', expect.objectContaining({
+      p_anomaly: 1,
+      p_fail: 1,
+    }));
+  });
+
+  it('flags anomaly=1 on schema_mismatch (STOP but Zod parse failed)', async () => {
+    // Model output valid JSON tapi struktur salah (edge Gemini bug).
+    // finish_reason=STOP, outcome=schema_mismatch → tetap harus muncul di dashboard.
+    await recordUsageDaily({
+      attempts: [{ input_tokens: 1500, output_tokens: 200, total_tokens: 1700, finish_reason: 'STOP', outcome: 'schema_mismatch' }],
+      failed: true,
+    });
+    expect(mockRpc).toHaveBeenCalledWith('increment_ai_usage_daily', expect.objectContaining({
+      p_anomaly: 1,
+    }));
+  });
+
+  it('does NOT flag anomaly on happy path (STOP + success)', async () => {
+    await recordUsageDaily({
+      attempts: [{ input_tokens: 1500, output_tokens: 150, total_tokens: 1650, finish_reason: 'STOP', outcome: 'success' }],
+      failed: false,
+    });
+    expect(mockRpc).toHaveBeenCalledWith('increment_ai_usage_daily', expect.objectContaining({
+      p_anomaly: 0,
+    }));
+  });
+
   it('sums multiple attempts (retry scenario) — hypothetical multi-attempt', async () => {
     await recordUsageDaily({
       attempts: [

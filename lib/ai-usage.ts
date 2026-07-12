@@ -7,6 +7,7 @@ export type Attempt = {
   thoughts_tokens?: number;
   total_tokens?: number;
   finish_reason?: string;
+  outcome?: string;
 };
 
 export type RecordUsageArgs = {
@@ -59,10 +60,16 @@ export async function recordUsageDaily(args: RecordUsageArgs): Promise<void> {
     // AI Studio kalau ada API error tanpa response. Mismatch itu observable diagnostic.
     if (input === 0 && output === 0) return;
 
-    // Anomaly = attempt yang finish bukan 'STOP' (MAX_TOKENS runaway, SAFETY, dst).
-    // 1 scan = 1 anomaly kalau attempt terakhir non-STOP, biar counter jelas per-scan.
+    // Anomaly = attempt yg (a) finish non-STOP (MAX_TOKENS runaway, SAFETY, dst) ATAU
+    // (b) finish STOP tapi outcome bukan 'success'. Case (b) cover stopSequences
+    // false positive: model kena stop-seq bukan karena degen tapi karena real
+    // content match (misal nota ≥10jt trigger '0000000') → JSON parse fail →
+    // outcome=invalid_json, finish_reason=STOP. Tanpa cek outcome, silent failure.
+    // 1 scan = 1 anomaly kalau ANY attempt qualified, biar counter jelas per-scan.
     const hasAnomaly = args.attempts.some(
-      (a) => a.finish_reason !== undefined && a.finish_reason !== 'STOP'
+      (a) =>
+        (a.finish_reason !== undefined && a.finish_reason !== 'STOP') ||
+        (a.outcome !== undefined && a.outcome !== 'success')
     );
 
     const dateWIB = businessDate(args.requestStartedAt ?? new Date());
