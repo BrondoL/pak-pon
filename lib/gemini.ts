@@ -104,7 +104,11 @@ export async function scanNota(
         // 2026-07-12 dari failure sample: tn ngeloop 685 tok digit "8".
         // finishReason='STOP' pada trigger jadi tidak flag `ocr_anomaly` di log —
         // that's OK, JSON repair layer di bawah yang set flag `recovered_from_truncation`.
-        stopSequences: ['8888888', '9999999', '0000000', '1111111', '2222222', '3333333', '4444444', '5555555', '6666666', '7777777'],
+        // ⚠️ Gemini API hard limit: max 5 stopSequences. Pilih digit paling common
+        // di degenerate loops: 0/1/8/9 (overflow/underflow bias) + 2 dari observed
+        // failure sample. Digit lain (3/4/5/6/7) skip — kalau model loop di sana,
+        // masih tertangkap layer JSON repair.
+        stopSequences: ['0000000', '1111111', '8888888', '9999999', '2222222'],
         // Gemini 3.x pakai `thinkingLevel` (minimal/low/medium/high, default medium),
         // BUKAN `thinkingBudget` (itu API 2.5 — silently ignored di 3.x).
         // A/B 2026-07-03: 5 foto identik di medium vs minimal → akurasi item/qty/total
