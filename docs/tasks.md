@@ -110,6 +110,18 @@ Konteks: web `output_tokens` (18.2k) mismatch Google dashboard (83.7k) — terny
 - **Gemini 3.x pake `thinkingLevel` (minimal/low/medium/high, default medium), BUKAN `thinkingBudget`** — kalau salah pilih, silently ignored + tetep di-bill. Thinking tokens dibill sebagai output ($9/1M).
 - Untuk task dengan `responseSchema` menu-enum ketat, `thinkingLevel: 'minimal'` cukup — reasoning berat ga dibutuhin. A/B evidence 2026-07-03.
 
+### Round 4: Runaway guardrails + anomaly detection (2026-07-11)
+Konteks: insiden 2026-07-11 — model degenerate loop di field `tn` (no. meja) sampai `finishReason: MAX_TOKENS`, 65,521 output tok = bill 40× normal, JSON invalid → kasir dapet EMPTY_RESULT. Tanpa cap default Gemini output limit >65k tok. Perlu safety fuse + observability.
+- [x] `lib/gemini.ts` `maxOutputTokens: 700` — sized dari data historis 1298 scan / 9 hari (max nota 18 items ~490 tok, margin 43%)
+- [x] `lib/prompts.ts` `buildScanResponseSchema` tambah `maxLength` di free-string field: `tn` 20, `cn` 40, `n` 60 — grammar-level rem cegah repetition loop
+- [x] `lib/gemini.ts` track `finish_reason` per `ScanAttempt` dari `response.candidates[0].finishReason`
+- [x] Migrasi 0033: kolom `ai_usage_daily.anomaly_count integer`, RPC signature include `p_anomaly`
+- [x] `lib/ai-usage.ts` `recordUsageDaily` hitung anomaly = attempts.some(finish_reason !== 'STOP')
+- [x] `app/api/scan/route.ts` wide-event tag `ocr_anomaly:true` + `ocr_anomaly_reasons:[]` biar bisa filter di Vercel Log Search
+- [x] `/setup/ai-usage` UI: banner merah di SummaryCard kalau anomaly>0 bulan ini, badge `⚠ N` per row di tabel harian
+
+**Hasil**: worst-case bill runaway di-cap ~11 IDR/scan (vs ~2600 IDR pre-fix, 236× reduction). Owner bisa monitor anomaly dari dashboard app sendiri tanpa buka Vercel/AI Studio.
+
 ### Opsi cost-reduction lanjutan (belum urgent)
 - Model switch: coba `gemini-flash-lite` atau `gemini-2.0-flash` — different pricing tier
 - Context caching: pad prompt >1024 tok + explicit cache API (perlu verify SDK support)

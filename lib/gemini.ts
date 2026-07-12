@@ -21,6 +21,11 @@ export type ScanAttempt = {
   output_tokens?: number;
   thoughts_tokens?: number;
   total_tokens?: number;
+
+  // Raw finishReason dari response.candidates[0]. Anything selain 'STOP' = anomaly
+  // (MAX_TOKENS runaway, SAFETY/RECITATION block, dst). Route handler tag
+  // `ocr_anomaly` di wide-event log kalau nilainya bukan STOP.
+  finish_reason?: string;
 };
 
 export type ScanMeta = {
@@ -78,6 +83,14 @@ export async function scanNota(
         responseMimeType: 'application/json',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         responseSchema: responseSchema as any,
+        // Hard cap output — safety fuse buat runaway generation (2026-07-11 anomaly:
+        // model degenerate loop di field `tn` sampai 65k tok, bill 40× normal).
+        // Sized dari data historis (query 2026-07-12, 1298 scan / 9 hari):
+        //   - avg 158 tok/scan, day-max avg 256 tok
+        //   - nota terpadat historis 18 items ~= 490 tok
+        // Cap 700 = ~43% margin di atas worst case historical, fit sampai ~25-item nota.
+        // Worst-case bill kalau trigger: ~11 IDR/scan (vs 2600 IDR pre-fix).
+        maxOutputTokens: 700,
         // Gemini 3.x pakai `thinkingLevel` (minimal/low/medium/high, default medium),
         // BUKAN `thinkingBudget` (itu API 2.5 — silently ignored di 3.x).
         // A/B 2026-07-03: 5 foto identik di medium vs minimal → akurasi item/qty/total
@@ -95,6 +108,7 @@ export async function scanNota(
   }
 
   attempt.duration_ms = Date.now() - t0;
+  attempt.finish_reason = response.candidates?.[0]?.finishReason;
 
   const usage = response.usageMetadata;
   if (usage) {

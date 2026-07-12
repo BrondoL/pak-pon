@@ -29,6 +29,23 @@ export function SummaryCard({
         <Stat label="Token" value={compact.format(summary.total)} />
         <Stat label="Est. biaya" value={`~${formatRp(idr)}`} />
       </div>
+      {summary.anomaly > 0 && (
+        <div
+          className="mt-3 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
+          role="alert"
+        >
+          <span aria-hidden className="mt-0.5 text-base leading-none">⚠</span>
+          <div>
+            <div className="font-medium">
+              {summary.anomaly.toLocaleString('id-ID')} scan anomaly bulan ini
+            </div>
+            <div className="mt-0.5 text-xs text-red-700">
+              Gemini finish bukan STOP (kemungkinan runaway MAX_TOKENS atau safety
+              filter). Detail per hari di tabel bawah.
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

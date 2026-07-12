@@ -49,6 +49,8 @@ See:
 - **Image tok quirk**: Gemini 3.5 Flash charge HARD MIN ~1089 tok untuk apapun inline image (bahkan thumbnail 192×256). Kompresi/crop **tidak** turunkan bill di model ini. Cuma bantu bandwidth kasir HP.
 - **Cost baseline `minimal`** (2026-07-03, A/B 5 scan): avg 1,452 tok input + 157 tok output/scan (0 thinking) = **~$0.0036/scan** ≈ **65 IDR/scan**. Proyeksi 150 scan/hari: **~292k IDR/bulan** (@18000). Latency avg ~2.5 detik (medium: ~9.9 detik).
 - **Cost tracking**: `ai_usage_daily.output_tokens = candidatesTokenCount + thoughtsTokenCount` (match dashboard Google 1:1). `thoughts_tokens` di-kolom terpisah biar bisa lihat porsi thinking.
+- **Runaway guardrails (2026-07-11)**: `maxOutputTokens: 700` di config + `maxLength` di responseSchema (`tn`:20, `cn`:40, `n`:60). Insiden 2026-07-11: model degenerate loop di field `tn` sampai 65,521 output tok (bill 40× normal, JSON invalid → EMPTY_RESULT). Cap 700 sized dari data historis: nota terpadat 18 items ~490 tok, kasih margin 43%. Worst-case bill kalau trigger: ~11 IDR/scan.
+- **Anomaly detection**: kolom `ai_usage_daily.anomaly_count` (migrasi 0033) increment tiap scan yg `finishReason !== 'STOP'` (MAX_TOKENS runaway, SAFETY, dst). UI `/setup/ai-usage` tampil banner merah + badge per hari. Wide-event log tag `ocr_anomaly:true` + `ocr_anomaly_reasons` untuk forensic. `recordUsageDaily` sengaja skip insert kalau tokens 0 → mismatch AI Studio dashboard = signal ada API error tanpa response.
 
 ## Print system (Phase 1+2+3 shipped 2026-06-25, primary agent + pending state 2026-06-26)
 

@@ -70,6 +70,9 @@ export type ScanResult = z.infer<ReturnType<typeof buildScanSchema>>;
  * - `m` (menu_name) hanya salah satu dari master list — no hallucination possible
  * - Field required minimum: item wajib `m`+`q`, root wajib `i`+`t`
  * - `n` / `c` / `cn` / `tn` optional supaya Gemini bisa omit null (token saver)
+ * - `maxLength` di free-string field (n/cn/tn) — grammar-level rem supaya kalau
+ *   model masuk repetition loop (e.g. 2026-07-11 anomaly: tn ngalor-ngidul digit
+ *   sampai 65k tok), Gemini paksa stop sebelum bill meledak.
  *
  * Menu enum di sini tidak di-count sebagai input tokens (verified 2026-07-01
  * via scripts/verify-response-schema.mjs).
@@ -91,15 +94,15 @@ export function buildScanResponseSchema(menus: MenuRef[]) {
           properties: {
             m: menuNameProp,
             q: { type: 'integer' },
-            n: { type: 'string' },
+            n: { type: 'string', maxLength: 60 },
             c: { type: 'integer' },
           },
           required: ['m', 'q'],
         },
       },
       t: { type: 'integer' },
-      cn: { type: 'string' },
-      tn: { type: 'string' },
+      cn: { type: 'string', maxLength: 40 },
+      tn: { type: 'string', maxLength: 20 },
     },
     required: ['i', 't'],
   };

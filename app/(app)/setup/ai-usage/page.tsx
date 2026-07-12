@@ -52,6 +52,7 @@ export default async function AiUsagePage() {
       scan_count: r.scan_count,
       success_count: r.success_count,
       fail_count: r.fail_count,
+      anomaly_count: r.anomaly_count ?? 0,
       input,
       output,
       thoughts,

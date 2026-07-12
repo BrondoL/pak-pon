@@ -6,6 +6,7 @@ export type Attempt = {
   output_tokens?: number;
   thoughts_tokens?: number;
   total_tokens?: number;
+  finish_reason?: string;
 };
 
 export type RecordUsageArgs = {
@@ -19,6 +20,7 @@ export type AiUsageRow = {
   scan_count: number;
   success_count: number;
   fail_count: number;
+  anomaly_count: number;
   input_tokens: number | string;
   output_tokens: number | string;
   thoughts_tokens: number | string;
@@ -37,6 +39,7 @@ export type DailyUsageView = {
   scan_count: number;
   success_count: number;
   fail_count: number;
+  anomaly_count: number;
   input: number;
   output: number;
   thoughts: number;
@@ -52,7 +55,15 @@ export async function recordUsageDaily(args: RecordUsageArgs): Promise<void> {
     const output = args.attempts.reduce((s, a) => s + (a.output_tokens ?? 0), 0);
     const thoughts = args.attempts.reduce((s, a) => s + (a.thoughts_tokens ?? 0), 0);
     const total = args.attempts.reduce((s, a) => s + (a.total_tokens ?? 0), 0);
+    // Skip kalau tokens 0 — sengaja bikin ai_usage_daily.scan_count mismatch dari
+    // AI Studio kalau ada API error tanpa response. Mismatch itu observable diagnostic.
     if (input === 0 && output === 0) return;
+
+    // Anomaly = attempt yang finish bukan 'STOP' (MAX_TOKENS runaway, SAFETY, dst).
+    // 1 scan = 1 anomaly kalau attempt terakhir non-STOP, biar counter jelas per-scan.
+    const hasAnomaly = args.attempts.some(
+      (a) => a.finish_reason !== undefined && a.finish_reason !== 'STOP'
+    );
 
     const dateWIB = businessDate(args.requestStartedAt ?? new Date());
     const supabase = await getSupabaseServer();
@@ -61,6 +72,7 @@ export async function recordUsageDaily(args: RecordUsageArgs): Promise<void> {
       p_scan: 1,
       p_success: args.failed ? 0 : 1,
       p_fail: args.failed ? 1 : 0,
+      p_anomaly: hasAnomaly ? 1 : 0,
       p_input: input,
       p_output: output,
       p_thoughts: thoughts,
@@ -76,6 +88,7 @@ export type UsageSummary = {
   scan: number;
   success: number;
   fail: number;
+  anomaly: number;
   input: number;
   output: number;
   thoughts: number;
@@ -88,11 +101,12 @@ export function aggregateSummary(rows: AiUsageRow[]): UsageSummary {
       scan: acc.scan + r.scan_count,
       success: acc.success + r.success_count,
       fail: acc.fail + r.fail_count,
+      anomaly: acc.anomaly + (r.anomaly_count ?? 0),
       input: acc.input + Number(r.input_tokens),
       output: acc.output + Number(r.output_tokens),
       thoughts: acc.thoughts + Number(r.thoughts_tokens ?? 0),
       total: acc.total + Number(r.total_tokens),
     }),
-    { scan: 0, success: 0, fail: 0, input: 0, output: 0, thoughts: 0, total: 0 }
+    { scan: 0, success: 0, fail: 0, anomaly: 0, input: 0, output: 0, thoughts: 0, total: 0 }
   );
 }

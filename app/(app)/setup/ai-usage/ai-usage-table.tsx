@@ -34,14 +34,25 @@ export function AiUsageTable({ rows, today }: { rows: DailyUsageView[]; today: s
           <tbody>
             {rows.map((r) => {
               const isToday = r.date === today;
+              const hasAnomaly = r.anomaly_count > 0;
               return (
                 <tr
                   key={r.date}
                   className={`border-b border-coal/5 ${isToday ? 'bg-gold/10' : ''}`}
                 >
                   <td className="px-3 py-2 text-coal">
-                    {shortDate(r.date)}
-                    {isToday && <span className="ml-1 text-[10px] text-coal-soft">(hari ini)</span>}
+                    <span className="inline-flex items-center gap-1.5">
+                      {shortDate(r.date)}
+                      {isToday && <span className="text-[10px] text-coal-soft">(hari ini)</span>}
+                      {hasAnomaly && (
+                        <span
+                          className="inline-flex items-center rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800"
+                          title={`${r.anomaly_count} scan finish bukan STOP (kemungkinan runaway / safety filter)`}
+                        >
+                          ⚠ {r.anomaly_count}
+                        </span>
+                      )}
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-right text-coal">{r.scan_count}</td>
                   <td className="px-3 py-2 text-right text-coal-soft">

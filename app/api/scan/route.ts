@@ -81,11 +81,20 @@ export async function POST(request: NextRequest) {
     const base64 = Buffer.from(imageBuffer).toString('base64');
     const { result: ocr, meta } = await scanNota(base64, 'image/jpeg', menus);
     ocrMeta = meta;
+    // Anomaly = attempt yang finish bukan STOP (MAX_TOKENS runaway, SAFETY, dst).
+    // Filter di Vercel Log Search: `ocr_anomaly:true`. Cross-check dengan
+    // ai_usage_daily kalau counter mismatch AI Studio (ai-usage.ts sengaja skip
+    // insert kalau tokens 0 supaya mismatch = signal ada fail).
+    const anomalyReasons = ocrMeta.attempts
+      .map((a) => a.finish_reason)
+      .filter((r): r is string => !!r && r !== 'STOP');
     evt.merge({
       ocr_attempts: ocrMeta.attempts,
       ocr_final_model: ocrMeta.final_model,
       ocr_fell_back: ocrMeta.fell_back,
       ocr_total_failure: ocrMeta.final_model === null,
+      ocr_anomaly: anomalyReasons.length > 0,
+      ocr_anomaly_reasons: anomalyReasons.length > 0 ? anomalyReasons : undefined,
       ocr_items_raw: ocr.items.length,
       ocr_handwritten_total: ocr.handwritten_total,
       ocr_customer_name: ocr.customer_name,
