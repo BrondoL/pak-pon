@@ -20,40 +20,56 @@ export async function GET(request: NextRequest) {
     evt.set('cutoff', cutoff);
 
     const supabase = getSupabaseAdmin();
-    const { data: targets, error: selectError } = await supabase
-      .from('transactions')
-      .select('id, scan_image_path')
-      .not('deleted_at', 'is', null)
-      .lt('deleted_at', cutoff);
 
-    if (selectError) {
-      tagStatus(evt, 500);
-      evt.error(selectError);
-      return NextResponse.json({ error: selectError.message }, { status: 500 });
-    }
+    // Chunked loop: cegah PostgREST 1000-row cap silently truncate backlog
+    // (mis. owner bulk-delete banyak transaksi kena retention window sama).
+    // Setiap iterasi: select 1 batch → hapus storage → hapus DB → ulang sampai kosong.
+    const CHUNK = 500;
+    let totalIds = 0;
+    let totalPaths = 0;
+    for (;;) {
+      const { data: batch, error: selectError } = await supabase
+        .from('transactions')
+        .select('id, scan_image_path')
+        .not('deleted_at', 'is', null)
+        .lt('deleted_at', cutoff)
+        .order('deleted_at', { ascending: true })
+        .limit(CHUNK);
 
-    const ids = (targets ?? []).map((t) => t.id);
-    const paths = (targets ?? []).map((t) => t.scan_image_path).filter((p): p is string => !!p);
-    evt.merge({ targets_count: ids.length, storage_paths_count: paths.length });
-
-    if (paths.length > 0) {
-      const { error: storageError } = await supabase.storage.from(STORAGE_BUCKET).remove(paths);
-      if (storageError) {
-        evt.warn(`storage_cleanup_partial: ${storageError.message}`);
+      if (selectError) {
+        tagStatus(evt, 500);
+        evt.error(selectError);
+        return NextResponse.json({ error: selectError.message }, { status: 500 });
       }
-    }
 
-    if (ids.length > 0) {
+      if (!batch || batch.length === 0) break;
+
+      const batchIds = batch.map((t) => t.id);
+      const batchPaths = batch.map((t) => t.scan_image_path).filter((p): p is string => !!p);
+
+      if (batchPaths.length > 0) {
+        const { error: storageError } = await supabase.storage.from(STORAGE_BUCKET).remove(batchPaths);
+        if (storageError) {
+          evt.warn(`storage_cleanup_partial: ${storageError.message}`);
+        }
+      }
+
       const { error: deleteError } = await supabase
         .from('transactions')
         .delete()
-        .in('id', ids);
+        .in('id', batchIds);
       if (deleteError) {
         tagStatus(evt, 500);
         evt.error(deleteError);
         return NextResponse.json({ error: deleteError.message }, { status: 500 });
       }
+
+      totalIds += batchIds.length;
+      totalPaths += batchPaths.length;
+
+      if (batch.length < CHUNK) break;
     }
+    evt.merge({ targets_count: totalIds, storage_paths_count: totalPaths });
 
     // Cleanup print_history > 7 hari. History selalu final state
     // (done/failed) — no pending. Hapus apa pun > 7 hari.
@@ -68,7 +84,7 @@ export async function GET(request: NextRequest) {
     }
 
     tagStatus(evt, 200);
-    return NextResponse.json({ deleted_count: ids.length });
+    return NextResponse.json({ deleted_count: totalIds });
   } catch (err) {
     tagStatus(evt, 500);
     evt.error(err);

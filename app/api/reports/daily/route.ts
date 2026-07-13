@@ -8,6 +8,19 @@ const QuerySchema = z.object({
   date: z.string().optional(),
 });
 
+type DailyRpc = {
+  confirmed_total: number;
+  confirmed_count: number;
+  pending_count: number;
+  items: { menu_name: string; qty: number; revenue: number }[];
+  mismatches: {
+    id: string;
+    customer_name: string | null;
+    handwritten: number;
+    computed: number;
+  }[];
+};
+
 export async function GET(request: NextRequest) {
   const evt = newEvent('GET /api/reports/daily');
   try {
@@ -28,14 +41,10 @@ export async function GET(request: NextRequest) {
     evt.set('date', date);
 
     const { start, end } = businessDayRange(date);
-
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('id, transaction_items(qty, unit_price_snapshot, menu_name_snapshot)')
-      .eq('status', 'confirmed')
-      .is('deleted_at', null)
-      .gte('created_at', start)
-      .lt('created_at', end);
+    const { data, error } = await supabase.rpc('report_daily', {
+      p_start: start,
+      p_end: end,
+    });
 
     if (error) {
       tagStatus(evt, 500);
@@ -43,36 +52,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const txs = data ?? [];
-    let total = 0;
-    const byMenu = new Map<string, { qty: number; revenue: number }>();
+    const stats = data as DailyRpc;
+    const topItems = stats.items.slice(0, 5);
 
-    for (const tx of txs) {
-      const lines = (tx.transaction_items ?? []) as Array<{
-        qty: number; unit_price_snapshot: number; menu_name_snapshot: string;
-      }>;
-      for (const l of lines) {
-        const lineTotal = l.qty * l.unit_price_snapshot;
-        total += lineTotal;
-        const prev = byMenu.get(l.menu_name_snapshot) ?? { qty: 0, revenue: 0 };
-        byMenu.set(l.menu_name_snapshot, {
-          qty: prev.qty + l.qty,
-          revenue: prev.revenue + lineTotal,
-        });
-      }
-    }
-
-    const topItems = [...byMenu.entries()]
-      .map(([menu_name, v]) => ({ menu_name, qty: v.qty, revenue: v.revenue }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 5);
-
-    evt.merge({ tx_count: txs.length, total, top_items_count: topItems.length });
+    evt.merge({ tx_count: stats.confirmed_count, total: stats.confirmed_total, top_items_count: topItems.length });
     tagStatus(evt, 200);
     return NextResponse.json({
       date,
-      total,
-      count: txs.length,
+      total: stats.confirmed_total,
+      count: stats.confirmed_count,
       top_items: topItems,
     });
   } catch (err) {

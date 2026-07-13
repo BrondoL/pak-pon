@@ -6,11 +6,18 @@ import {
   parseYm,
   businessMonthRange,
   businessDatesInMonth,
-  businessDate,
   currentBusinessDate,
+  BUSINESS_DAY_CUTOFF_HOURS,
 } from '@/lib/date';
 
 const QuerySchema = z.object({ ym: z.string().optional() });
+
+type MonthlyRpc = {
+  total: number;
+  count: number;
+  by_day: { date: string; total: number; count: number }[];
+  top_items: { menu_name: string; qty: number; revenue: number }[];
+};
 
 function currentYmWIB(): string {
   return currentBusinessDate().slice(0, 7);
@@ -36,13 +43,11 @@ export async function GET(request: NextRequest) {
     evt.set('ym', ym);
 
     const { start, end } = businessMonthRange(ym);
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('id, created_at, transaction_items(qty, unit_price_snapshot, menu_name_snapshot)')
-      .eq('status', 'confirmed')
-      .is('deleted_at', null)
-      .gte('created_at', start)
-      .lt('created_at', end);
+    const { data, error } = await supabase.rpc('report_monthly', {
+      p_start: start,
+      p_end: end,
+      p_cutoff_hours: BUSINESS_DAY_CUTOFF_HOURS,
+    });
 
     if (error) {
       tagStatus(evt, 500);
@@ -50,49 +55,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const txs = data ?? [];
-    const byDay = new Map<string, { total: number; count: number }>();
-    const byMenu = new Map<string, { qty: number; revenue: number }>();
-    let grandTotal = 0;
-
-    for (const tx of txs) {
-      const day = businessDate(new Date(tx.created_at));
-      const lines = (tx.transaction_items ?? []) as Array<{
-        qty: number; unit_price_snapshot: number; menu_name_snapshot: string;
-      }>;
-      const txTotal = lines.reduce((acc, l) => acc + l.qty * l.unit_price_snapshot, 0);
-      grandTotal += txTotal;
-      const day_ = byDay.get(day) ?? { total: 0, count: 0 };
-      byDay.set(day, { total: day_.total + txTotal, count: day_.count + 1 });
-
-      for (const l of lines) {
-        const prev = byMenu.get(l.menu_name_snapshot) ?? { qty: 0, revenue: 0 };
-        byMenu.set(l.menu_name_snapshot, {
-          qty: prev.qty + l.qty,
-          revenue: prev.revenue + l.qty * l.unit_price_snapshot,
-        });
-      }
-    }
-
-    const allDays = businessDatesInMonth(ym);
-    const daily = allDays.map((date) => {
-      const v = byDay.get(date) ?? { total: 0, count: 0 };
-      return { date, total: v.total, count: v.count };
+    const stats = data as MonthlyRpc;
+    const perDay = new Map(stats.by_day.map((d) => [d.date, d]));
+    const daily = businessDatesInMonth(ym).map((date) => {
+      const v = perDay.get(date);
+      return { date, total: v?.total ?? 0, count: v?.count ?? 0 };
     });
 
-    const topItems = [...byMenu.entries()]
-      .map(([menu_name, v]) => ({ menu_name, qty: v.qty, revenue: v.revenue }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 5);
-
-    evt.merge({ tx_count: txs.length, grand_total: grandTotal, days_with_tx: byDay.size });
+    evt.merge({ tx_count: stats.count, grand_total: stats.total, days_with_tx: stats.by_day.length });
     tagStatus(evt, 200);
     return NextResponse.json({
       month: ym,
-      total: grandTotal,
-      count: txs.length,
+      total: stats.total,
+      count: stats.count,
       daily,
-      top_items: topItems,
+      top_items: stats.top_items,
     });
   } catch (err) {
     tagStatus(evt, 500);

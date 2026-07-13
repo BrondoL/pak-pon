@@ -5,6 +5,19 @@ import { DailySummary } from '@/components/daily-summary';
 
 export const dynamic = 'force-dynamic';
 
+type DailyRpc = {
+  confirmed_total: number;
+  confirmed_count: number;
+  pending_count: number;
+  items: { menu_name: string; qty: number; revenue: number }[];
+  mismatches: {
+    id: string;
+    customer_name: string | null;
+    handwritten: number;
+    computed: number;
+  }[];
+};
+
 export default async function DailyReportPage({
   searchParams,
 }: {
@@ -15,53 +28,17 @@ export default async function DailyReportPage({
   const supabase = await getSupabaseServer();
 
   const { start, end } = businessDayRange(date);
-
-  const { data } = await supabase
-    .from('transactions')
-    .select('id, status, customer_name, handwritten_total, transaction_items(qty, unit_price_snapshot, menu_name_snapshot)')
-    .is('deleted_at', null)
-    .gte('created_at', start)
-    .lt('created_at', end);
-
-  const txs = data ?? [];
-  let total = 0;
-  const byMenu = new Map<string, { qty: number; revenue: number }>();
-  const mismatches: { id: string; customer_name: string | null; handwritten: number; computed: number }[] = [];
-  let confirmedCount = 0;
-  let pendingCount = 0;
-
-  for (const tx of txs) {
-    const lines = (tx.transaction_items ?? []) as Array<{
-      qty: number; unit_price_snapshot: number; menu_name_snapshot: string;
-    }>;
-
-    if (tx.status === 'pending_review') {
-      pendingCount += 1;
-      continue;
-    }
-    confirmedCount += 1;
-
-    let txTotal = 0;
-    for (const l of lines) {
-      const lt = l.qty * l.unit_price_snapshot;
-      txTotal += lt;
-      total += lt;
-      const prev = byMenu.get(l.menu_name_snapshot) ?? { qty: 0, revenue: 0 };
-      byMenu.set(l.menu_name_snapshot, { qty: prev.qty + l.qty, revenue: prev.revenue + lt });
-    }
-
-    if (tx.handwritten_total != null && tx.handwritten_total !== txTotal) {
-      mismatches.push({
-        id: tx.id,
-        customer_name: tx.customer_name,
-        handwritten: tx.handwritten_total,
-        computed: txTotal,
-      });
-    }
-  }
-  const allItems = [...byMenu.entries()]
-    .map(([menu_name, v]) => ({ menu_name, ...v }))
-    .sort((a, b) => b.qty - a.qty);
+  const { data } = await supabase.rpc('report_daily', {
+    p_start: start,
+    p_end: end,
+  });
+  const stats = (data as DailyRpc | null) ?? {
+    confirmed_total: 0,
+    confirmed_count: 0,
+    pending_count: 0,
+    items: [],
+    mismatches: [],
+  };
 
   return (
     <div className="space-y-8">
@@ -80,11 +57,11 @@ export default async function DailyReportPage({
       <Suspense>
         <DailySummary
           date={date}
-          total={total}
-          count={confirmedCount}
-          pendingCount={pendingCount}
-          mismatches={mismatches}
-          allItems={allItems}
+          total={stats.confirmed_total}
+          count={stats.confirmed_count}
+          pendingCount={stats.pending_count}
+          mismatches={stats.mismatches}
+          allItems={stats.items}
         />
       </Suspense>
     </div>

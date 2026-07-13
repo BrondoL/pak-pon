@@ -37,6 +37,7 @@ See:
 - Image: client compress dulu (`lib/compress.ts`) sebelum upload — max width dari `NEXT_PUBLIC_IMAGE_MAX_WIDTH` env (default 1600, range 256-4096).
 - Auth: pages dalam `app/(app)/` harus auth; `app/(auth)/` public.
 - Soft delete: `transactions` pakai `deleted_at` timestamp (cron cleanup >7 hari). `menus` pakai `is_active=false` (permanent, preserve FK).
+- Reporting: agregasi total/count di **DB side via SQL function** (`report_*` di migrasi 0034), jangan iterasi row di JS. PostgREST default `db-max-rows=1000` diam-diam truncate → total under-report + hari acak hilang dari grafik (insiden 2026-07-13, bulan Juli 779/1779 tx hilang). Kalau perlu list per-row (pagination), pakai `.range()` + `count: 'exact'`.
 - Next.js 16: konsultasi `node_modules/next/dist/docs/01-app/` sebelum menulis route handler / middleware / server actions / dynamic APIs (banyak breaking changes vs versi sebelumnya).
 
 ## OCR system (single-model + responseSchema, shipped 2026-06-30 + 2026-07-01)

@@ -55,31 +55,25 @@ export default async function TransactionsPage({
   const fromIso = businessDayRange(dateFrom).start;
   const toIso = businessDayRange(dateTo).end;
 
-  // Summary aggregation (all matching, not paginated) — small volume per warung day
-  let summaryQuery = supabase
-    .from('transactions')
-    .select('id, status, transaction_items(qty, unit_price_snapshot)')
-    .is('deleted_at', null)
-    .gte('created_at', fromIso)
-    .lt('created_at', toIso);
-  if (q !== '') summaryQuery = summaryQuery.ilike('customer_name', `%${q}%`);
-  if (statusFilter) summaryQuery = summaryQuery.eq('status', statusFilter);
-  if (takeawayFilter !== null) summaryQuery = summaryQuery.eq('is_takeaway', takeawayFilter);
-
-  const { data: allMatching } = await summaryQuery;
-
-  let summaryTotal = 0;
-  let summaryConfirmed = 0;
-  let summaryPending = 0;
-  for (const tx of allMatching ?? []) {
-    const lines = (tx.transaction_items ?? []) as Array<{ qty: number; unit_price_snapshot: number }>;
-    if (tx.status === 'confirmed') {
-      summaryConfirmed += 1;
-      summaryTotal += lines.reduce((acc, l) => acc + l.qty * l.unit_price_snapshot, 0);
-    } else {
-      summaryPending += 1;
-    }
-  }
+  // Summary aggregation via DB RPC — bypasses PostgREST default 1000-row cap
+  // that silently truncates JS-side sums over multi-day ranges.
+  const { data: summary } = await supabase.rpc('report_transactions_summary', {
+    p_start: fromIso,
+    p_end: toIso,
+    p_q: q === '' ? null : q,
+    p_status: statusFilter,
+    p_takeaway: takeawayFilter,
+  });
+  const summaryStats = (summary as {
+    total_count: number;
+    confirmed_total: number;
+    confirmed_count: number;
+    pending_count: number;
+  } | null) ?? { total_count: 0, confirmed_total: 0, confirmed_count: 0, pending_count: 0 };
+  const summaryTotal = summaryStats.confirmed_total;
+  const summaryConfirmed = summaryStats.confirmed_count;
+  const summaryPending = summaryStats.pending_count;
+  const totalMatching = summaryStats.total_count;
 
   // Paginated list query
   let listQuery = supabase
@@ -122,7 +116,6 @@ export default async function TransactionsPage({
     };
   });
 
-  const totalMatching = (allMatching ?? []).length;
   const rangeLabel = formatRangeLabel(dateFrom, dateTo);
   const hasActiveFilter = q !== '' || statusFilter !== null || takeawayFilter !== null;
 

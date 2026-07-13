@@ -9,30 +9,29 @@ import { formatRp } from '@/lib/currency';
 
 export const dynamic = 'force-dynamic';
 
+type HomeTodayRpc = {
+  confirmed_total: number;
+  confirmed_count: number;
+  pending_count: number;
+};
+
 export default async function HomePage() {
   const supabase = await getSupabaseServer();
   const date = currentBusinessDate();
   const { start, end } = businessDayRange(date);
 
-  const { data } = await supabase
-    .from('transactions')
-    .select('id, status, transaction_items(qty, unit_price_snapshot)')
-    .is('deleted_at', null)
-    .gte('created_at', start)
-    .lt('created_at', end);
-
-  let todayTotal = 0;
-  let confirmedCount = 0;
-  let pendingCount = 0;
-  for (const tx of data ?? []) {
-    if (tx.status === 'pending_review') {
-      pendingCount += 1;
-      continue;
-    }
-    confirmedCount += 1;
-    const lines = (tx.transaction_items ?? []) as Array<{ qty: number; unit_price_snapshot: number }>;
-    todayTotal += lines.reduce((acc, l) => acc + l.qty * l.unit_price_snapshot, 0);
-  }
+  const { data } = await supabase.rpc('report_home_today', {
+    p_start: start,
+    p_end: end,
+  });
+  const stats = (data as HomeTodayRpc | null) ?? {
+    confirmed_total: 0,
+    confirmed_count: 0,
+    pending_count: 0,
+  };
+  const todayTotal = stats.confirmed_total;
+  const confirmedCount = stats.confirmed_count;
+  const pendingCount = stats.pending_count;
 
   const dateLabel = new Date(`${date}T12:00:00+07:00`).toLocaleDateString('id-ID', {
     timeZone: 'Asia/Jakarta',

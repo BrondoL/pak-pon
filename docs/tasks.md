@@ -45,6 +45,16 @@ End-to-end: foto nota → OCR Gemini → review editable → simpan ke DB + stor
 
 End-to-end: history searchable + filtered + editable + soft-deletable, reports harian & bulanan dengan top-5, cron 02:00 WIB auto-clean.
 
+### Hotfix: DB-side aggregation + row-cap guardrails (2026-07-13)
+Konteks: owner report tanggal 11 hilang dari `/reports/monthly` walau di Supabase ada. Root cause: Supabase JS `.select()` tanpa `.range()`/`.limit()` diam-diam ke-cap `db-max-rows=1000` (PostgREST default). Juli 2026 punya 1779 tx confirmed non-deleted → 779 row hilang, physical row order dari storage bikin Jul 11 kebetulan drop full (247 tx / Rp 33 jt). Efek yang sama merambat ke total bulanan (under-report) + home ringkasan hari ini + summary card `/transactions` kalau range multi-hari.
+- [x] Migrasi 0034: SQL functions `report_home_today` / `report_daily` / `report_monthly` / `report_transactions_summary` — semua aggregate di DB side, `LANGUAGE sql STABLE SECURITY INVOKER`, `GRANT EXECUTE TO authenticated`. Business-day cutoff dilempar sebagai `p_cutoff_hours` int dari JS supaya sumber kebenaran tetap satu (`lib/date.ts`).
+- [x] Rewire 6 konsumer ke `.rpc()`: `/api/reports/monthly`, `/reports/monthly`, `/api/reports/daily`, `/reports/daily`, `/` (home), `/transactions` (summary card). JS cuma backfill zero-days array untuk chart bar-nya.
+- [x] `/api/cron/cleanup` unbounded select → chunked loop (`LIMIT 500` per batch, order `deleted_at ASC`, hapus storage + DB per batch, ulang sampai kosong). Cegah bulk-delete backlog silently truncate.
+- [x] `/transactions/trash` flat `LIMIT 100` → proper pagination (`PAGE_SIZE=50` + `?page=` URL param + `count: 'exact'` + Prev/Next `<Link>`). Owner bisa recover semua deletion di retention window, bukan cuma 100 terbaru.
+- [x] CLAUDE.md convention bullet baru: aggregation lewat SQL function di DB side default; pagination default untuk row list.
+
+**Hasil verifikasi**: monthly RPC Jul 2026 = 13 hari lengkap, Jul 11 = 247 tx / Rp 33.043.000, grand total = Rp 221.454.000 (vs pre-fix under-report parah). lint ✓, tsc ✓, 220/220 vitest ✓.
+
 ## Plan 5 — Print Revamp (Nota Format + FCM-Only) ✅ COMPLETE (web)
 Spec: `docs/superpowers/specs/2026-06-25-print-revamp-design.md`
 - [x] **Phase 1** — Format nota: kitchen ticket BIG (item+qty, no price) vs customer receipt (harga + total + footer "Terima kasih"). Item flag `printed_dapur_at`/`printed_minuman_at` per-target. Tombol "Cetak tambahan" (auto-delta), "Cetak ulang Dapur/Minuman/Keduanya", "Cetak nota customer". Auto-print delta only saat edit confirmed tx (re-prints baru item tambahan, ngga ngulang). `replaceItems` preserve flag lewat PATCH save. Plan: `docs/superpowers/plans/2026-06-25-print-revamp-phase1-nota-format.md`.
