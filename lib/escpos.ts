@@ -43,6 +43,12 @@ const GS = 0x1d;
 const LF = 0x0a;
 
 const INIT = new Uint8Array([ESC, 0x40]);
+// ESC ! 0 — select print mode: Font A (12×24 dot), normal size, no emphasis.
+// Beberapa printer thermal 80mm default ke Font B (9×17 dot, condensed) sehingga
+// teks keluar sempit dan tidak memenuhi lebar kertas. Kirim eksplisit di awal
+// tiap tiket supaya lebar karakter konsisten Font A (≈48 char/80mm) — tidak
+// mengubah apa pun kalau printer sudah default Font A.
+const SELECT_FONT_A = new Uint8Array([ESC, 0x21, 0x00]);
 const ALIGN_CENTER = new Uint8Array([ESC, 0x61, 0x01]);
 const ALIGN_LEFT = new Uint8Array([ESC, 0x61, 0x00]);
 const BOLD_ON = new Uint8Array([ESC, 0x45, 0x01]);
@@ -133,6 +139,7 @@ export function renderKitchenTicket(
   const labelWidth = 13;
 
   parts.push(INIT);
+  parts.push(SELECT_FONT_A);
   if (settings.beep_on_print) parts.push(BEEP_3X);
 
   // Centered bold header (warung name).
@@ -144,6 +151,8 @@ export function renderKitchenTicket(
       parts.push(lineFeed(1));
     }
     parts.push(BOLD_OFF);
+    // Blank line antara header dan konten di bawahnya (konsisten dg customer receipt).
+    parts.push(lineFeed(1));
   }
 
   // BUNGKUS banner — DOUBLE SIZE + bold + centered. Ditaruh sebelum info block
@@ -235,6 +244,7 @@ export function renderCustomerReceipt(
 
   // 1. Init + optional buzzer
   parts.push(INIT);
+  parts.push(SELECT_FONT_A);
   if (settings.beep_on_print) parts.push(BEEP_3X);
 
   // 2. Centered header (custom header_text). Bold so it stands out from the
@@ -248,6 +258,8 @@ export function renderCustomerReceipt(
       parts.push(lineFeed(1));
     }
     parts.push(BOLD_OFF);
+    // Blank line antara header dan garis === (mengikuti layout nota yang diharapkan).
+    parts.push(lineFeed(1));
   }
 
   // 3. Info block (Date / Order Number / Customer / Meja)
