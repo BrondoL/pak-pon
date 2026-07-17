@@ -19,12 +19,15 @@ export async function GET(request: NextRequest) {
     evt.set('cutoff', cutoff);
 
     const supabase = getSupabaseAdmin();
+    const nowIso = new Date().toISOString();
+
+    // (a) pending stale = agent tidak pernah ack (FCM+poll dua-duanya gagal).
     const { count: timeoutCount, error: timeoutErr } = await supabase
       .from('print_history')
       .update({
         status: 'failed',
         failure_reason: 'timeout: agent did not ack',
-        failed_at: new Date().toISOString(),
+        failed_at: nowIso,
       }, { count: 'exact' })
       .eq('status', 'pending')
       .lt('created_at', cutoff);
@@ -35,9 +38,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: timeoutErr.message }, { status: 500 });
     }
 
+    // (b) printing stuck = agent klaim (status printing) tapi crash sebelum
+    // finalize done/failed (mis. OS kill di tengah TCP send). Tanpa sweep ini
+    // row stuck 'printing' selamanya — poller filter 'pending' jadi tidak
+    // pernah fetch, tx tidak akan tercetak lagi. Cutoff 5 menit sangat longgar
+    // vs TCP send (hitungan detik) → tidak akan salah-vonis print yang aktif.
+    const { count: stuckPrintingCount, error: stuckErr } = await supabase
+      .from('print_history')
+      .update({
+        status: 'failed',
+        failure_reason: 'stuck: agent claimed but did not finalize',
+        failed_at: nowIso,
+      }, { count: 'exact' })
+      .eq('status', 'printing')
+      .lt('created_at', cutoff);
+
+    if (stuckErr) {
+      tagStatus(evt, 500);
+      evt.error(stuckErr);
+      return NextResponse.json({ error: stuckErr.message }, { status: 500 });
+    }
+
     evt.set('pending_timeout_count', timeoutCount ?? 0);
+    evt.set('stuck_printing_count', stuckPrintingCount ?? 0);
     tagStatus(evt, 200);
-    return NextResponse.json({ timeout_count: timeoutCount ?? 0 });
+    return NextResponse.json({
+      timeout_count: timeoutCount ?? 0,
+      stuck_printing_count: stuckPrintingCount ?? 0,
+    });
   } catch (err) {
     tagStatus(evt, 500);
     evt.error(err);

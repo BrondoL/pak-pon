@@ -71,8 +71,9 @@ export async function GET(request: NextRequest) {
     }
     evt.merge({ targets_count: totalIds, storage_paths_count: totalPaths });
 
-    // Cleanup print_history > 7 hari. History selalu final state
-    // (done/failed) — no pending. Hapus apa pun > 7 hari.
+    // Cleanup print_history > 7 hari. Filter murni umur (created_at), lepas
+    // dari status — row apa pun (done/failed, atau pending/printing yg somehow
+    // nyangkut >7 hari) dihapus.
     const { count: historyDeletedCount, error: historyDeleteErr } = await supabase
       .from('print_history')
       .delete({ count: 'exact' })

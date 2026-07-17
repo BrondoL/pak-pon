@@ -20,7 +20,7 @@ type Job = {
   tx_id: string | null;
   target: 'dapur' | 'minuman' | 'customer';
   trigger: 'auto' | 'auto_additional' | 'reprint' | 'reprint_additional' | 'customer' | 'test';
-  status: 'pending' | 'done' | 'failed';
+  status: 'pending' | 'printing' | 'done' | 'failed';
   failure_reason: string | null;
   created_at: string;
   done_at: string | null;
@@ -263,7 +263,7 @@ export default function PrinterDebugPage() {
                       className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
                         j.status === 'done'
                           ? 'bg-leaf/15 text-leaf'
-                          : j.status === 'pending'
+                          : j.status === 'pending' || j.status === 'printing'
                           ? 'bg-mustard/20 text-coal'
                           : 'bg-brick/15 text-brick'
                       }`}
@@ -317,7 +317,7 @@ export default function PrinterDebugPage() {
                       <td className="p-2">
                         <span className={
                           j.status === 'done' ? 'text-leaf' :
-                          j.status === 'pending' ? 'text-coal-soft' :
+                          j.status === 'pending' || j.status === 'printing' ? 'text-coal-soft' :
                           'text-brick'
                         }>
                           {j.status}
