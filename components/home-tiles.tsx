@@ -28,6 +28,19 @@ const tiles = [
     ),
   },
   {
+    href: '/monitor',
+    title: 'Monitor',
+    subtitle: 'Meja belum bayar',
+    accent: 'mustard',
+    glyph: (
+      <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
+        <rect x="4" y="6" width="24" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M12 26h8M16 22v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="16" cy="14" r="3.5" stroke="currentColor" strokeWidth="1.8" />
+      </svg>
+    ),
+  },
+  {
     href: '/transactions',
     title: 'History',
     subtitle: 'Transaksi tersimpan',
