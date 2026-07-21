@@ -2,12 +2,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { formatRp } from '@/lib/currency';
 
 const WIB = 'Asia/Jakarta';
@@ -134,6 +137,16 @@ export function MonitorDetailModal({
 
         {!loading && !detail && id !== null && (
           <p className="py-6 text-center text-sm text-brick-dark">Gagal memuat detail.</p>
+        )}
+
+        {id !== null && (
+          <DialogFooter>
+            <Link href={`/transactions/${id}`} className="w-full sm:w-auto">
+              <Button variant="secondary" className="w-full">
+                Buka detail lengkap →
+              </Button>
+            </Link>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>
