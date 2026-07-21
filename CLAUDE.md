@@ -78,3 +78,16 @@ See:
 - **Kitchen ticket**: chip labels (bold) di baris terpisah + free-text notes di baris kedua. Customer receipt: **cuma chip `price_delta > 0`** yg tampil (justify harga), zero-delta chip + free-text skip.
 - **Shared helpers** (extract 2026-07-08): `lib/print-dispatch.ts` (`dispatchKitchenPrintJob` dipake POS + review-form), `components/chip-picker.tsx` (dipake `NotaItemModal` + `PosItemConfigModal`), `lib/menu-chips.ts::fetchChipsByMenu` (dipake POST /api/pos + PATCH transactions).
 - **History indicator**: transaction list badge kecil "POS" di baris yg `scan_image_path === null` (proxy: reliable sampai cron retention foto shipped).
+
+## Monitor meja belum bayar (shipped 2026-07-21)
+
+Alat operasional harian buat kasir mantau meja mana yang belum bayar — **bukan fitur akuntansi**. Spec `docs/superpowers/specs/2026-07-21-monitor-unpaid-tables-design.md`, plan `docs/superpowers/plans/2026-07-21-monitor-unpaid-tables.md`.
+
+- **State**: kolom `transactions.paid_at` (migrasi 0036, `timestamptz` NULL = belum bayar) — satu-satunya state, nempel per-transaksi. **Tanpa entitas meja**; pakai `customer_name` + `table_no` yg sudah ada. Partial index `idx_transactions_unpaid`.
+- **Filter monitor**: `status='confirmed'` **AND** `is_takeaway=false` **AND** `paid_at IS NULL` **AND** `deleted_at IS NULL` **AND** `created_at ∈ businessDayRange(hari ini)`. Urut `created_at` asc (paling lama belum bayar di atas). Takeaway & `pending_review` sengaja di-skip.
+- **Route `/monitor`** (tile home + navbar): SSR initial via `fetchUnpaidRows` (`lib/monitor-server.ts`) → client `MonitorBoard` polling `GET /api/monitor` tiap **15 detik** (pola `printer-status-banner.tsx`) + tombol Refresh manual. Search **client-side** by meja/nama (filter `rows` yg sudah di-poll, tanpa API baru).
+- **Tandai lunas**: tombol "Lunas" per kartu → `AlertDialog` konfirmasi → `PATCH /api/transactions/[id]` `{paid:true}` → optimistic remove (rollback on error). Idempotent (set `paid_at` absolut, dua device aman).
+- **Undo**: di halaman detail transaksi (badge "Sudah/Belum bayar" + tombol toggle `{paid:false|true}`). ⚠️ `AlertDialogAction` di fork base-ui ini **bukan** `Close` — dialog toggle di-control manual (`open` state + tutup di handler) biar ga nyempil varian undo setelah `router.refresh`.
+- **Tap kartu** → modal detail read-only (`MonitorDetailModal`, fetch `GET /api/transactions/[id]`) + tombol "Buka detail lengkap" ke `/transactions/[id]`. Tanpa redirect (lebih cepat buat kasir).
+- **Helper murni** `lib/monitor.ts` (`computeItemsTotal`, `mapMonitorRow`, `buildPaidUpdate`) + test `lib/monitor.test.ts`. `buildPaidUpdate` dipake juga di PATCH route.
+- **Laporan tidak disentuh**: `report_*` tetap agregasi `confirmed`, abaikan `paid_at`. Data historis `paid_at=NULL` aman (tersaring filter hari-ini, tanpa backfill). Konsekuensi disadari: omzet mencakup tx yg fisik belum dibayar — kalau butuh bedain omzet vs kas diterima, itu fitur terpisah (butuh backfill), belum dibutuhkan.

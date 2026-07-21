@@ -169,6 +169,22 @@ Plan: `docs/superpowers/plans/2026-07-08-pos-direct-order-with-chips.md`
 
 ---
 
+## Plan 8 — Monitor Meja Belum Bayar ✅ COMPLETE (2026-07-21)
+
+Spec: `docs/superpowers/specs/2026-07-21-monitor-unpaid-tables-design.md`
+Plan: `docs/superpowers/plans/2026-07-21-monitor-unpaid-tables.md`
+
+- Route `/monitor` (tile home + navbar) — daftar transaksi belum bayar hari ini, polling 15s + refresh manual.
+- Migration `0036_transactions_paid_at.sql` — kolom `paid_at timestamptz` (NULL = belum bayar) + partial index `idx_transactions_unpaid`.
+- Filter: `status='confirmed'` + `is_takeaway=false` + `paid_at IS NULL` + `deleted_at IS NULL` + business-day range. Urut `created_at` asc (paling lama di atas).
+- `GET /api/monitor` (polling) reuse `fetchUnpaidRows` (`lib/monitor-server.ts`); helper murni + test di `lib/monitor.ts`.
+- Tandai lunas via `PATCH /api/transactions/[id]` `{paid:true}` (extend, reuse `buildPaidUpdate`), optimistic remove + rollback. Undo di halaman detail (`{paid:false}`) + badge status bayar.
+- Modal detail read-only (tap kartu, tanpa redirect) + tombol "Buka detail lengkap".
+- Search client-side by meja/nama (filter `rows` yang sudah di-poll, tanpa API baru).
+- **Laporan tidak disentuh** — `report_*` tetap agregasi `confirmed`, abaikan `paid_at`. Data historis `paid_at=NULL` aman (tersaring filter hari-ini).
+
+---
+
 ## Backlog (belum dijadwalkan)
 
 ### 🍽️ POS / Order entry
@@ -203,6 +219,7 @@ Plan: `docs/superpowers/plans/2026-07-08-pos-direct-order-with-chips.md`
 - [ ] **Backup harian otomatis ke owner** — export CSV/PDF closingan + kirim via email/WA jam 23:59 WIB. Owner punya offline copy + kalau Supabase down.
 
 ### 💰 Kas / cash management
+- [x] **Monitor meja belum bayar** — shipped 2026-07-21. Lihat Plan 8. Layar operasional `/monitor` mantau meja dine-in confirmed yang belum bayar hari ini (`transactions.paid_at`), tandai lunas manual (dialog konfirmasi, hilang dari monitor), undo di detail. Polling 15s, search client-side. Laporan tidak terpengaruh.
 - [ ] **Kas drawer reconciliation** — input modal awal kas, kas keluar (belanja bahan siang hari), kas akhir → reconcile dengan total sistem. Owner sering bingung "kok uang di laci kurang dari catatan?".
 
 ### 👥 Customer / pelanggan
