@@ -10,6 +10,7 @@ import {
 import { newEvent, tagStatus, type RequestEvent } from '@/lib/logger';
 import { computeNextDailySeq } from '@/lib/daily-seq';
 import { businessDate, businessDayRange } from '@/lib/date';
+import { buildPaidUpdate } from '@/lib/monitor';
 
 const STORAGE_BUCKET = 'notas';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -21,6 +22,7 @@ const PatchSchema = z.object({
   table_no: z.string().nullable().optional(),
   handwritten_total: z.number().int().nonnegative().nullable().optional(),
   is_takeaway: z.boolean().optional(),
+  paid: z.boolean().optional(),
   items: z
     .array(
       z.object({
@@ -131,6 +133,7 @@ export async function PATCH(
       patch_set_table_no: parsed.data.table_no !== undefined,
       patch_set_handwritten_total: parsed.data.handwritten_total !== undefined,
       patch_set_is_takeaway: parsed.data.is_takeaway ?? null,
+      patch_set_paid: parsed.data.paid ?? null,
     });
 
     const headerStatus = await applyHeaderUpdate(supabase, id, parsed.data, evt);
@@ -238,6 +241,11 @@ async function applyHeaderUpdate(
     evt.set('total_changed', true);
   }
   if (patch.is_takeaway !== undefined) headerUpdate.is_takeaway = patch.is_takeaway;
+  if (patch.paid !== undefined) {
+    const { paid_at } = buildPaidUpdate(patch.paid, new Date().toISOString());
+    headerUpdate.paid_at = paid_at;
+    evt.set('paid_set', patch.paid);
+  }
 
   if (Object.keys(headerUpdate).length === 0) return { kind: 'ok' };
 
