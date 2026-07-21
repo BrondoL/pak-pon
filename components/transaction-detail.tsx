@@ -42,6 +42,7 @@ type Transaction = {
   is_takeaway: boolean;
   created_at: string;
   daily_seq?: number | null;
+  paid_at?: string | null;
 };
 
 const WIB = 'Asia/Jakarta';
@@ -85,6 +86,28 @@ export function TransactionDetail({
     !!transaction.handwritten_total && transaction.handwritten_total !== total;
   const diff = mismatch ? transaction.handwritten_total! - total : 0;
   const isDraft = transaction.status === 'pending_review';
+  const isPaid = !!transaction.paid_at;
+
+  async function handleTogglePaid(paid: boolean) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/transactions/${transaction.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paid }),
+      });
+      if (!res.ok) {
+        const data: { error?: string } = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'update-failed');
+      }
+      toast.success(paid ? 'Ditandai lunas' : 'Status lunas dibatalkan');
+      startTransition(() => router.refresh());
+    } catch (err) {
+      const message = err instanceof Error ? `Gagal: ${err.message}` : 'Gagal memperbarui status bayar';
+      setError(message);
+      toast.error('Gagal memperbarui status bayar');
+    }
+  }
 
   async function handleDelete() {
     setError(null);
@@ -166,6 +189,17 @@ export function TransactionDetail({
             <span className="rounded-full bg-leaf/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-leaf">
               ✓ Confirmed
             </span>
+          )}
+          {!isDraft && (
+            isPaid ? (
+              <span className="rounded-full bg-leaf/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-leaf">
+                ✓ Sudah bayar
+              </span>
+            ) : (
+              <span className="rounded-full bg-brick-faint px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brick-dark">
+                Belum bayar
+              </span>
+            )
           )}
         </div>
       </div>
@@ -293,6 +327,35 @@ export function TransactionDetail({
                 ✏️ {isDraft ? 'Lanjutkan edit' : 'Edit transaksi'}
               </Button>
             </Link>
+
+            {!isDraft && (
+              <AlertDialog>
+                <AlertDialogTrigger
+                  disabled={pending}
+                  render={<Button variant="secondary" />}
+                >
+                  {isPaid ? '↩ Batalkan lunas' : '✓ Tandai lunas'}
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      {isPaid ? 'Batalkan status lunas?' : 'Tandai transaksi ini lunas?'}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {isPaid
+                        ? 'Transaksi akan kembali muncul di monitor sebagai belum bayar (jika masih hari ini & dine-in).'
+                        : 'Transaksi akan hilang dari monitor meja belum bayar.'}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={pending}>Batal</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => handleTogglePaid(!isPaid)} disabled={pending}>
+                      {isPaid ? 'Ya, batalkan' : 'Ya, lunas'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
 
             <AlertDialog>
               <AlertDialogTrigger

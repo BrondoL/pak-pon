@@ -18,7 +18,7 @@ export default async function TransactionPage({
 
   const { data: tx } = await supabase
     .from('transactions')
-    .select('id, status, handwritten_total, customer_name, table_no, is_takeaway, created_at, scan_image_path, daily_seq')
+    .select('id, status, handwritten_total, customer_name, table_no, is_takeaway, created_at, scan_image_path, daily_seq, paid_at')
     .eq('id', id)
     .is('deleted_at', null)
     .single();
@@ -51,6 +51,7 @@ export default async function TransactionPage({
         is_takeaway: tx.is_takeaway,
         created_at: tx.created_at,
         daily_seq: tx.daily_seq ?? null,
+        paid_at: tx.paid_at ?? null,
       }}
       items={(items ?? []).map((it) => {
         const rawMenus = (it as { menus?: unknown }).menus;
