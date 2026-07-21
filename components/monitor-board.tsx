@@ -1,0 +1,153 @@
+// components/monitor-board.tsx
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { formatRp } from '@/lib/currency';
+import type { MonitorRow } from '@/lib/monitor';
+import { MonitorDetailModal } from '@/components/monitor-detail-modal';
+
+const POLL_MS = 15_000;
+const WIB = 'Asia/Jakarta';
+
+function formatTimeWIB(iso: string): string {
+  return new Date(iso).toLocaleTimeString('id-ID', {
+    timeZone: WIB, hour: '2-digit', minute: '2-digit',
+  });
+}
+
+export function MonitorBoard({ initialRows }: { initialRows: MonitorRow[] }) {
+  const [rows, setRows] = useState<MonitorRow[]>(initialRows);
+  const [refreshing, setRefreshing] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
+
+  const fetchRows = useCallback(async () => {
+    try {
+      const res = await fetch('/api/monitor');
+      if (!res.ok) return;
+      const data: { rows: MonitorRow[] } = await res.json();
+      setRows(data.rows);
+    } catch {
+      // biarkan data lama saat gagal fetch
+    }
+  }, []);
+
+  useEffect(() => {
+    const intervalId = setInterval(fetchRows, POLL_MS);
+    return () => clearInterval(intervalId);
+  }, [fetchRows]);
+
+  async function handleManualRefresh() {
+    setRefreshing(true);
+    await fetchRows();
+    setRefreshing(false);
+  }
+
+  async function markPaid(row: MonitorRow) {
+    const prev = rows;
+    setRows((r) => r.filter((x) => x.id !== row.id)); // optimistic
+    try {
+      const res = await fetch(`/api/transactions/${row.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paid: true }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success(`Meja ${row.table_no ?? '-'} ditandai lunas`);
+    } catch {
+      setRows(prev); // rollback
+      toast.error('Gagal menandai lunas, coba lagi');
+    }
+  }
+
+  const total = rows.reduce((acc, r) => acc + r.total, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <p className="text-sm text-coal-soft">
+          {rows.length === 0 ? (
+            'Tidak ada meja belum bayar'
+          ) : (
+            <>
+              <span className="font-display text-lg text-coal">{rows.length}</span> meja belum bayar
+              {' · '}total <span className="font-medium text-coal">{formatRp(total)}</span>
+            </>
+          )}
+        </p>
+        <Button variant="secondary" size="sm" onClick={handleManualRefresh} disabled={refreshing}>
+          {refreshing ? 'Menyegarkan…' : '↻ Refresh'}
+        </Button>
+      </div>
+
+      {rows.length === 0 ? (
+        <Card variant="paper" className="px-6 py-14 text-center">
+          <p className="font-display text-xl italic text-coal">Semua meja sudah bayar 🎉</p>
+          <p className="mt-2 text-sm text-coal-soft">Belum ada tagihan meja yang tertunda hari ini.</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {rows.map((row) => (
+            <Card key={row.id} variant="paper" className="flex flex-col gap-3 p-4">
+              <button
+                type="button"
+                onClick={() => setDetailId(row.id)}
+                className="min-w-0 text-left"
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-display text-2xl leading-none text-coal">
+                    {row.table_no ? `Meja ${row.table_no}` : 'Tanpa meja'}
+                  </span>
+                  <span className="shrink-0 text-xs text-clay">{formatTimeWIB(row.created_at)}</span>
+                </div>
+                <div className="mt-1 truncate text-sm text-coal-soft">
+                  {row.customer_name || <span className="italic text-clay">tanpa nama</span>}
+                </div>
+                <div className="mt-2 flex items-baseline justify-between gap-2">
+                  <span className="text-xs text-clay">{row.item_count} item</span>
+                  <span className="font-display text-lg tracking-tight text-coal">{formatRp(row.total)}</span>
+                </div>
+              </button>
+
+              <AlertDialog>
+                <AlertDialogTrigger render={<Button className="w-full" />}>
+                  Lunas
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      Tandai {row.table_no ? `Meja ${row.table_no}` : 'transaksi ini'} lunas?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {row.customer_name ? `${row.customer_name} · ` : ''}
+                      {formatRp(row.total)}. Transaksi akan hilang dari monitor. Batalkan lewat detail transaksi di History.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Batal</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => markPaid(row)}>Ya, lunas</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <MonitorDetailModal id={detailId} onClose={() => setDetailId(null)} />
+    </div>
+  );
+}
