@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +34,7 @@ export function MonitorBoard({ initialRows }: { initialRows: MonitorRow[] }) {
   const [rows, setRows] = useState<MonitorRow[]>(initialRows);
   const [refreshing, setRefreshing] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   const fetchRows = useCallback(async () => {
     try {
@@ -75,6 +77,16 @@ export function MonitorBoard({ initialRows }: { initialRows: MonitorRow[] }) {
 
   const total = rows.reduce((acc, r) => acc + r.total, 0);
 
+  const q = query.trim().toLowerCase();
+  const filtered =
+    q === ''
+      ? rows
+      : rows.filter(
+          (r) =>
+            (r.table_no ?? '').toLowerCase().includes(q) ||
+            (r.customer_name ?? '').toLowerCase().includes(q),
+        );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -93,14 +105,46 @@ export function MonitorBoard({ initialRows }: { initialRows: MonitorRow[] }) {
         </Button>
       </div>
 
+      {rows.length > 0 && (
+        <div className="relative">
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Cari meja atau nama…"
+            aria-label="Cari meja atau nama"
+            className="pr-9"
+          />
+          {query !== '' && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Hapus pencarian"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-clay hover:text-coal"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <Card variant="paper" className="px-6 py-14 text-center">
           <p className="font-display text-xl italic text-coal">Semua meja sudah bayar 🎉</p>
           <p className="mt-2 text-sm text-coal-soft">Belum ada tagihan meja yang tertunda hari ini.</p>
         </Card>
+      ) : filtered.length === 0 ? (
+        <Card variant="paper" className="px-6 py-10 text-center">
+          <p className="text-sm text-coal-soft">
+            Tidak ada meja cocok dengan “{query.trim()}”.
+          </p>
+          <Button variant="secondary" size="sm" className="mt-3" onClick={() => setQuery('')}>
+            Hapus pencarian
+          </Button>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {rows.map((row) => (
+          {filtered.map((row) => (
             <Card key={row.id} variant="paper" className="flex flex-col gap-3 p-4">
               <button
                 type="button"
