@@ -87,8 +87,10 @@ export function TransactionDetail({
   const diff = mismatch ? transaction.handwritten_total! - total : 0;
   const isDraft = transaction.status === 'pending_review';
   const isPaid = !!transaction.paid_at;
+  const [paidDialogOpen, setPaidDialogOpen] = useState(false);
 
   async function handleTogglePaid(paid: boolean) {
+    setPaidDialogOpen(false);
     setError(null);
     try {
       const res = await fetch(`/api/transactions/${transaction.id}`, {
@@ -329,7 +331,7 @@ export function TransactionDetail({
             </Link>
 
             {!isDraft && (
-              <AlertDialog>
+              <AlertDialog open={paidDialogOpen} onOpenChange={setPaidDialogOpen}>
                 <AlertDialogTrigger
                   disabled={pending}
                   render={<Button variant="secondary" />}
