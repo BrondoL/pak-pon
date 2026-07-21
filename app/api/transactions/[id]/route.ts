@@ -133,7 +133,7 @@ export async function PATCH(
       patch_set_table_no: parsed.data.table_no !== undefined,
       patch_set_handwritten_total: parsed.data.handwritten_total !== undefined,
       patch_set_is_takeaway: parsed.data.is_takeaway ?? null,
-      patch_set_paid: parsed.data.paid ?? null,
+      patch_set_paid: parsed.data.paid !== undefined ? parsed.data.paid : null,
     });
 
     const headerStatus = await applyHeaderUpdate(supabase, id, parsed.data, evt);
