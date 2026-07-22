@@ -138,3 +138,27 @@ export function computeReplaceItems(input: {
 
   return { rows };
 }
+
+/**
+ * Sumber transaksi untuk badge riwayat.
+ * POS = tidak pernah punya foto (scan_image_path NULL sejak insert /api/pos).
+ * OCR = hasil scan; termasuk yang fotonya sudah di-purge cron retensi 7 hari
+ * (scan_image_path di-NULL-kan tapi scan_image_purged_at terisi).
+ */
+export function mapTransactionSource(
+  scanImagePath: string | null,
+  scanImagePurgedAt: string | null,
+): 'pos' | 'ocr' {
+  return scanImagePath === null && scanImagePurgedAt === null ? 'pos' : 'ocr';
+}
+
+/**
+ * Payload update saat cron membuang foto nota: kosongkan path + stempel waktu purge.
+ * Path NULL bikin baris keluar dari index idx_transactions_photo_purgeable → idempoten.
+ */
+export function buildScanImagePurge(nowIso: string): {
+  scan_image_path: null;
+  scan_image_purged_at: string;
+} {
+  return { scan_image_path: null, scan_image_purged_at: nowIso };
+}

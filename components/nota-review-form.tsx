@@ -113,12 +113,14 @@ export function NotaReviewForm({
   initialItems,
   menus,
   scanUrl,
+  scanPurged,
   printerSettings,
 }: {
   transaction: Transaction;
   initialItems: Omit<NotaItem, '_localId'>[];
   menus: MenuOption[];
   scanUrl: string | null;
+  scanPurged: boolean;
   printerSettings: PrinterSettings;
 }) {
   const router = useRouter();
@@ -402,6 +404,13 @@ export function NotaReviewForm({
                 alt="Foto nota"
                 imgClassName="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
               />
+            </Card>
+          </div>
+        )}
+        {!scanUrl && scanPurged && (
+          <div className="lg:sticky lg:top-4 lg:self-start">
+            <Card variant="paper" className="px-4 py-6 text-center text-sm text-coal/60">
+              Foto nota sudah dihapus (retensi 7 hari)
             </Card>
           </div>
         )}

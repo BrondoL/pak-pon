@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { DateFilter } from '@/components/date-filter';
 import { TransactionList, type TxRow } from '@/components/transaction-list';
 import { formatRp } from '@/lib/currency';
+import { mapTransactionSource } from '@/lib/transactions';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,7 +80,7 @@ export default async function TransactionsPage({
   let listQuery = supabase
     .from('transactions')
     .select(
-      'id, created_at, status, customer_name, table_no, handwritten_total, is_takeaway, scan_image_path, transaction_items(qty, unit_price_snapshot)',
+      'id, created_at, status, customer_name, table_no, handwritten_total, is_takeaway, scan_image_path, scan_image_purged_at, transaction_items(qty, unit_price_snapshot)',
       { count: 'exact' }
     )
     .is('deleted_at', null)
@@ -107,10 +108,12 @@ export default async function TransactionsPage({
       table_no: tx.table_no,
       handwritten_total: tx.handwritten_total,
       is_takeaway: tx.is_takeaway,
-      // scan_image_path === null reliably means POS (created via POST /api/pos).
-      // OCR/scan flow always uploads image first. Retention cron for cleaning
-      // old scan images (backlog) not yet shipped — when it lands, revisit.
-      source: tx.scan_image_path === null ? 'pos' as const : 'ocr' as const,
+      // POS = tak pernah ada foto; OCR termasuk yang fotonya sudah di-purge cron
+      // retensi 7 hari (scan_image_path NULL tapi scan_image_purged_at terisi).
+      source: mapTransactionSource(
+        tx.scan_image_path,
+        (tx as { scan_image_purged_at?: string | null }).scan_image_purged_at ?? null,
+      ),
       total,
       item_count: lines.length,
     };

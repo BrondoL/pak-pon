@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { newEvent, tagStatus } from '@/lib/logger';
+import { buildScanImagePurge } from '@/lib/transactions';
 
 const STORAGE_BUCKET = 'notas';
 const RETENTION_DAYS = 7;
@@ -83,6 +84,57 @@ export async function GET(request: NextRequest) {
     } else {
       evt.set('print_history_deleted', historyDeletedCount ?? 0);
     }
+
+    // Pass-3: purge foto nota transaksi >7 hari TANPA hapus transaksinya.
+    // Filter umur transaksi (created_at < cutoff), BUKAN deleted_at seperti pass-1.
+    // Bucket sama (notas), cutoff sama (7 hari). Batch loop cegah PostgREST 1000-row
+    // cap. Idempoten: begitu scan_image_path di-NULL-kan, baris tidak match lagi.
+    const nowIso = new Date().toISOString();
+    let photosPurged = 0;
+    for (;;) {
+      const { data: photoBatch, error: photoSelectError } = await supabase
+        .from('transactions')
+        .select('id, scan_image_path')
+        .not('scan_image_path', 'is', null)
+        .lt('created_at', cutoff)
+        .order('created_at', { ascending: true })
+        .limit(CHUNK);
+
+      if (photoSelectError) {
+        evt.warn(`photo_purge_select error: ${photoSelectError.message}`);
+        break;
+      }
+      if (!photoBatch || photoBatch.length === 0) break;
+
+      const photoIds = photoBatch.map((t) => t.id);
+      const photoPaths = photoBatch
+        .map((t) => t.scan_image_path)
+        .filter((p): p is string => !!p);
+
+      if (photoPaths.length > 0) {
+        const { error: photoStorageError } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .remove(photoPaths);
+        if (photoStorageError) {
+          evt.warn(`photo_purge_storage_partial: ${photoStorageError.message}`);
+        }
+      }
+
+      // Tetap update DB walau storage.remove partial-fail: hindari retry foto sama
+      // tiap hari. purged_at menandai foto sudah dibuang (badge riwayat pakai ini).
+      const { error: photoUpdateError } = await supabase
+        .from('transactions')
+        .update(buildScanImagePurge(nowIso))
+        .in('id', photoIds);
+      if (photoUpdateError) {
+        evt.warn(`photo_purge_update error: ${photoUpdateError.message}`);
+        break;
+      }
+
+      photosPurged += photoIds.length;
+      if (photoBatch.length < CHUNK) break;
+    }
+    evt.set('photos_purged_count', photosPurged);
 
     tagStatus(evt, 200);
     return NextResponse.json({ deleted_count: totalIds });
