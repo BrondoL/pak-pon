@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Pass-3: purge foto nota transaksi >7 hari TANPA hapus transaksinya.
+    // Filter umur transaksi (created_at < cutoff), BUKAN deleted_at seperti pass-1.
     // Bucket sama (notas), cutoff sama (7 hari). Batch loop cegah PostgREST 1000-row
     // cap. Idempoten: begitu scan_image_path di-NULL-kan, baris tidak match lagi.
     const nowIso = new Date().toISOString();
