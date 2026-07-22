@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildItemInsertRows, computeReplaceItems, type ExistingItem, type ItemRow, type RequestedItem, type MenuRef } from './transactions';
+import { buildItemInsertRows, computeReplaceItems, mapTransactionSource, buildScanImagePurge, type ExistingItem, type ItemRow, type RequestedItem, type MenuRef } from './transactions';
 
 const menus: MenuRef[] = [
   { id: 'menu-pecel', name: 'Pecel Lele', price: 16000 },
@@ -249,5 +249,28 @@ describe('computeReplaceItems with applied_chips', () => {
       menus,
     });
     expect(result.rows[0].applied_chips).toEqual([]);
+  });
+});
+
+describe('mapTransactionSource', () => {
+  it('POS ketika path dan purged_at dua-duanya null', () => {
+    expect(mapTransactionSource(null, null)).toBe('pos');
+  });
+
+  it('OCR ketika foto masih ada', () => {
+    expect(mapTransactionSource('notas/2026/abc.jpg', null)).toBe('ocr');
+  });
+
+  it('OCR ketika foto sudah di-purge (path null tapi purged_at terisi)', () => {
+    expect(mapTransactionSource(null, '2026-07-23T19:00:00Z')).toBe('ocr');
+  });
+});
+
+describe('buildScanImagePurge', () => {
+  it('mengosongkan path dan menyetel purged_at ke waktu yang diberikan', () => {
+    expect(buildScanImagePurge('2026-07-23T19:00:00Z')).toEqual({
+      scan_image_path: null,
+      scan_image_purged_at: '2026-07-23T19:00:00Z',
+    });
   });
 });
