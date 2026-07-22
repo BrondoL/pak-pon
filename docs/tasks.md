@@ -185,6 +185,19 @@ Plan: `docs/superpowers/plans/2026-07-21-monitor-unpaid-tables.md`
 
 ---
 
+## Plan 9 — Retensi Foto Nota 7 Hari ✅ COMPLETE (2026-07-23)
+
+Spec: `docs/superpowers/specs/2026-07-23-scan-image-retention-design.md`
+Plan: `docs/superpowers/plans/2026-07-23-scan-image-retention.md`
+
+- Migration `0037_scan_image_retention.sql` — kolom `scan_image_purged_at timestamptz` (NULL = foto belum di-purge) + partial index `idx_transactions_photo_purgeable ON (created_at) WHERE scan_image_path IS NOT NULL`.
+- Cron `/api/cron/cleanup` **pass-3** — purge foto nota transaksi >7 hari (`created_at < cutoff`, filter umur transaksi bukan `deleted_at`) TANPA hapus transaksinya: `storage.remove` dari bucket `notas` → `scan_image_path=NULL` + `scan_image_purged_at=now()`. Batch 500 (cegah PostgREST 1000-row cap), idempoten (path NULL → keluar dari index). Storage error non-fatal (warn), tetap update DB biar ga retry tiap hari. Wide-event `photos_purged_count`.
+- Badge riwayat pakai helper murni `mapTransactionSource()` (`lib/transactions.ts`, + test) — POS = `scan_image_path` NULL **dan** `scan_image_purged_at` NULL; OCR yang fotonya sudah di-purge tetap OCR (fix proxy lama yang bakal salah-label POS).
+- UI note "Foto nota sudah dihapus (retensi 7 hari)" di `/transactions/[id]` detail + `/transactions/[id]/review` saat `scan_image_path` NULL tapi `scan_image_purged_at` terisi (bukan broken image).
+- **Konteks operasional (verifikasi 2026-07-22)**: Storage `notas` sempat 546 MB / 1 GB (3.586 foto, tumbuh ~23 MB/hari) — bottleneck utama free tier. Post-retensi steady-state ~130 MB (~7 hari). DB cuma 26 MB / 500 MB (aman bertahun-tahun). Cron `print-sweep` (*/5 min) dijalankan via crontab VPS owner, bukan `vercel.json`.
+
+---
+
 ## Backlog (belum dijadwalkan)
 
 ### 🍽️ POS / Order entry
@@ -209,13 +222,8 @@ Plan: `docs/superpowers/plans/2026-07-21-monitor-unpaid-tables.md`
 
 **Keputusan**: pakai **Opsi A — hapus foto saja, data transaksi tetap selamanya.**
 
-- [ ] **Extend cron `/api/cron/cleanup`**:
-  1. Soft-deleted transaksi >7 hari → hard-delete (sudah ada, jangan diubah)
-  2. **Foto nota >7 hari → hapus dari Storage + set `scan_image_path = NULL`** (BARU). Transaksi row tetap, cuma scan_image_path-nya di-null-kan
-  3. SQL: `UPDATE transactions SET scan_image_path = NULL WHERE scan_image_path IS NOT NULL AND created_at < now() - interval '7 days'` (lalu batch delete Storage object dari path lama)
-- [ ] **UI handle foto hilang**:
-  - `/transactions/[id]` detail: kalau `scan_image_path IS NULL`, tampilkan placeholder "Foto sudah dihapus sesuai retensi 7 hari" sebagai ganti thumbnail
-  - `/transactions/[id]/review`: route ini cuma buat draft (pending_review status, masih dalam 7 hari), foto pasti masih ada
+- [x] **Extend cron `/api/cron/cleanup`** — shipped 2026-07-23 (Plan 9). Pass-3 purge foto nota >7 hari (`storage.remove` + `scan_image_path=NULL` + `scan_image_purged_at=now()`), transaksi row tetap utuh, batch 500, idempoten. Implementasi menambah kolom `scan_image_purged_at` (di luar rencana awal) untuk fix badge POS/OCR yang lama pakai proxy `scan_image_path === null`.
+- [x] **UI handle foto hilang** — shipped 2026-07-23 (Plan 9). Note "Foto nota sudah dihapus (retensi 7 hari)" di detail + review saat `scan_image_path` NULL & `scan_image_purged_at` terisi (bedakan dari POS yang dua-duanya NULL).
 - [ ] **Backup harian otomatis ke owner** — export CSV/PDF closingan + kirim via email/WA jam 23:59 WIB. Owner punya offline copy + kalau Supabase down.
 
 ### 💰 Kas / cash management
