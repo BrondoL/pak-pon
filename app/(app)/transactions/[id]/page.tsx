@@ -18,7 +18,7 @@ export default async function TransactionPage({
 
   const { data: tx } = await supabase
     .from('transactions')
-    .select('id, status, handwritten_total, customer_name, table_no, is_takeaway, created_at, scan_image_path, daily_seq, paid_at')
+    .select('id, status, handwritten_total, customer_name, table_no, is_takeaway, created_at, scan_image_path, scan_image_purged_at, daily_seq, paid_at')
     .eq('id', id)
     .is('deleted_at', null)
     .single();
@@ -37,6 +37,8 @@ export default async function TransactionPage({
       .createSignedUrl(tx.scan_image_path, SIGNED_URL_TTL_SECONDS);
     scanUrl = signed?.signedUrl ?? null;
   }
+
+  const scanPurged = !tx.scan_image_path && !!(tx as { scan_image_purged_at?: string | null }).scan_image_purged_at;
 
   const printerSettings = await getPrinterSettings();
 
@@ -74,6 +76,7 @@ export default async function TransactionPage({
         };
       })}
       scanUrl={scanUrl}
+      scanPurged={scanPurged}
       printerSettings={printerSettings}
     />
   );

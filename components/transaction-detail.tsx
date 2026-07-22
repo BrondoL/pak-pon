@@ -69,11 +69,13 @@ export function TransactionDetail({
   transaction,
   items,
   scanUrl,
+  scanPurged,
   printerSettings,
 }: {
   transaction: Transaction;
   items: Item[];
   scanUrl: string | null;
+  scanPurged: boolean;
   printerSettings: PrinterSettings;
 }) {
   const router = useRouter();
@@ -206,7 +208,7 @@ export function TransactionDetail({
         </div>
       </div>
 
-      <div className={scanUrl ? 'grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]' : ''}>
+      <div className={scanUrl || scanPurged ? 'grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]' : ''}>
         {scanUrl && (
           <div className="lg:sticky lg:top-4 lg:self-start">
             <Card variant="paper" className="overflow-hidden">
@@ -215,6 +217,14 @@ export function TransactionDetail({
                 alt="Foto nota"
                 imgClassName="mx-auto w-full object-contain max-h-72 lg:max-h-[calc(100vh-6rem)]"
               />
+            </Card>
+          </div>
+        )}
+
+        {!scanUrl && scanPurged && (
+          <div className="lg:sticky lg:top-4 lg:self-start">
+            <Card variant="paper" className="px-4 py-6 text-center text-sm text-coal/60">
+              Foto nota sudah dihapus (retensi 7 hari)
             </Card>
           </div>
         )}
