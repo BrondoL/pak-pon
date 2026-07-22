@@ -66,7 +66,7 @@ See:
 - **Agent state UI**: 3-state via `/api/agent/heartbeat` — `online` (status=online + heartbeat <1h), `stale` (status=online + heartbeat >=1h, warning kuning), `offline` (status=offline, alarm merah). Banner `printer-status-banner.tsx` fokus ke status primary, bukan agent generik. DELETE primary diblok 409 kalau masih ada agent lain (owner harus pindahin dulu).
 - **Audit**: web INSERT `print_history` status=pending saat dispatch; agent UPDATE jadi done/failed via `markDone`/`markFailed` (claim filter `.eq("status","pending")` = no-op kalau sudah ke-update worker lain). Trigger `mark_items_printed_history` fire di transisi pending→done (`AFTER UPDATE OF status`), set `transaction_items.printed_*_at` kalau `item_ids` non-null. Customer print skip flag (item_ids null).
 - **Delta logic**: edit save tx confirmed → cuma items dengan flag NULL yang di-print (`auto_additional`). Items existing dimodifikasi (qty/menu/notes) → modal pilihan reprint full ke target atau skip.
-- **Cleanup**: cron 02:00 WIB hapus `print_history >7 hari`.
+- **Cleanup**: cron 02:00 WIB (`/api/cron/cleanup`) — (1) hard-delete transaksi soft-deleted >7 hari + fotonya, (2) hapus `print_history >7 hari`, (3) purge foto nota transaksi >7 hari yang TIDAK dihapus (`scan_image_path`→null, `scan_image_purged_at` diisi) biar Storage free tier ga penuh. Transaksinya tetap utuh. Print-sweep (*/5 min) di-cron eksternal (VPS crontab owner), bukan `vercel.json`.
 
 ## POS direct order + per-menu chips (shipped 2026-07-08)
 
@@ -77,7 +77,7 @@ See:
 - **`PATCH /api/transactions/[id]`** extended: `items[].chip_labels` optional (default []). Server snapshot sama seperti POS. `detectModalContext` di review-form pakai `chipsKey` (sorted labels join) untuk deteksi chip change → reprint modal.
 - **Kitchen ticket**: chip labels (bold) di baris terpisah + free-text notes di baris kedua. Customer receipt: **cuma chip `price_delta > 0`** yg tampil (justify harga), zero-delta chip + free-text skip.
 - **Shared helpers** (extract 2026-07-08): `lib/print-dispatch.ts` (`dispatchKitchenPrintJob` dipake POS + review-form), `components/chip-picker.tsx` (dipake `NotaItemModal` + `PosItemConfigModal`), `lib/menu-chips.ts::fetchChipsByMenu` (dipake POST /api/pos + PATCH transactions).
-- **History indicator**: transaction list badge kecil "POS" di baris yg `scan_image_path === null` (proxy: reliable sampai cron retention foto shipped).
+- **History indicator**: transaction list badge kecil "POS" via `mapTransactionSource()` (`lib/transactions.ts`) — POS = `scan_image_path` NULL **dan** `scan_image_purged_at` NULL. OCR yang fotonya sudah di-purge cron retensi (`scan_image_purged_at` terisi) tetap dianggap OCR, bukan POS.
 
 ## Monitor meja belum bayar (shipped 2026-07-21)
 
