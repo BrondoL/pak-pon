@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -43,13 +44,15 @@ export function MobileNav({ links }: { links: NavLink[] }) {
         ))}
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Setup</DropdownMenuLabel>
-        <DropdownMenuItem render={<Link href="/setup/printer/settings" />}>
-          Setting Printer
-        </DropdownMenuItem>
-        <DropdownMenuItem render={<Link href="/setup/ai-usage" />}>
-          AI Usage
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Setup</DropdownMenuLabel>
+          <DropdownMenuItem render={<Link href="/setup/printer/settings" />}>
+            Setting Printer
+          </DropdownMenuItem>
+          <DropdownMenuItem render={<Link href="/setup/ai-usage" />}>
+            AI Usage
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
 
         <DropdownMenuSeparator />
         <form action="/api/auth/signout" method="post">
