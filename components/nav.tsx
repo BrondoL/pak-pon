@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { SetupMenu } from './setup-menu';
+import { MobileNav } from './mobile-nav';
 
 const links = [
   { href: '/scan',         label: 'Scan' },
@@ -41,7 +42,12 @@ export function Nav() {
           </span>
         </Link>
 
-        <nav className="flex items-center gap-0.5 text-xs sm:text-sm">
+        {/* Mobile: collapse everything into a hamburger so nothing overflows off-screen */}
+        <div className="sm:hidden">
+          <MobileNav links={links} />
+        </div>
+
+        <nav className="hidden items-center gap-0.5 text-xs sm:flex sm:text-sm">
           {links.map((l) => (
             <Link
               key={l.href}
