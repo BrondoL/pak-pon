@@ -1,7 +1,7 @@
 # Nota Customer Otomatis untuk Pesanan Bungkus — Design Spec
 
 **Tanggal:** 2026-08-07
-**Status:** Approved (brainstorm), pending implementation plan
+**Status:** Implemented 2026-08-07, pending manual browser verification — plan: `docs/superpowers/plans/2026-08-07-takeaway-auto-customer-receipt.md`
 
 ## Masalah
 

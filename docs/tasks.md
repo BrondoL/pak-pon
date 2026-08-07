@@ -224,6 +224,18 @@ Plan: `docs/superpowers/plans/2026-08-07-unified-tap-to-add.md`
 
 ---
 
+## Plan 12 — Nota Customer Otomatis untuk Pesanan Bungkus ✅ IMPLEMENTED (2026-08-07, pending manual browser verification)
+
+Spec: `docs/superpowers/specs/2026-08-07-takeaway-auto-customer-receipt-design.md`
+Plan: `docs/superpowers/plans/2026-08-07-takeaway-auto-customer-receipt.md`
+
+- Nota customer tercetak otomatis saat transaksi bungkus pertama kali menjadi `confirmed` (simpan `/pos` atau review OCR saat `wasConfirmedBefore=false`), barengan tiket dapur. Edit setelah confirmed atau toggle bungkus belakangan tidak memicu cetak ulang — kasir pakai tombol manual di halaman detail.
+- `dispatchCustomerReceiptJob` di `lib/print-dispatch.ts` (helper baru, sharing private `buildTicketInput`/`postPrintJob` dengan `dispatchKitchenPrintJob`). Kirim `item_ids: null` sehingga trigger `mark_items_printed_history` tidak menyala — cegah item ditandai tercetak ke dapur kalau nota customer saja yang dikirim.
+- Semua jalur nota customer (otomatis + cetak ulang manual) lewat helper bersama. Cetak ulang nota customer kini identik dengan nota otomatis. Bug lama duplikasi chip labels ketika cetak ulang sekarang fixed — dapur dan customer nota keduanya mendapat chip labels lengkap.
+- Perilaku "kapan tercetak" (saat `isTakeaway && pertama kali confirmed`) hidup di komponen React, belum ada test otomatis — hanya bisa diverifikasi manual dengan printer sungguhan.
+
+---
+
 ## Backlog (belum dijadwalkan)
 
 ### 🍽️ POS / Order entry
