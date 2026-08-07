@@ -20,6 +20,9 @@ import {
 import { formatRp } from '@/lib/currency';
 import type { MonitorRow } from '@/lib/monitor';
 import { MonitorDetailModal } from '@/components/monitor-detail-modal';
+import { MonitorAddItemModal } from '@/components/monitor-add-item-modal';
+import type { MenuOption } from '@/components/nota-item-modal';
+import type { PrinterSettings } from '@/lib/printer-settings';
 
 const POLL_MS = 15_000;
 const WIB = 'Asia/Jakarta';
@@ -30,10 +33,19 @@ function formatTimeWIB(iso: string): string {
   });
 }
 
-export function MonitorBoard({ initialRows }: { initialRows: MonitorRow[] }) {
+export function MonitorBoard({
+  initialRows,
+  menus,
+  printerSettings,
+}: {
+  initialRows: MonitorRow[];
+  menus: MenuOption[];
+  printerSettings: PrinterSettings;
+}) {
   const [rows, setRows] = useState<MonitorRow[]>(initialRows);
   const [refreshing, setRefreshing] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [addingRow, setAddingRow] = useState<MonitorRow | null>(null);
   const [query, setQuery] = useState('');
 
   const fetchRows = useCallback(async () => {
@@ -166,32 +178,52 @@ export function MonitorBoard({ initialRows }: { initialRows: MonitorRow[] }) {
                 </div>
               </button>
 
-              <AlertDialog>
-                <AlertDialogTrigger render={<Button className="w-full" />}>
-                  Lunas
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      Tandai {row.table_no ? `Meja ${row.table_no}` : 'transaksi ini'} lunas?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {row.customer_name ? `${row.customer_name} · ` : ''}
-                      {formatRp(row.total)}. Transaksi akan hilang dari monitor. Batalkan lewat detail transaksi di History.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Batal</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => markPaid(row)}>Ya, lunas</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => setAddingRow(row)}
+                >
+                  + Item
+                </Button>
+
+                <AlertDialog>
+                  <AlertDialogTrigger render={<Button className="flex-1" />}>
+                    Lunas
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        Tandai {row.table_no ? `Meja ${row.table_no}` : 'transaksi ini'} lunas?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {row.customer_name ? `${row.customer_name} · ` : ''}
+                        {formatRp(row.total)}. Transaksi akan hilang dari monitor. Batalkan lewat detail transaksi di History.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Batal</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => markPaid(row)}>Ya, lunas</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </Card>
           ))}
         </div>
       )}
 
       <MonitorDetailModal id={detailId} onClose={() => setDetailId(null)} />
+
+      {addingRow && (
+        <MonitorAddItemModal
+          row={addingRow}
+          menus={menus}
+          printerSettings={printerSettings}
+          onClose={() => setAddingRow(null)}
+          onSaved={() => { setAddingRow(null); void fetchRows(); }}
+        />
+      )}
     </div>
   );
 }
