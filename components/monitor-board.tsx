@@ -179,8 +179,11 @@ export function MonitorBoard({
               </button>
 
               <div className="flex gap-2">
+                {/* outline, bukan secondary: --secondary = paper-soft, persis warna
+                    Card variant="paper" yang menaunginya + border-transparent, jadi
+                    tombolnya ga keliatan sama sekali di card. */}
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   className="flex-1"
                   onClick={() => setAddingRow(row)}
                 >
