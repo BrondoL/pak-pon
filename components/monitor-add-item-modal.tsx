@@ -10,7 +10,8 @@ import {
 import { formatRp } from '@/lib/currency';
 import { dispatchKitchenPrintJob, splitItemsByPrintTarget, type PrintTarget } from '@/lib/print-dispatch';
 import { PosMenuPicker } from '@/components/pos/pos-menu-picker';
-import { PosItemConfigModal, type PosCartItemDraft } from '@/components/pos/pos-item-config-modal';
+import { PosItemConfigModal } from '@/components/pos/pos-item-config-modal';
+import type { PosCartItemDraft } from '@/lib/cart-draft';
 import type { MenuOption } from '@/components/nota-item-modal';
 import type { PrinterSettings } from '@/lib/printer-settings';
 import type { MonitorRow } from '@/lib/monitor';

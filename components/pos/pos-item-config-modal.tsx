@@ -10,16 +10,7 @@ import {
 import { formatRp } from '@/lib/currency';
 import { ChipPicker } from '@/components/chip-picker';
 import type { MenuOption } from '@/components/nota-item-modal';
-
-export type PosCartItemDraft = {
-  menu_id: string;
-  menu_name_snapshot: string;
-  category: MenuOption['category'];
-  unit_price_snapshot: number;
-  qty: number;
-  notes: string | null;
-  applied_chips: Array<{ label: string; price_delta: number }>;
-};
+import type { PosCartItemDraft } from '@/lib/cart-draft';
 
 export function PosItemConfigModal({
   menu,
