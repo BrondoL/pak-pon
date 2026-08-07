@@ -593,7 +593,7 @@ git commit -m "docs: catat nota customer otomatis untuk pesanan bungkus"
 
 ## Verifikasi manual (butuh manusia + printer)
 
-Aturan "kapan tercetak" hidup di dalam komponen React dan repo ini tidak punya harness test komponen, jadi hanya bisa dibuktikan di sini. Butuh agent printer primary online.
+Aturan "kapan tercetak" hidup di dalam komponen React dan belum ditulis testnya, jadi untuk sekarang dibuktikan di sini. Butuh agent printer primary online. (Harness test komponen sudah ada di repo — `@testing-library/react` + jsdom; test untuk kondisi cetak ini masuk daftar utang, bukan hal yang mustahil dites.)
 
 1. `/pos`: pesanan **bungkus** → Simpan. Keluar tiket dapur **dan** nota customer, tanpa menyentuh tombol apa pun.
 2. `/pos`: pesanan **dine-in** → Simpan. Hanya tiket dapur. Nota customer **tidak** keluar.

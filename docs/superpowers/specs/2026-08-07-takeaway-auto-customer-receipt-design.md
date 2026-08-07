@@ -93,7 +93,7 @@ Agent printer offline (503) tetap memunculkan peringatan kuning yang sudah ada, 
 - HTTP 500 → `{ ok: false, offline: false }`
 - `fetch` melempar → `{ ok: false, offline: false }`, tidak melempar keluar
 
-Perilaku "kapan dicetak" (bungkus + pertama kali confirmed) hidup di dalam komponen React, dan repo ini tidak punya harness test komponen. Jadi bagian itu hanya bisa dibuktikan lewat verifikasi manual di bawah.
+Perilaku "kapan dicetak" (bungkus + pertama kali confirmed) hidup di dalam komponen React dan **belum** ditulis testnya. Harness-nya sudah tersedia (`@testing-library/react` + jsdom + `vitest.setup.ts`; contoh pemakaian di `components/reprint-card.test.tsx`), jadi ini utang yang bisa dilunasi kapan saja — bukan hal yang mustahil dites. Sementara ini dibuktikan lewat verifikasi manual di bawah.
 
 ## Verifikasi manual
 

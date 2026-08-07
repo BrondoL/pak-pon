@@ -180,5 +180,5 @@ Komponen React tidak dites — repo belum punya harness-nya, dan spec ini tidak 
 - Mengubah `NotaItemModal` atau jalur edit item lama
 - Menampilkan item nota yang sudah ada di dalam modal tambah
 - Mengubah API, logika cetak, atau deteksi item termodifikasi
-- Menambah harness test komponen React
+- Menambah test komponen untuk perilaku tap ini (harness-nya sudah ada di repo — `@testing-library/react` + jsdom, lihat `components/reprint-card.test.tsx` — cuma perilaku ini yang belum ditulis testnya)
 - Mengubah tata letak `/pos` (grid + cart tetap menyatu di halaman, bukan modal)
