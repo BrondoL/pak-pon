@@ -23,6 +23,25 @@ export type PrintJobTx = {
 };
 
 /**
+ * Routing item ke printer: minuman → printer minuman, makanan & nasi → dapur.
+ *
+ * Dipakai bersama oleh POS (`pos-client`) dan modal tambah item di monitor
+ * (`monitor-add-item-modal`) — sengaja satu tempat supaya penambahan kategori
+ * baru tidak perlu diingat di dua file.
+ */
+export function splitItemsByPrintTarget<
+  T extends { category: 'makanan' | 'nasi' | 'minuman' },
+>(items: T[]): { dapur: T[]; minuman: T[] } {
+  const dapur: T[] = [];
+  const minuman: T[] = [];
+  for (const it of items) {
+    if (it.category === 'minuman') minuman.push(it);
+    else dapur.push(it);
+  }
+  return { dapur, minuman };
+}
+
+/**
  * Render an ESC/POS kitchen ticket for the given items and POST it to
  * `/api/print/send` as a base64 payload. Shared between the OCR review flow
  * (nota-review-form) and the POS quick-order flow (pos-client) so a single

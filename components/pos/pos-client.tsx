@@ -15,21 +15,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { formatRp } from '@/lib/currency';
-import { dispatchKitchenPrintJob, type PrintTarget } from '@/lib/print-dispatch';
+import { dispatchKitchenPrintJob, splitItemsByPrintTarget, type PrintTarget } from '@/lib/print-dispatch';
 import { PosMenuPicker } from './pos-menu-picker';
 import { PosItemConfigModal, type PosCartItemDraft } from './pos-item-config-modal';
 
 type CartRow = PosCartItemDraft & { _localId: string };
-
-function splitByTarget<T extends { category: PosCartItemDraft['category'] }>(cart: T[]) {
-  const dapur: T[] = [];
-  const minuman: T[] = [];
-  for (const it of cart) {
-    if (it.category === 'minuman') minuman.push(it);
-    else dapur.push(it);
-  }
-  return { dapur, minuman };
-}
 
 export function PosClient({
   menus,
@@ -124,7 +114,7 @@ export function PosClient({
         ...it,
         id: data.items[idx]?.id ?? crypto.randomUUID(),
       }));
-      const split = splitByTarget(cartWithIds);
+      const split = splitItemsByPrintTarget(cartWithIds);
       const jobs: Promise<{ target: PrintTarget; ok: boolean; offline: boolean }>[] = [];
       if (split.dapur.length > 0) {
         jobs.push(dispatchKitchenPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur, trigger: 'auto', printerSettings })

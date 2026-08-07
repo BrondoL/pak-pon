@@ -2,11 +2,13 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { formatRp } from '@/lib/currency';
+import { dispatchKitchenPrintJob, splitItemsByPrintTarget, type PrintTarget } from '@/lib/print-dispatch';
 import { PosMenuPicker } from '@/components/pos/pos-menu-picker';
 import { PosItemConfigModal, type PosCartItemDraft } from '@/components/pos/pos-item-config-modal';
 import type { MenuOption } from '@/components/nota-item-modal';
@@ -104,7 +106,106 @@ export function MonitorAddItemModal({
   }
 
   async function handleSave() {
-    // Diisi di Task 4.
+    if (draft.length === 0) return;
+    if (submitLock.current) return;
+    submitLock.current = true;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/transactions/${row.id}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: draft.map((it) => ({
+            menu_id: it.menu_id,
+            qty: it.qty,
+            chip_labels: it.applied_chips.map((c) => c.label),
+            notes: it.notes,
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        // 404/409 = transaksi sudah tidak relevan; tidak ada gunanya kasir
+        // mencoba lagi dengan draft yang sama → tutup + refresh daftar.
+        if (res.status === 404 || res.status === 409) {
+          toast.error(
+            res.status === 404 ? 'Transaksi sudah tidak ada' : 'Transaksi sudah tidak aktif',
+          );
+          onSaved();
+          return;
+        }
+        const data: { error?: string } = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'save-failed');
+      }
+
+      const data = (await res.json()) as {
+        transaction: {
+          id: string;
+          daily_seq: number | null;
+          created_at: string;
+          customer_name: string | null;
+          table_no: string | null;
+          is_takeaway: boolean;
+        };
+        items: Array<{ id: string; sort_order: number }>;
+      };
+
+      // Cocokkan draft ke baris hasil insert lewat sort_order (server assign
+      // berurutan mengikuti urutan kiriman), bukan asumsi urutan array response.
+      const created = [...data.items].sort((a, b) => a.sort_order - b.sort_order);
+      const withIds = draft.map((it, idx) => ({
+        ...it,
+        id: created[idx]?.id ?? crypto.randomUUID(),
+      }));
+
+      // Hanya item baru yang dicetak. Item lama tidak tersentuh di server, jadi
+      // tidak perlu filter printed_*_at seperti di nota-review-form.
+      const split = splitItemsByPrintTarget(withIds);
+      const jobs: Promise<{ target: PrintTarget; ok: boolean; offline: boolean }>[] = [];
+      if (split.dapur.length > 0) {
+        jobs.push(
+          dispatchKitchenPrintJob({
+            tx: data.transaction, target: 'dapur', items: split.dapur,
+            trigger: 'auto_additional', printerSettings,
+          }).then((r) => ({ ...r, target: 'dapur' as const })),
+        );
+      }
+      if (split.minuman.length > 0) {
+        jobs.push(
+          dispatchKitchenPrintJob({
+            tx: data.transaction, target: 'minuman', items: split.minuman,
+            trigger: 'auto_additional', printerSettings,
+          }).then((r) => ({ ...r, target: 'minuman' as const })),
+        );
+      }
+      const results = await Promise.all(jobs);
+      const failed = results.filter((r) => !r.ok);
+      const offlineCount = failed.filter((f) => f.offline).length;
+
+      if (failed.length === 0) {
+        toast.success(`${draft.length} item ditambahkan, ${results.length} print job dikirim`);
+      } else if (offlineCount > 0) {
+        toast.success(`${draft.length} item ditambahkan`);
+        toast.warning(
+          'Agent printer offline. Nyalakan agent lalu cetak manual dari detail transaksi.',
+          { duration: 10000 },
+        );
+      } else {
+        toast.success(`${draft.length} item ditambahkan`);
+        toast.error(`Gagal kirim print: ${failed.map((f) => f.target).join(', ')}`);
+      }
+
+      onSaved();
+    } catch (err) {
+      // Modal sengaja tetap terbuka & draft dipertahankan — kasir tinggal
+      // menekan Simpan lagi tanpa mengetik ulang pesanannya.
+      toast.error('Gagal menambah item', {
+        description: err instanceof Error ? err.message : 'Coba lagi.',
+      });
+      submitLock.current = false;
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
