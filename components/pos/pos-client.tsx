@@ -18,9 +18,8 @@ import { formatRp } from '@/lib/currency';
 import { dispatchKitchenPrintJob, splitItemsByPrintTarget, type PrintTarget } from '@/lib/print-dispatch';
 import { PosMenuPicker } from './pos-menu-picker';
 import { PosItemConfigModal } from './pos-item-config-modal';
-import type { PosCartItemDraft } from '@/lib/cart-draft';
-
-type CartRow = PosCartItemDraft & { _localId: string };
+import { addOrIncrementDraft, needsChipConfig } from '@/lib/cart-draft';
+import type { DraftRow, PosCartItemDraft } from '@/lib/cart-draft';
 
 export function PosClient({
   menus,
@@ -32,7 +31,7 @@ export function PosClient({
   const router = useRouter();
   const [pickingMenu, setPickingMenu] = useState<MenuOption | null>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [cart, setCart] = useState<CartRow[]>([]);
+  const [cart, setCart] = useState<DraftRow[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [tableNo, setTableNo] = useState('');
   const [isTakeaway, setIsTakeaway] = useState(false);
@@ -111,7 +110,7 @@ export function PosClient({
         items: Array<{ id: string }>;
       };
 
-      const cartWithIds: Array<CartRow & { id: string }> = cart.map((it, idx) => ({
+      const cartWithIds: Array<DraftRow & { id: string }> = cart.map((it, idx) => ({
         ...it,
         id: data.items[idx]?.id ?? crypto.randomUUID(),
       }));
@@ -154,7 +153,20 @@ export function PosClient({
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <PosMenuPicker menus={menus} onMenuTap={(m) => { setEditingIdx(null); setPickingMenu(m); }} />
+        <PosMenuPicker
+          menus={menus}
+          onMenuTap={(m) => {
+            setEditingIdx(null);
+            // Menu bergrup mutex (mis. Ayam goreng: Dada/Paha) tetap buka modal
+            // konfigurasi — bagiannya harus diputuskan, bukan didiamkan. Menu lain
+            // langsung masuk cart qty 1, tap lagi qty naik.
+            if (needsChipConfig(m)) {
+              setPickingMenu(m);
+              return;
+            }
+            setCart((prev) => addOrIncrementDraft(prev, m, crypto.randomUUID()));
+          }}
+        />
 
         <div className="space-y-4 pb-24 lg:pb-0">
           <Card variant="paper" className="p-5">
