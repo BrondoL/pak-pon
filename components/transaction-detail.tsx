@@ -28,6 +28,7 @@ type Item = {
   unit_price_snapshot: number;
   qty: number;
   notes: string | null;
+  applied_chips?: Array<{ label: string; price_delta: number }> | null;
   menu_category?: 'makanan' | 'nasi' | 'minuman' | string | null;
   printed_dapur_at: string | null;
   printed_minuman_at: string | null;
@@ -317,6 +318,7 @@ export function TransactionDetail({
                 unit_price_snapshot: it.unit_price_snapshot,
                 qty: it.qty,
                 notes: it.notes,
+                applied_chips: it.applied_chips ?? [],
                 printed_dapur_at: it.printed_dapur_at,
                 printed_minuman_at: it.printed_minuman_at,
               }))}
