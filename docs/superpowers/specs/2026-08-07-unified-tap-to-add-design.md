@@ -1,7 +1,7 @@
 # Tap-to-Add Seragam di POS, Review, dan Monitor — Design Spec
 
 **Tanggal:** 2026-08-07
-**Status:** Approved (brainstorm), pending implementation plan
+**Status:** Implemented 2026-08-07, pending manual browser verification — plan: `docs/superpowers/plans/2026-08-07-unified-tap-to-add.md`
 **Terkait:** `docs/superpowers/specs/2026-08-07-monitor-add-item-design.md` (fitur monitor yang jadi acuan perilaku)
 
 ## Masalah

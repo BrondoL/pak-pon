@@ -209,6 +209,21 @@ Plan: `docs/superpowers/plans/2026-08-07-monitor-add-item.md`
 
 ---
 
+## Plan 11 — Tap-to-Add Seragam di POS, Review, dan Monitor ✅ IMPLEMENTED (2026-08-07, pending manual browser verification)
+
+Spec: `docs/superpowers/specs/2026-08-07-unified-tap-to-add-design.md`
+Plan: `docs/superpowers/plans/2026-08-07-unified-tap-to-add.md`
+
+- **Satu perilaku di tiga halaman**: tap menu = item masuk daftar qty 1, tap lagi = qty naik, tapi baris yg sudah punya chip/catatan tidak ikut naik (tap bikin baris baru). Aturan murni di `lib/cart-draft.ts` (`addOrIncrementDraft`, `needsChipConfig`) + test `lib/cart-draft.test.ts` (10 test).
+- **Pengecualian mutex_group**: menu dengan chip bergrup (produksi: cuma Ayam goreng — Dada/Paha) tetap buka `PosItemConfigModal` saat di-tap; batal di modal = tidak ada baris yg ditambah. Tujuannya keseragaman & memastikan pilihan wajib dicatat.
+- **Shared modal `components/add-items-modal.tsx`** (baru, diangkat dari `MonitorAddItemModal`): grid menu + draft list + confirm button. Tidak tahu soal menyimpan — parent inject `onConfirm` callback. Dipakai `MonitorAddItemModal` (simpan ke API + cetak), `nota-review-form` (simpan ke state lokal), dan `PosClient` (langsung update cart, tanpa modal).
+- **`MonitorAddItemModal` menyusut** ke logika simpan+cetak. Seluruh error handling (400/401/404/409/503), kunci `submitLock`, urutan `saved=true` sebelum `res.json()` **tidak berubah** — termasuk modal tetap terbuka + draft utuh kalau simpan gagal.
+- **`/pos` (`PosClient.onMenuTap`)**:  needsChipConfig → buka `PosItemConfigModal` (sekarang). Sebaliknya → `addOrIncrementDraft()` langsung ke cart. ✏️ baris tetap buka `PosItemConfigModal`.
+- **Review (`nota-review-form`)**:  "+ Tambah item" → `AddItemsModal`. `onConfirm` map draft → `NotaItem` (qty, notes, applied_chips baru; `id=null` → item baru). ✏️ baris lama tetap lewat `NotaItemModal` (bisa ganti menu + hapus).
+- **Cetak tidak berubah**: item baru tetap `auto_additional` (tidak ada modal "Cetak ulang"). `computeReplaceItems`, `detectModalContext`, `dispatchKitchenPrintJob` tetap.
+
+---
+
 ## Backlog (belum dijadwalkan)
 
 ### 🍽️ POS / Order entry
