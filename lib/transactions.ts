@@ -139,6 +139,56 @@ export function computeReplaceItems(input: {
   return { rows };
 }
 
+export type AppendItemRequest = {
+  menu_id: string;
+  qty: number;
+  notes: string | null;
+  applied_chips: AppliedChip[];
+};
+
+/**
+ * Hitung baris insert untuk "tambah item ke transaksi yang sudah jalan".
+ *
+ * Beda dari computeReplaceItems: tidak ada existing item yang perlu dicocokkan
+ * — semuanya baru. Harga selalu di-snapshot dari master menu sekarang + total
+ * price_delta chip. `id` sengaja tidak diisi supaya Postgres generate sendiri,
+ * dan printed_*_at mulai null supaya tiket dapur untuk item ini belum dianggap
+ * tercetak.
+ *
+ * `startSortOrder` = sort_order tertinggi yang sudah ada di transaksi + 1,
+ * supaya item baru selalu muncul di urutan paling bawah nota.
+ *
+ * Throw kalau ada menu_id yang tidak ada di `menus`.
+ */
+export function buildAppendItemRows(input: {
+  requested: AppendItemRequest[];
+  menus: MenuRef[];
+  startSortOrder: number;
+}): ItemRow[] {
+  const menuById = new Map(input.menus.map((m) => [m.id, m]));
+
+  return input.requested.map((req, idx) => {
+    const menu = menuById.get(req.menu_id);
+    if (!menu) {
+      throw new Error(`Unknown menu_id: ${req.menu_id}`);
+    }
+    const chipDeltaSum = req.applied_chips.reduce((s, c) => s + c.price_delta, 0);
+
+    return {
+      menu_id: menu.id,
+      menu_name_snapshot: menu.name,
+      unit_price_snapshot: menu.price + chipDeltaSum,
+      qty: req.qty,
+      notes: req.notes,
+      applied_chips: req.applied_chips,
+      sort_order: input.startSortOrder + idx,
+      confidence: null,
+      printed_dapur_at: null,
+      printed_minuman_at: null,
+    };
+  });
+}
+
 /**
  * Sumber transaksi untuk badge riwayat.
  * POS = tidak pernah punya foto (scan_image_path NULL sejak insert /api/pos).

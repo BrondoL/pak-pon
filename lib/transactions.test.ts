@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildItemInsertRows, computeReplaceItems, mapTransactionSource, buildScanImagePurge, type ExistingItem, type ItemRow, type RequestedItem, type MenuRef } from './transactions';
+import { buildItemInsertRows, computeReplaceItems, mapTransactionSource, buildScanImagePurge, buildAppendItemRows, type ExistingItem, type ItemRow, type RequestedItem, type MenuRef, type AppendItemRequest } from './transactions';
 
 const menus: MenuRef[] = [
   { id: 'menu-pecel', name: 'Pecel Lele', price: 16000 },
@@ -272,5 +272,83 @@ describe('buildScanImagePurge', () => {
       scan_image_path: null,
       scan_image_purged_at: '2026-07-23T19:00:00Z',
     });
+  });
+});
+
+describe('buildAppendItemRows', () => {
+  const appendMenus: MenuRef[] = [
+    { id: 'menu-pecel', name: 'Pecel Lele', price: 16000 },
+    { id: 'menu-teh',   name: 'Es Teh',     price: 5000 },
+  ];
+
+  it('assigns sequential sort_order starting from startSortOrder', () => {
+    const requested: AppendItemRequest[] = [
+      { menu_id: 'menu-pecel', qty: 1, notes: null, applied_chips: [] },
+      { menu_id: 'menu-teh',   qty: 2, notes: null, applied_chips: [] },
+    ];
+    const rows = buildAppendItemRows({ requested, menus: appendMenus, startSortOrder: 5 });
+    expect(rows.map((r) => r.sort_order)).toEqual([5, 6]);
+  });
+
+  it('snapshots menu name and price when no chips', () => {
+    const requested: AppendItemRequest[] = [
+      { menu_id: 'menu-pecel', qty: 3, notes: 'pedas', applied_chips: [] },
+    ];
+    const [row] = buildAppendItemRows({ requested, menus: appendMenus, startSortOrder: 0 });
+    expect(row.menu_name_snapshot).toBe('Pecel Lele');
+    expect(row.unit_price_snapshot).toBe(16000);
+    expect(row.applied_chips).toEqual([]);
+    expect(row.qty).toBe(3);
+    expect(row.notes).toBe('pedas');
+  });
+
+  it('adds chip price_delta sum to unit_price_snapshot', () => {
+    const requested: AppendItemRequest[] = [
+      {
+        menu_id: 'menu-teh',
+        qty: 1,
+        notes: null,
+        applied_chips: [
+          { label: 'Panas', price_delta: 0 },
+          { label: 'Jumbo', price_delta: 3000 },
+        ],
+      },
+    ];
+    const [row] = buildAppendItemRows({ requested, menus: appendMenus, startSortOrder: 0 });
+    expect(row.unit_price_snapshot).toBe(8000);
+    expect(row.applied_chips).toEqual([
+      { label: 'Panas', price_delta: 0 },
+      { label: 'Jumbo', price_delta: 3000 },
+    ]);
+  });
+
+  it('starts print-tracking flags at null and omits id', () => {
+    const requested: AppendItemRequest[] = [
+      { menu_id: 'menu-pecel', qty: 1, notes: null, applied_chips: [] },
+    ];
+    const [row] = buildAppendItemRows({ requested, menus: appendMenus, startSortOrder: 0 });
+    expect(row.printed_dapur_at).toBeNull();
+    expect(row.printed_minuman_at).toBeNull();
+    expect(row.confidence).toBeNull();
+    expect(row.id).toBeUndefined();
+  });
+
+  it('throws on unknown menu_id', () => {
+    const requested: AppendItemRequest[] = [
+      { menu_id: 'menu-hantu', qty: 1, notes: null, applied_chips: [] },
+    ];
+    expect(() => buildAppendItemRows({ requested, menus: appendMenus, startSortOrder: 0 }))
+      .toThrow('Unknown menu_id: menu-hantu');
+  });
+
+  it('returns rows that buildItemInsertRows strips id from', () => {
+    const rows = buildAppendItemRows({
+      requested: [{ menu_id: 'menu-pecel', qty: 1, notes: null, applied_chips: [] }],
+      menus: appendMenus,
+      startSortOrder: 0,
+    });
+    const insertRows = buildItemInsertRows(rows, 'tx-1');
+    expect(insertRows[0]).not.toHaveProperty('id');
+    expect(insertRows[0].transaction_id).toBe('tx-1');
   });
 });
