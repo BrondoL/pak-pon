@@ -35,7 +35,9 @@ export function MonitorAddItemModal({
   onSaved: () => void;
 }) {
   const [draft, setDraft] = useState<DraftRow[]>([]);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  // Dilacak via _localId (bukan index array) — index bisa geser kalau draft
+  // berubah selagi modal konfigurasi terbuka, dan overwrite baris yang salah.
+  const [editingLocalId, setEditingLocalId] = useState<string | null>(null);
   const [pickingMenu, setPickingMenu] = useState<MenuOption | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // Sync guard: setSubmitting async, tap kedua yang cepat bisa masuk handleSave
@@ -82,20 +84,22 @@ export function MonitorAddItemModal({
     setDraft((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  function handleEdit(idx: number) {
-    const menu = menus.find((m) => m.id === draft[idx].menu_id);
+  function handleEdit(localId: string) {
+    const target = draft.find((d) => d._localId === localId);
+    if (!target) return;
+    const menu = menus.find((m) => m.id === target.menu_id);
     if (!menu) return;
-    setEditingIdx(idx);
+    setEditingLocalId(localId);
     setPickingMenu(menu);
   }
 
   function handleConfigSave(item: PosCartItemDraft) {
-    if (editingIdx !== null) {
+    if (editingLocalId !== null) {
       setDraft((prev) =>
-        prev.map((d, i) => (i === editingIdx ? { ...item, _localId: d._localId } : d)),
+        prev.map((d) => (d._localId === editingLocalId ? { ...item, _localId: d._localId } : d)),
       );
     }
-    setEditingIdx(null);
+    setEditingLocalId(null);
     setPickingMenu(null);
   }
 
@@ -171,7 +175,7 @@ export function MonitorAddItemModal({
                       {formatRp(it.unit_price_snapshot * it.qty)}
                     </span>
 
-                    <Button size="icon" variant="ghost" onClick={() => handleEdit(idx)} aria-label={`Ubah ${it.menu_name_snapshot}`}>
+                    <Button size="icon" variant="ghost" onClick={() => handleEdit(it._localId)} aria-label={`Ubah ${it.menu_name_snapshot}`}>
                       ✏️
                     </Button>
                     <Button size="icon" variant="ghost" onClick={() => handleDelete(idx)} aria-label={`Hapus ${it.menu_name_snapshot}`}>
@@ -197,9 +201,9 @@ export function MonitorAddItemModal({
       {pickingMenu && (
         <PosItemConfigModal
           menu={pickingMenu}
-          initial={editingIdx !== null ? draft[editingIdx] : undefined}
+          initial={editingLocalId !== null ? draft.find((d) => d._localId === editingLocalId) : undefined}
           onSave={handleConfigSave}
-          onClose={() => { setPickingMenu(null); setEditingIdx(null); }}
+          onClose={() => { setPickingMenu(null); setEditingLocalId(null); }}
         />
       )}
     </>
