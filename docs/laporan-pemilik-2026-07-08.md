@@ -1,7 +1,7 @@
 # Laporan Aplikasi Pecel Lele Pak Pon
 
 **Untuk:** Pemilik warung
-**Tanggal laporan:** 8 Juli 2026
+**Tanggal laporan:** 8 Juli 2026 (revisi 22 Juli 2026 — tambah fitur Monitor Meja Belum Bayar)
 **Status aplikasi:** Aktif digunakan
 
 ---
@@ -107,6 +107,8 @@ Aplikasi tambahan **Pak Pon Agent** (native Android) berjalan di **satu HP terpi
 
 **Persistent notification** di HP: "Pak Pon Print Agent · Online" biar owner tau agent masih hidup tanpa buka app.
 
+> ℹ️ Fitur **Monitor Meja Belum Bayar** di §2.8 ditambahkan setelah laporan awal (shipped 21 Juli 2026).
+
 **Yang perlu owner siapkan:**
 1. **1 HP Android** (min Android 8, ada Google Play Services — hampir semua HP bisa)
 2. **1 Printer thermal LAN** dengan port RJ45 atau Wi-Fi (misal EPSON TM-T88 series, Xprinter XP-Q80C, atau clone lokal)
@@ -128,6 +130,21 @@ Aplikasi tambahan **Pak Pon Agent** (native Android) berjalan di **satu HP terpi
 - 50 unit tests, semua passing
 - Foreground service always-running (persistent notification supaya tetap alive)
 - Zero cloud dependency selain Supabase + Firebase (semua workflow via HP owner)
+
+### 2.8. Monitor meja belum bayar *(baru shipped 21 Juli 2026)*
+
+Alat bantu operasional harian buat kasir mantau **meja mana yang belum bayar** — bukan fitur akuntansi, murni biar ga ada meja yang kelewat ditagih pas warung ramai.
+
+- **Papan monitor (`/monitor`)** — tile di Home + link di navbar. Menampilkan kartu per transaksi yang **belum lunas** hari ini (dine-in / makan di tempat), urut dari yang paling lama belum bayar.
+- **Auto-refresh** tiap 15 detik + tombol Refresh manual — kasir ga perlu reload halaman.
+- **Cari cepat** by nomor meja / nama pelanggan langsung di papan (tanpa nunggu server).
+- **Tandai lunas** — tap tombol "Lunas" per kartu → konfirmasi → kartu langsung hilang dari papan. Aman kalau 2 device menandai barengan (idempotent).
+- **Undo / koreksi** — kalau salah tandai, buka detail transaksi → toggle status "Sudah / Belum bayar".
+- **Tap kartu** → lihat detail pesanan (read-only) tanpa pindah halaman, atau lanjut ke detail lengkap kalau perlu edit.
+
+Status bayar nempel per-transaksi (kolom `paid_at`), pakai nama pelanggan + nomor meja yang sudah ada — **tanpa nambah entitas meja atau input manual baru** buat kasir. Takeaway/bungkus otomatis dikecualikan (bayar di depan).
+
+> Catatan: fitur ini **tidak mengubah laporan pemasukan**. Omzet harian/bulanan tetap dihitung dari transaksi confirmed seperti biasa, terpisah dari status bayar. Kalau nanti owner mau bedakan "omzet" vs "kas benar-benar diterima", itu fitur terpisah yang bisa ditambahkan menyusul.
 
 ---
 
@@ -202,13 +219,18 @@ Aplikasi tambahan **Pak Pon Agent** (native Android) berjalan di **satu HP terpi
 
 ### 4.1. Pengembangan (satu kali)
 
-**Rp 5.000.000** — mencakup:
-- Semua fitur di atas (input OCR, POS direct, chip system, print system, laporan, menu master)
+**Total: Rp 5.200.000**
+
+**Paket awal — Rp 5.000.000:**
+- Fitur inti (input OCR, POS direct, chip system, print system, laporan, menu master)
 - Deploy ke production Vercel
 - Setup Supabase database + storage
 - Android print-agent app (dari nol)
-- Test coverage 205 tes otomatis
+- Test coverage otomatis
 - Dokumentasi teknis lengkap
+
+**Tambahan fitur — Rp 200.000:**
+- Monitor meja belum bayar (shipped 21 Juli 2026) — lihat §2.8. Fitur operasional tambahan tanpa biaya operasional baru (ga pakai AI, ga nambah storage).
 
 ### 4.2. Maintenance tahunan
 
@@ -233,10 +255,10 @@ Aplikasi tambahan **Pak Pon Agent** (native Android) berjalan di **satu HP terpi
 
 | Item | Biaya |
 |---|---|
-| Pengembangan (one-time) | Rp 5.000.000 |
+| Pengembangan (one-time, termasuk monitor) | Rp 5.200.000 |
 | Maintenance tahun pertama | Rp 500.000 |
 | Operasional 12 bulan @Rp 275.000 | Rp 3.300.000 |
-| **Total tahun pertama** | **Rp 8.800.000** |
+| **Total tahun pertama** | **Rp 9.000.000** |
 
 ### 4.5. Total biaya tahun berikutnya
 
@@ -273,7 +295,7 @@ Aplikasi seperti ini kalau di-order ke developer freelance di Indonesia biasanya
 | Majoo | Rp 300.000+/bulan | Fitur bagus tapi kaku, ga cocok flow warung |
 
 **Perbandingan 5 tahun:**
-- **Pak Pon app:** Rp 5.000.000 + (Rp 3.800.000 × 4) = **Rp 20.200.000**
+- **Pak Pon app:** Rp 5.200.000 + (Rp 3.800.000 × 4) = **Rp 20.400.000**
 - **MokaPOS Pro:** Rp 299.000 × 60 = **Rp 17.940.000** (tapi ga ada OCR + ga sesuai flow warung + data ga bisa export)
 - **Custom developer:** Rp 30.000.000+ dev + Rp 3.800.000 × 5 op = **Rp 49.000.000**
 
@@ -300,6 +322,7 @@ Yang **sudah dijalankan** hari ini (tinggal pakai):
 - ✅ Soft delete + restore
 - ✅ Multi-device responsif
 - ✅ Backup otomatis (Supabase managed)
+- ✅ Monitor meja belum bayar *(shipped 21 Juli 2026)*
 
 Yang **belum shipped** (opsi untuk pengembangan lanjut kalau owner tertarik):
 - 🔜 **Mark menu "habis hari ini"** — kasir tau lele/ayam abis tanpa nelpon dapur, reset jam 12 siang
@@ -317,9 +340,9 @@ Item ini kalau dikerjakan bisa ditambahkan bertahap, budget per fitur tergantung
 ## 7. Statistik teknis (untuk gambaran ke owner)
 
 - **Total baris kode:** ~15.000 baris web + ~4.000 baris Android agent
-- **Test coverage:** 205 test web + 50 test agent = **255 test otomatis**, semua passing
-- **Database:** 32 migrasi (evolusi skema selama ~3 minggu development)
-- **Halaman aplikasi web:** 20 route (Home, POS, Scan, Transaksi, Detail, Review, Reports harian, Reports bulanan, Menu master, Setup printer, dll)
+- **Test coverage:** 226 test web + 50 test agent = **276 test otomatis**, semua passing
+- **Database:** 36 migrasi (evolusi skema selama ~4 minggu development)
+- **Halaman aplikasi web:** 21 route (Home, POS, Scan, Transaksi, Detail, Review, Monitor, Reports harian, Reports bulanan, Menu master, Setup printer, dll)
 - **Endpoint API:** 25+ endpoint
 - **Halaman aplikasi agent:** 3 tab (Status, History, Settings) + Login screen
 - **Ukuran APK print agent:** ~3.5 MB (release, minified) — min Android 8
@@ -337,4 +360,4 @@ Dokumentasi teknis lengkap tersimpan di source code repository — bisa diakses 
 
 ---
 
-*Laporan ini dibuat 8 Juli 2026, mencerminkan status aplikasi setelah shipment fitur POS direct order + per-menu chip system.*
+*Laporan ini dibuat 8 Juli 2026, mencerminkan status aplikasi setelah shipment fitur POS direct order + per-menu chip system. Direvisi 22 Juli 2026: penambahan fitur Monitor Meja Belum Bayar (§2.8), harga pengembangan disesuaikan +Rp 200.000 → Rp 5.200.000.*

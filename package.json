@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "emulator:dapur": "node scripts/printer-emulator.js 9100 dapur",
-    "emulator:minuman": "node scripts/printer-emulator.js 9101 minuman"
+    "emulator:minuman": "node scripts/printer-emulator.js 9101 minuman",
+    "emulator:customer": "node scripts/printer-emulator.js 9102 customer"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
