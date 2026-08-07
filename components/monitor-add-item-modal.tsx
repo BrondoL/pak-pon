@@ -78,12 +78,12 @@ export function MonitorAddItemModal({
     });
   }
 
-  function handleQtyChange(idx: number, nextQty: number) {
-    setDraft((prev) => prev.map((d, i) => (i === idx ? { ...d, qty: nextQty } : d)));
+  function handleQtyChange(_localId: string, nextQty: number) {
+    setDraft((prev) => prev.map((d) => (d._localId === _localId ? { ...d, qty: nextQty } : d)));
   }
 
-  function handleDelete(idx: number) {
-    setDraft((prev) => prev.filter((_, i) => i !== idx));
+  function handleDelete(_localId: string) {
+    setDraft((prev) => prev.filter((d) => d._localId !== _localId));
   }
 
   function handleEdit(localId: string) {
@@ -110,6 +110,10 @@ export function MonitorAddItemModal({
     if (submitLock.current) return;
     submitLock.current = true;
     setSubmitting(true);
+    // Dilacak terpisah dari submitLock: insert bisa sukses lalu tahap cetak
+    // yang gagal (lihat catch di bawah) — begitu insert commit, retry via
+    // "Simpan" lagi akan dobel-insert item ke tagihan yang sama.
+    let saved = false;
     try {
       const res = await fetch(`/api/transactions/${row.id}/items`, {
         method: 'POST',
@@ -134,6 +138,26 @@ export function MonitorAddItemModal({
           onSaved();
           return;
         }
+        // 400 = menu/chip request ga cocok lagi sama master data — biasanya
+        // owner ubah menu selagi dashboard ini kebuka lama (data SSR basi).
+        // Reload, bukan retry, yang bisa menolong; modal tetap terbuka biar
+        // draft ga hilang selagi kasir reload.
+        if (res.status === 400) {
+          toast.error('Menu sudah berubah', {
+            description: 'Reload halaman ini dulu, lalu coba tambah item lagi.',
+          });
+          submitLock.current = false;
+          return;
+        }
+        // 401 = sesi login habis (tablet nyala lama semalaman). Retry pasti
+        // gagal lagi — jangan kasih kesan "coba lagi" di pesan errornya.
+        if (res.status === 401) {
+          toast.error('Sesi login habis', {
+            description: 'Login ulang untuk lanjut menambah item.',
+          });
+          submitLock.current = false;
+          return;
+        }
         const data: { error?: string } = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'save-failed');
       }
@@ -149,14 +173,28 @@ export function MonitorAddItemModal({
         };
         items: Array<{ id: string; sort_order: number }>;
       };
+      // Insert sudah commit di server — sejak titik ini error apa pun (parse
+      // response, dispatch cetak) TIDAK boleh mengundang retry dari catch.
+      saved = true;
 
       // Cocokkan draft ke baris hasil insert lewat sort_order (server assign
       // berurutan mengikuti urutan kiriman), bukan asumsi urutan array response.
       const created = [...data.items].sort((a, b) => a.sort_order - b.sort_order);
-      const withIds = draft.map((it, idx) => ({
+      // Jangan fabrikasi id kalau response lebih pendek dari draft — id palsu
+      // tidak match trigger DB (`id = ANY(item_ids)`), item itu tercetak di
+      // kertas tapi tercatat permanen sebagai belum tercetak. Pasangkan
+      // positional hanya sepanjang baris yang benar-benar dikembalikan server.
+      const pairCount = Math.min(created.length, draft.length);
+      const withIds = draft.slice(0, pairCount).map((it, idx) => ({
         ...it,
-        id: created[idx]?.id ?? crypto.randomUUID(),
+        id: created[idx].id,
       }));
+      if (created.length !== draft.length) {
+        toast.warning(
+          'Jumlah item yang tersimpan tidak sesuai dengan yang dikirim. Cek detail transaksi.',
+          { duration: 10000 },
+        );
+      }
 
       // Hanya item baru yang dicetak. Item lama tidak tersentuh di server, jadi
       // tidak perlu filter printed_*_at seperti di nota-review-form.
@@ -197,12 +235,24 @@ export function MonitorAddItemModal({
 
       onSaved();
     } catch (err) {
-      // Modal sengaja tetap terbuka & draft dipertahankan — kasir tinggal
-      // menekan Simpan lagi tanpa mengetik ulang pesanannya.
-      toast.error('Gagal menambah item', {
-        description: err instanceof Error ? err.message : 'Coba lagi.',
-      });
-      submitLock.current = false;
+      if (!saved) {
+        // Insert belum commit — modal sengaja tetap terbuka & draft
+        // dipertahankan, kasir tinggal menekan Simpan lagi tanpa mengetik
+        // ulang pesanannya.
+        toast.error('Gagal menambah item', {
+          description: err instanceof Error ? err.message : 'Coba lagi.',
+        });
+        submitLock.current = false;
+      } else {
+        // Insert sudah commit, error ini terjadi di tahap cetak (mis.
+        // renderKitchenTicket melempar sebelum request /api/print/send
+        // sempat jalan). Item SUDAH tersimpan — jangan undang retry (dobel
+        // insert ke tagihan yang sama), tutup modal & refresh daftar supaya
+        // kasir lihat total yang benar, minta cetak manual.
+        toast.success('Item tersimpan');
+        toast.error('Gagal cetak tiket. Cetak manual dari detail transaksi.');
+        onSaved();
+      }
     } finally {
       setSubmitting(false);
     }
@@ -231,7 +281,7 @@ export function MonitorAddItemModal({
               </p>
             ) : (
               <ul className="max-h-52 divide-y divide-clay-soft/60 overflow-y-auto">
-                {draft.map((it, idx) => (
+                {draft.map((it) => (
                   <li key={it._localId} className="flex items-center gap-2 py-2">
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-medium text-coal">{it.menu_name_snapshot}</div>
@@ -248,7 +298,7 @@ export function MonitorAddItemModal({
                     <div className="inline-flex shrink-0 items-center rounded-lg border border-clay-soft/60 bg-paper">
                       <Button
                         size="icon" variant="ghost"
-                        onClick={() => handleQtyChange(idx, Math.max(1, it.qty - 1))}
+                        onClick={() => handleQtyChange(it._localId, Math.max(1, it.qty - 1))}
                         disabled={it.qty <= 1}
                         aria-label={`Kurangi jumlah ${it.menu_name_snapshot}`}
                         className="rounded-r-none text-lg leading-none"
@@ -263,7 +313,7 @@ export function MonitorAddItemModal({
                       </span>
                       <Button
                         size="icon" variant="ghost"
-                        onClick={() => handleQtyChange(idx, Math.min(99, it.qty + 1))}
+                        onClick={() => handleQtyChange(it._localId, Math.min(99, it.qty + 1))}
                         disabled={it.qty >= 99}
                         aria-label={`Tambah jumlah ${it.menu_name_snapshot}`}
                         className="rounded-l-none text-lg leading-none"
@@ -279,7 +329,7 @@ export function MonitorAddItemModal({
                     <Button size="icon" variant="ghost" onClick={() => handleEdit(it._localId)} aria-label={`Ubah ${it.menu_name_snapshot}`}>
                       ✏️
                     </Button>
-                    <Button size="icon" variant="ghost" onClick={() => handleDelete(idx)} aria-label={`Hapus ${it.menu_name_snapshot}`}>
+                    <Button size="icon" variant="ghost" onClick={() => handleDelete(it._localId)} aria-label={`Hapus ${it.menu_name_snapshot}`}>
                       🗑️
                     </Button>
                   </li>

@@ -69,7 +69,7 @@ Zod di boundary: `items` min 1 max 50; `qty` int positif; `chip_labels` array st
 5. Per item: `validateChipMutex()` → `buildAppliedChipsSnapshot()` → gagal = 400 `chip_validation_failed`
 6. `sort_order` lanjut dari nilai tertinggi item yang sudah ada di transaksi ini
 7. `INSERT` baris baru, `.select()` supaya `id` hasil generate ikut kembali (dibutuhkan client untuk `item_ids` print job)
-8. Return `{ transaction, items }`
+8. Return `201` `{ transaction, items }`
 
 **Kolom yang di-insert per baris:** `transaction_id`, `menu_id`, `menu_name_snapshot`, `unit_price_snapshot` (= `menu.price + Σ chip.price_delta`), `qty`, `notes`, `applied_chips`, `sort_order`, `confidence: null`, `printed_dapur_at: null`, `printed_minuman_at: null`.
 
@@ -145,7 +145,7 @@ Tombol Simpan disabled saat daftar kosong atau sedang mengirim. Kunci `useRef` s
 
 ## Cetak
 
-Setelah 200, client memisahkan item baru per tujuan (`makanan`/`nasi` → `dapur`, `minuman` → `minuman`) lalu memanggil `dispatchKitchenPrintJob()` dengan `trigger: 'auto_additional'` dan `item_ids` = id item baru saja.
+Setelah 201, client memisahkan item baru per tujuan (`makanan`/`nasi` → `dapur`, `minuman` → `minuman`) lalu memanggil `dispatchKitchenPrintJob()` dengan `trigger: 'auto_additional'` dan `item_ids` = id item baru saja.
 
 Tidak ada filter `printed_*_at` di sisi client seperti di `nota-review-form.tsx:315-317` — tidak perlu, karena response hanya berisi baris yang baru saja di-insert.
 
