@@ -162,6 +162,13 @@ export function MonitorAddItemModal({
         throw new Error(data.error ?? 'save-failed');
       }
 
+      // Status 201 = insert SUDAH commit di server, titik ini juga — bukan
+      // setelah body ke-parse. Body 201 bisa gagal dibaca sendiri (WiFi tablet
+      // kasir putus di tengah stream setelah status line terkirim); kalau
+      // `saved` baru di-set setelah res.json(), skenario itu jatuh ke jalur
+      // retry catch dan bikin item ke-insert dobel. Jangan pindahkan ke bawah
+      // parsing lagi.
+      saved = true;
       const data = (await res.json()) as {
         transaction: {
           id: string;
@@ -173,9 +180,6 @@ export function MonitorAddItemModal({
         };
         items: Array<{ id: string; sort_order: number }>;
       };
-      // Insert sudah commit di server — sejak titik ini error apa pun (parse
-      // response, dispatch cetak) TIDAK boleh mengundang retry dari catch.
-      saved = true;
 
       // Cocokkan draft ke baris hasil insert lewat sort_order (server assign
       // berurutan mengikuti urutan kiriman), bukan asumsi urutan array response.
