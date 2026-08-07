@@ -198,6 +198,17 @@ Plan: `docs/superpowers/plans/2026-07-23-scan-image-retention.md`
 
 ---
 
+## Plan 10 — Tambah Item dari Card Monitor ✅ IMPLEMENTED (2026-08-07, pending manual browser verification)
+
+Spec: `docs/superpowers/specs/2026-08-07-monitor-add-item-design.md`
+Plan: `docs/superpowers/plans/2026-08-07-monitor-add-item.md`
+
+- Route `/monitor` — tombol `+ Item` di setiap card meja belum bayar. Modal picker menu + daftar draft multi-item, tap menu bisa langsung naik qty (jika baris tanpa chip) atau bikin baris baru (jika sudah ada chip). Simpan sekali → `POST /api/transactions/[id]/items` (append-only, tidak `PATCH`), server `INSERT` saja sehingga `printed_*_at` item lama utuh & tidak ada read-modify-write race antar device. Auto-dispatch kitchen print hanya untuk item baru (`trigger: 'auto_additional'`).
+- Helper murni `lib/transactions.ts::buildAppendItemRows` + test. Shared helpers `lib/menus-server.ts::fetchActiveMenusWithChips` + `lib/print-dispatch.ts::splitItemsByPrintTarget` dipake juga di `/pos`. Modal tidak perlu fetch saat dibuka (menus + printerSettings di-SSR dari `monitor/page.tsx`).
+- Error handling: gagal simpan (jaringan/500) → modal tetap terbuka + draft utuh. Sukses tapi agent offline (503) → tutup + toast peringatan. 404/409 → tutup + refresh. `chip_labels` invalid (400) → toast error, modal tetap terbuka.
+
+---
+
 ## Backlog (belum dijadwalkan)
 
 ### 🍽️ POS / Order entry
