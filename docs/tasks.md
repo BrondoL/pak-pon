@@ -216,7 +216,7 @@ Plan: `docs/superpowers/plans/2026-08-07-unified-tap-to-add.md`
 
 - **Satu perilaku di tiga halaman**: tap menu = item masuk daftar qty 1, tap lagi = qty naik, tapi baris yg sudah punya chip/catatan tidak ikut naik (tap bikin baris baru). Aturan murni di `lib/cart-draft.ts` (`addOrIncrementDraft`, `needsChipConfig`) + test `lib/cart-draft.test.ts` (10 test).
 - **Pengecualian mutex_group**: menu dengan chip bergrup (produksi: cuma Ayam goreng — Dada/Paha) tetap buka `PosItemConfigModal` saat di-tap; batal di modal = tidak ada baris yg ditambah. Tujuannya keseragaman & memastikan pilihan wajib dicatat.
-- **Shared modal `components/add-items-modal.tsx`** (baru, diangkat dari `MonitorAddItemModal`): grid menu + draft list + confirm button. Tidak tahu soal menyimpan — parent inject `onConfirm` callback. Dipakai `MonitorAddItemModal` (simpan ke API + cetak), `nota-review-form` (simpan ke state lokal), dan `PosClient` (langsung update cart, tanpa modal).
+- **Shared modal `components/add-items-modal.tsx`** (baru, diangkat dari `MonitorAddItemModal`): grid menu + draft list + confirm button. Tidak tahu soal menyimpan — parent inject `onConfirm` callback. Dipakai `MonitorAddItemModal` (simpan ke API + cetak) dan `nota-review-form` (simpan ke state lokal). `PosClient` **tidak** pakai modal ini — cuma share `lib/cart-draft.ts` untuk aturan tap yang sama, tap menu langsung update cart tanpa modal.
 - **`MonitorAddItemModal` menyusut** ke logika simpan+cetak. Seluruh error handling (400/401/404/409/503), kunci `submitLock`, urutan `saved=true` sebelum `res.json()` **tidak berubah** — termasuk modal tetap terbuka + draft utuh kalau simpan gagal.
 - **`/pos` (`PosClient.onMenuTap`)**:  needsChipConfig → buka `PosItemConfigModal` (sekarang). Sebaliknya → `addOrIncrementDraft()` langsung ke cart. ✏️ baris tetap buka `PosItemConfigModal`.
 - **Review (`nota-review-form`)**:  "+ Tambah item" → `AddItemsModal`. `onConfirm` map draft → `NotaItem` (qty, notes, applied_chips baru; `id=null` → item baru). ✏️ baris lama tetap lewat `NotaItemModal` (bisa ganti menu + hapus).
@@ -271,6 +271,9 @@ Plan: `docs/superpowers/plans/2026-08-07-unified-tap-to-add.md`
 
 ### 🪵 Observability
 - [ ] **Remote log sink** — `lib/logger.ts` sudah wide-event tapi cuma console.log. Ke Axiom/Logflare/Datadog supaya bisa debug saat issue di production.
+
+### 🧪 Testing
+- [ ] **Component test harness (testing-library + msw) untuk `MonitorAddItemModal.handleConfirm`** — enam perilaku hardened di sana (double-tap lock via `submitLock`, urutan `saved=true` sebelum `res.json()` yang cegah dobel-insert, empat cabang status HTTP 400/401/404/409, pencocokan `sort_order` tanpa fabrikasi UUID, tiga cabang hasil print, dan cabang `catch` berdasar `saved`) sekarang cuma dijaga komentar, tanpa test otomatis. File ini sudah ditulis ulang dua kali. Khususnya urutan `saved = true` sebelum `await res.json()` — kalau ada yang mindahin baris itu di refactor berikutnya, tidak ada test yang bakal gagal.
 
 ### 📦 Stock management (lightweight, bukan full inventory)
 

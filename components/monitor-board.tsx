@@ -218,6 +218,11 @@ export function MonitorBoard({
 
       <MonitorDetailModal id={detailId} onClose={() => setDetailId(null)} />
 
+      {/* Jangan tambah `key={addingRow.id}` di sini, dan jangan unmount modal
+          ini dari efek polling (mis. "baris hilang dari /api/monitor → tutup
+          modal") — draft item yang belum disimpan hidup di state internal
+          AddItemsModal (lihat components/add-items-modal.tsx). Unmount =
+          draft ketikan kasir hilang percuma. */}
       {addingRow && (
         <MonitorAddItemModal
           row={addingRow}

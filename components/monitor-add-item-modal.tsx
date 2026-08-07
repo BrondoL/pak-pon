@@ -193,6 +193,8 @@ export function MonitorAddItemModal({
   }
 
   return (
+    // Jangan unmount/re-key komponen ini dari monitor-board.tsx — draft
+    // item hidup di state internal AddItemsModal, lihat komentar di sana.
     <AddItemsModal
       title={titleFor(row)}
       menus={menus}

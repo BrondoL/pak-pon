@@ -176,7 +176,7 @@ export function AddItemsModal({
             )}
 
             <div className="mt-3 flex gap-2 pb-[max(0px,env(safe-area-inset-bottom))]">
-              <Button variant="secondary" onClick={onCancel} disabled={submitting}>
+              <Button variant="outline" onClick={onCancel} disabled={submitting}>
                 Batal
               </Button>
               <Button

@@ -93,7 +93,7 @@ export function PosItemConfigModal({
         <DialogFooter className="flex gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose} className="ml-auto">Batal</Button>
           <Button type="button" onClick={handleSave} disabled={qty < 1}>
-            {initial ? 'Simpan' : '+ Tambah ke cart'}
+            {initial ? 'Simpan' : '+ Tambah'}
           </Button>
         </DialogFooter>
       </DialogContent>

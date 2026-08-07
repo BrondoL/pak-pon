@@ -18,7 +18,7 @@ import { formatRp } from '@/lib/currency';
 import { dispatchKitchenPrintJob, splitItemsByPrintTarget, type PrintTarget } from '@/lib/print-dispatch';
 import { PosMenuPicker } from './pos-menu-picker';
 import { PosItemConfigModal } from './pos-item-config-modal';
-import { addOrIncrementDraft, needsChipConfig } from '@/lib/cart-draft';
+import { addOrIncrementDraft, needsChipConfig, MAX_QTY } from '@/lib/cart-draft';
 import type { DraftRow, PosCartItemDraft } from '@/lib/cart-draft';
 
 export function PosClient({
@@ -248,8 +248,8 @@ export function PosClient({
                       <Button
                         size="icon"
                         variant="ghost"
-                        onClick={() => handleQtyChange(idx, Math.min(99, it.qty + 1))}
-                        disabled={it.qty >= 99}
+                        onClick={() => handleQtyChange(idx, Math.min(MAX_QTY, it.qty + 1))}
+                        disabled={it.qty >= MAX_QTY}
                         aria-label={`Tambah jumlah ${it.menu_name_snapshot}`}
                         className="rounded-l-none text-lg leading-none"
                       >
