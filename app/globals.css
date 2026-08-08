@@ -176,7 +176,8 @@ h1, h2, h3 {
    saat kursor kebetulan berada di atasnya. */
 .tap-flash,
 .tap-flash:hover {
-  background-color: var(--color-mustard-faint);
+  background-color: var(--color-mustard-soft);
+  border-color: var(--color-gold-dark);
   transition: none;
 }
 
