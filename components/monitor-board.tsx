@@ -1,7 +1,7 @@
 // components/monitor-board.tsx
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { MonitorDetailModal } from '@/components/monitor-detail-modal';
 import { MonitorAddItemModal } from '@/components/monitor-add-item-modal';
 import type { MenuOption } from '@/components/nota-item-modal';
 import type { PrinterSettings } from '@/lib/printer-settings';
+import { dispatchCustomerReceiptJob } from '@/lib/print-dispatch';
 
 const POLL_MS = 15_000;
 const WIB = 'Asia/Jakarta';
@@ -48,6 +49,11 @@ export function MonitorBoard({
   const [addingRow, setAddingRow] = useState<MonitorRow | null>(null);
   const [query, setQuery] = useState('');
 
+  // Ketuk ganda cepat pada "Lunas + nota" sebelum React re-render akan
+  // menjalankan alurnya dua kali → dua nota untuk satu pesanan. PATCH-nya
+  // idempoten, tapi kertasnya kebuang dan pelanggan bingung.
+  const inFlight = useRef<Set<string>>(new Set());
+
   const fetchRows = useCallback(async () => {
     try {
       const res = await fetch('/api/monitor');
@@ -70,7 +76,16 @@ export function MonitorBoard({
     setRefreshing(false);
   }
 
-  async function markPaid(row: MonitorRow) {
+  function labelFor(row: MonitorRow): string {
+    if (row.table_no) return `Meja ${row.table_no}`;
+    if (row.customer_name) return row.customer_name;
+    return 'Transaksi';
+  }
+
+  async function markPaid(row: MonitorRow, opts: { printReceipt: boolean }) {
+    if (inFlight.current.has(row.id)) return;
+    inFlight.current.add(row.id);
+
     const prev = rows;
     setRows((r) => r.filter((x) => x.id !== row.id)); // optimistic
     try {
@@ -80,10 +95,64 @@ export function MonitorBoard({
         body: JSON.stringify({ paid: true }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast.success(`Meja ${row.table_no ?? '-'} ditandai lunas`);
+      toast.success(`${labelFor(row)} ditandai lunas`);
     } catch {
       setRows(prev); // rollback
       toast.error('Gagal menandai lunas, coba lagi');
+      inFlight.current.delete(row.id);
+      return; // JANGAN cetak kalau penandaan lunas gagal
+    }
+
+    if (!opts.printReceipt) {
+      inFlight.current.delete(row.id);
+      return;
+    }
+
+    // Nota butuh daftar item lengkap, yang tidak dibawa kartu monitor.
+    // Transaksi sudah tercatat lunas di titik ini — kegagalan apa pun di
+    // bawah cuma soal kertas, jangan rollback status.
+    try {
+      const res = await fetch(`/api/transactions/${row.id}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as {
+        transaction: {
+          id: string; daily_seq: number | null; created_at: string;
+          customer_name: string | null; table_no: string | null; is_takeaway: boolean;
+        };
+        items: Array<{
+          id: string; qty: number; menu_name_snapshot: string;
+          unit_price_snapshot: number; notes: string | null;
+          applied_chips: Array<{ label: string; price_delta: number }> | null;
+        }>;
+      };
+
+      const result = await dispatchCustomerReceiptJob({
+        tx: data.transaction,
+        items: data.items.map((i) => ({
+          id: i.id,
+          qty: i.qty,
+          menu_name_snapshot: i.menu_name_snapshot,
+          unit_price_snapshot: i.unit_price_snapshot,
+          notes: i.notes,
+          applied_chips: i.applied_chips ?? [],
+        })),
+        printerSettings,
+      });
+
+      if (result.ok) {
+        toast.success('Nota customer dikirim ke agent');
+      } else if (result.offline) {
+        toast.warning(
+          'Agent printer offline. Nyalakan agent lalu cetak manual dari detail transaksi.',
+          { duration: 10000 },
+        );
+      } else {
+        toast.error('Gagal kirim nota customer. Cetak manual dari detail transaksi.');
+      }
+    } catch {
+      toast.error('Sudah ditandai lunas, tapi gagal ambil data nota. Cetak manual dari detail transaksi.');
+    } finally {
+      inFlight.current.delete(row.id);
     }
   }
 
@@ -204,7 +273,7 @@ export function MonitorBoard({
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>
-                        Tandai {row.table_no ? `Meja ${row.table_no}` : 'transaksi ini'} lunas?
+                        Tandai {labelFor(row)} lunas?
                       </AlertDialogTitle>
                       <AlertDialogDescription>
                         {row.customer_name ? `${row.customer_name} · ` : ''}
@@ -213,7 +282,22 @@ export function MonitorBoard({
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Batal</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => markPaid(row)}>Ya, lunas</AlertDialogAction>
+                      {/* Tombol yang disorot ikut jenis pesanan: pelanggan bungkus
+                          hampir selalu bawa notanya, pelanggan dine-in jarang minta.
+                          Keduanya tetap tersedia di dua-duanya — ini arahan, bukan
+                          pembatasan. */}
+                      <AlertDialogAction
+                        variant={row.is_takeaway ? 'outline' : 'default'}
+                        onClick={() => markPaid(row, { printReceipt: false })}
+                      >
+                        Lunas saja
+                      </AlertDialogAction>
+                      <AlertDialogAction
+                        variant={row.is_takeaway ? 'default' : 'outline'}
+                        onClick={() => markPaid(row, { printReceipt: true })}
+                      >
+                        Lunas + nota
+                      </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
