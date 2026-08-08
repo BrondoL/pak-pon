@@ -23,7 +23,7 @@ import { AddItemsModal } from '@/components/add-items-modal';
 import type { PosCartItemDraft } from '@/lib/cart-draft';
 import { ZoomableNotaImage } from './zoomable-nota-image';
 import {
-  dispatchKitchenPrintJob, dispatchCustomerReceiptJob, type DispatchTarget, type PrintTarget, type PrintTrigger,
+  dispatchKitchenPrintJob, type PrintTarget, type PrintTrigger,
 } from '@/lib/print-dispatch';
 import { detectThousandsMissing } from '@/lib/total-parser';
 import type { PrinterSettings } from '@/lib/printer-settings';
@@ -348,7 +348,7 @@ export function NotaReviewForm({
       const dapurJob = buildJob('dapur', split.dapur);
       const minumanJob = buildJob('minuman', split.minuman);
 
-      const submitJobs: Promise<{ target: DispatchTarget; ok: boolean; offline: boolean; trigger: string }>[] = [];
+      const submitJobs: Promise<{ target: PrintTarget; ok: boolean; offline: boolean; trigger: string }>[] = [];
       if (dapurJob) {
         submitJobs.push(
           dispatchKitchenPrintJob({ tx: data.transaction, target: 'dapur', items: dapurJob.items, trigger: dapurJob.trigger, printerSettings })
@@ -359,16 +359,6 @@ export function NotaReviewForm({
         submitJobs.push(
           dispatchKitchenPrintJob({ tx: data.transaction, target: 'minuman', items: minumanJob.items, trigger: minumanJob.trigger, printerSettings })
             .then((r) => ({ ...r, target: 'minuman' as const, trigger: minumanJob.trigger })),
-        );
-      }
-      // Bungkus + baru pertama kali confirmed → nota customer ikut tercetak.
-      // Sengaja pakai itemsForQueue utuh, BUKAN hasil buildJob: buildJob
-      // menyaring per printed_*_at untuk delta dapur, sedangkan nota customer
-      // harus selalu berisi seluruh isi transaksi.
-      if (!wasConfirmedBefore && data.transaction.is_takeaway) {
-        submitJobs.push(
-          dispatchCustomerReceiptJob({ tx: data.transaction, items: itemsForQueue, printerSettings })
-            .then((r) => ({ ...r, target: 'customer' as const, trigger: 'customer' })),
         );
       }
       const results = await Promise.all(submitJobs);

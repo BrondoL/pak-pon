@@ -16,8 +16,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { formatRp } from '@/lib/currency';
 import {
-  dispatchKitchenPrintJob, dispatchCustomerReceiptJob, splitItemsByPrintTarget,
-  type DispatchTarget,
+  dispatchKitchenPrintJob, splitItemsByPrintTarget,
+  type PrintTarget,
 } from '@/lib/print-dispatch';
 import { PosMenuPicker } from './pos-menu-picker';
 import { PosItemConfigModal } from './pos-item-config-modal';
@@ -118,7 +118,7 @@ export function PosClient({
         id: data.items[idx]?.id ?? crypto.randomUUID(),
       }));
       const split = splitItemsByPrintTarget(cartWithIds);
-      const jobs: Promise<{ target: DispatchTarget; ok: boolean; offline: boolean }>[] = [];
+      const jobs: Promise<{ target: PrintTarget; ok: boolean; offline: boolean }>[] = [];
       if (split.dapur.length > 0) {
         jobs.push(dispatchKitchenPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur, trigger: 'auto', printerSettings })
           .then((r) => ({ ...r, target: 'dapur' as const })));
@@ -126,15 +126,6 @@ export function PosClient({
       if (split.minuman.length > 0) {
         jobs.push(dispatchKitchenPrintJob({ tx: data.transaction, target: 'minuman', items: split.minuman, trigger: 'auto', printerSettings })
           .then((r) => ({ ...r, target: 'minuman' as const })));
-      }
-      // Pesanan bungkus dibawa pergi — notanya harus ikut keluar bareng tiket
-      // dapur, tanpa kasir perlu buka detail transaksi dulu. Pakai SELURUH
-      // cart, bukan hasil split per printer.
-      if (data.transaction.is_takeaway) {
-        jobs.push(
-          dispatchCustomerReceiptJob({ tx: data.transaction, items: cartWithIds, printerSettings })
-            .then((r) => ({ ...r, target: 'customer' as const })),
-        );
       }
       const results = await Promise.all(jobs);
       const failed = results.filter((r) => !r.ok);
