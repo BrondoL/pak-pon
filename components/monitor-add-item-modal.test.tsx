@@ -13,6 +13,9 @@ import { DEFAULT_PRINTER_SETTINGS } from '@/lib/printer-settings';
 const menus: MenuOption[] = [
   { id: 'menu-ayam', name: 'Ayam Goreng', category: 'makanan', price: 20000, chips: [] },
   { id: 'menu-tempe', name: 'Tempe Goreng', category: 'makanan', price: 8000, chips: [] },
+  // Fixture minuman: tab aktif default picker "makanan", jadi tidak
+  // mengganggu tes lain yang tidak menyentuh tab minuman secara eksplisit.
+  { id: 'menu-es-teh', name: 'Es Teh', category: 'minuman', price: 5000, chips: [] },
 ];
 
 const ROW_ID = '22222222-2222-4222-8222-222222222222';
@@ -436,8 +439,14 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
 
-    const printCall = fetchMock.mock.calls.find((c) => String(c[0]) === '/api/print/send')!;
-    const body = JSON.parse((printCall[1] as RequestInit).body as string) as { item_ids: string[] };
+    const printCalls = fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/print/send');
+    // Assert dulu sebelum indexing — kalau print call ternyata tidak pernah
+    // terkirim (regresi masa depan), tes gagal dengan pesan yang jelas,
+    // bukan "Cannot read properties of undefined".
+    expect(printCalls).toHaveLength(1);
+    const body = JSON.parse((printCalls[0][1] as RequestInit).body as string) as {
+      item_ids: string[];
+    };
     // Draft Ayam (dikirim pertama) harus dapat id-ayam (sort_order 0), draft
     // Tempe (dikirim kedua) dapat id-tempe (sort_order 1) — sesuai urutan
     // pengiriman, BUKAN urutan array response yang dibalik.
@@ -480,8 +489,11 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     });
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
 
-    const printCall = fetchMock.mock.calls.find((c) => String(c[0]) === '/api/print/send')!;
-    const body = JSON.parse((printCall[1] as RequestInit).body as string) as { item_ids: string[] };
+    const printCalls = fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/print/send');
+    expect(printCalls).toHaveLength(1);
+    const body = JSON.parse((printCalls[0][1] as RequestInit).body as string) as {
+      item_ids: string[];
+    };
     // Persis satu id — id asli dari server, bukan dua (draft) dan bukan id
     // fabrikasi buat baris yang tidak pernah di-insert.
     expect(body.item_ids).toEqual(['id-ayam-only']);
@@ -582,5 +594,121 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     expect(successSpy).toHaveBeenCalledWith('1 item ditambahkan');
     expect(errorSpy).toHaveBeenCalledWith('Gagal kirim print: dapur');
+  });
+
+  // Behaviour 6, jalur generik: non-2xx yang bukan 404/409/400/401 — lewat
+  // `res.json().catch(() => ({}))` + `data.error ?? 'save-failed'`. Tes lain
+  // di atas cuma menjangkau catch via network rejection (fetch reject), jadi
+  // ekstraksi pesan dari body 500 nyata belum pernah tereksekusi.
+  it('500 dari server: toast retry pakai pesan dari body error, lock dilepas sehingga retry mengirim POST baru', async () => {
+    let attempt = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === ITEMS_URL && init?.method === 'POST') {
+        attempt += 1;
+        if (attempt === 1) {
+          return Promise.resolve(new Response(JSON.stringify({ error: 'boom' }), { status: 500 }));
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              transaction: txResponse(mkRow()),
+              items: [{ id: 'item-ayam', sort_order: 0 }],
+            }),
+            { status: 201 },
+          ),
+        );
+      }
+      if (url === '/api/print/send') {
+        return Promise.resolve(new Response('{}', { status: 201 }));
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const errorSpy = vi.spyOn(toast, 'error');
+    const onSaved = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <MonitorAddItemModal
+        row={mkRow()}
+        menus={menus}
+        printerSettings={DEFAULT_PRINTER_SETTINGS}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+      />,
+    );
+
+    await tapMenu(user, /ayam goreng/i);
+    await user.click(confirmButton());
+
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith('Gagal menambah item', { description: 'boom' });
+    });
+    expect(onSaved).not.toHaveBeenCalled();
+
+    // Lock dilepas: klik Simpan lagi benar-benar mengirim POST kedua.
+    await user.click(confirmButton());
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const posts = fetchMock.mock.calls.filter(
+      (c) => String(c[0]) === ITEMS_URL && (c[1] as RequestInit | undefined)?.method === 'POST',
+    );
+    expect(posts).toHaveLength(2);
+  });
+
+  // Behaviour di luar 6 asli: routing print dua target. Kedua fixture menu
+  // dipakai di seluruh file ini ber-kategori "makanan" → split.minuman selalu
+  // kosong dan blok dispatch minuman (lines ~145-152 di produksi) tidak
+  // pernah tereksekusi oleh tes manapun sampai sekarang.
+  it('item campuran makanan + minuman: dua print job terpisah dengan item_ids disjoint', async () => {
+    const fetchMock = mockFetch({
+      itemsBody: {
+        transaction: txResponse(mkRow()),
+        items: [
+          { id: 'id-ayam', sort_order: 0 },
+          { id: 'id-es-teh', sort_order: 1 },
+        ],
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const successSpy = vi.spyOn(toast, 'success');
+    const onSaved = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <MonitorAddItemModal
+        row={mkRow()}
+        menus={menus}
+        printerSettings={DEFAULT_PRINTER_SETTINGS}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+      />,
+    );
+
+    await tapMenu(user, /ayam goreng/i);
+    await user.click(screen.getByRole('button', { name: /minuman/i }));
+    await tapMenu(user, /es teh/i);
+    await user.click(confirmButton());
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+
+    const printCalls = fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/print/send');
+    expect(printCalls).toHaveLength(2);
+
+    const bodies = printCalls.map(
+      (c) =>
+        JSON.parse((c[1] as RequestInit).body as string) as {
+          target: string;
+          item_ids: string[];
+        },
+    );
+    const dapurBody = bodies.find((b) => b.target === 'dapur');
+    const minumanBody = bodies.find((b) => b.target === 'minuman');
+    expect(dapurBody).toBeDefined();
+    expect(minumanBody).toBeDefined();
+    expect(dapurBody?.item_ids).toEqual(['id-ayam']);
+    expect(minumanBody?.item_ids).toEqual(['id-es-teh']);
+    // Disjoint — id minuman tidak boleh nyempil di job dapur dan sebaliknya.
+    expect(dapurBody?.item_ids.some((id) => minumanBody?.item_ids.includes(id))).toBe(false);
+
+    expect(successSpy).toHaveBeenCalledWith('2 item ditambahkan, 2 print job dikirim');
   });
 });
