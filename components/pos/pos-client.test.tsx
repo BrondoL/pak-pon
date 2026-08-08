@@ -16,6 +16,21 @@ const menus: MenuOption[] = [
   { id: 'menu-nasi-uduk', name: 'Nasi Uduk', category: 'nasi', price: 6000, chips: [] },
 ];
 
+// Menu bergrup mutex untuk menguji jalur "buka modal, jangan menyala".
+// Kategori "makanan" supaya tampil di tab default picker tanpa ganti tab.
+const menusWithMutex: MenuOption[] = [
+  {
+    id: 'menu-ayam',
+    name: 'Ayam Goreng',
+    category: 'makanan',
+    price: 20000,
+    chips: [
+      { id: 'chip-dada', label: 'Dada', price_delta: 0, mutex_group: 'bagian', sort_order: 0 },
+      { id: 'chip-paha', label: 'Paha', price_delta: 0, mutex_group: 'bagian', sort_order: 1 },
+    ],
+  },
+];
+
 function mockFetch() {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -128,5 +143,37 @@ describe('<PosClient /> — cetak saat simpan', () => {
       .map((c) => JSON.parse((c[1] as RequestInit).body as string));
     const dapurBody = printBodies.find((b) => b.target === 'dapur');
     expect(dapurBody.item_ids).toEqual(['item-1']);
+  });
+});
+
+describe('<PosClient /> — umpan balik tap', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('menyalakan kartu menu biasa setelah item masuk cart', async () => {
+    vi.stubGlobal('fetch', mockFetch());
+    const user = userEvent.setup();
+    render(<PosClient menus={menus} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
+
+    await user.click(screen.getByRole('button', { name: /nasi/i }));
+    const cardEl = screen.getByRole('button', { name: /^nasi putih rp 5\.000$/i });
+    await user.click(cardEl);
+
+    expect(cardEl).toHaveClass('tap-flash');
+  });
+
+  it('tidak menyalakan kartu bergrup mutex — modal konfigurasi yang terbuka', async () => {
+    vi.stubGlobal('fetch', mockFetch());
+    const user = userEvent.setup();
+    render(<PosClient menus={menusWithMutex} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
+
+    // Elemen kartunya ditangkap SEBELUM modal terbuka. Setelah modal muncul,
+    // query ulang /ayam goreng/i bisa ambigu karena judul modal ikut cocok.
+    const cardEl = screen.getByRole('button', { name: /ayam goreng/i });
+    await user.click(cardEl);
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(cardEl).not.toHaveClass('tap-flash');
   });
 });

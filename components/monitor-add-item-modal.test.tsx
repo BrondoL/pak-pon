@@ -18,6 +18,20 @@ const menus: MenuOption[] = [
   { id: 'menu-es-teh', name: 'Es Teh', category: 'minuman', price: 5000, chips: [] },
 ];
 
+// Menu bergrup mutex untuk jalur "buka modal konfigurasi, jangan menyala".
+const menusWithMutex: MenuOption[] = [
+  {
+    id: 'menu-ayam-mutex',
+    name: 'Ayam Bakar',
+    category: 'makanan',
+    price: 22000,
+    chips: [
+      { id: 'chip-dada', label: 'Dada', price_delta: 0, mutex_group: 'bagian', sort_order: 0 },
+      { id: 'chip-paha', label: 'Paha', price_delta: 0, mutex_group: 'bagian', sort_order: 1 },
+    ],
+  },
+];
+
 const ROW_ID = '22222222-2222-4222-8222-222222222222';
 const ITEMS_URL = `/api/transactions/${ROW_ID}/items`;
 
@@ -710,5 +724,49 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     expect(dapurBody?.item_ids.some((id) => minumanBody?.item_ids.includes(id))).toBe(false);
 
     expect(successSpy).toHaveBeenCalledWith('2 item ditambahkan, 2 print job dikirim');
+  });
+});
+
+describe('<MonitorAddItemModal /> — umpan balik tap', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('menyalakan kartu menu biasa setelah baris masuk daftar', async () => {
+    vi.stubGlobal('fetch', mockFetch({}));
+    const user = userEvent.setup();
+    render(
+      <MonitorAddItemModal
+        row={mkRow()}
+        menus={menus}
+        printerSettings={DEFAULT_PRINTER_SETTINGS}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    const cardEl = screen.getByRole('button', { name: /ayam goreng/i });
+    await user.click(cardEl);
+
+    expect(cardEl).toHaveClass('tap-flash');
+  });
+
+  it('tidak menyalakan kartu bergrup mutex', async () => {
+    vi.stubGlobal('fetch', mockFetch({}));
+    const user = userEvent.setup();
+    render(
+      <MonitorAddItemModal
+        row={mkRow()}
+        menus={menusWithMutex}
+        printerSettings={DEFAULT_PRINTER_SETTINGS}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    const cardEl = screen.getByRole('button', { name: /ayam bakar/i });
+    await user.click(cardEl);
+
+    expect(cardEl).not.toHaveClass('tap-flash');
   });
 });
