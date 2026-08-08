@@ -431,7 +431,17 @@ export function NotaReviewForm({
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      {/* Dua kolom cuma kalau kolom kiri ada isinya (foto nota / placeholder
+          foto terhapus). Transaksi POS ga punya dua-duanya — kalau grid-nya
+          tetap 2 kolom, form jatuh ke track 5fr dan cuma kepakai ~42% lebar
+          layar, sisanya kosong. Lihat kondisi render kolom kiri di bawah. */}
+      <div
+        className={
+          scanUrl || scanPurged
+            ? 'grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]'
+            : 'grid gap-6'
+        }
+      >
         {scanUrl && (
           <div className="lg:sticky lg:top-4 lg:self-start">
             <Card variant="paper" className="overflow-hidden">
