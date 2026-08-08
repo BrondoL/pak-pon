@@ -1,7 +1,7 @@
 # Tambah Item Langsung dari Card Monitor — Design Spec
 
 **Tanggal:** 2026-08-07
-**Status:** Implemented 2026-08-07, pending manual browser verification — plan: `docs/superpowers/plans/2026-08-07-monitor-add-item.md`
+**Status:** Shipped 2026-08-08 — plan: `docs/superpowers/plans/2026-08-07-monitor-add-item.md`
 
 ## Masalah
 

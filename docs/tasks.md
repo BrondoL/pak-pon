@@ -198,7 +198,7 @@ Plan: `docs/superpowers/plans/2026-07-23-scan-image-retention.md`
 
 ---
 
-## Plan 10 — Tambah Item dari Card Monitor ✅ IMPLEMENTED (2026-08-07, pending manual browser verification)
+## Plan 10 — Tambah Item dari Card Monitor ✅ COMPLETE (shipped 2026-08-08)
 
 Spec: `docs/superpowers/specs/2026-08-07-monitor-add-item-design.md`
 Plan: `docs/superpowers/plans/2026-08-07-monitor-add-item.md`
@@ -209,7 +209,7 @@ Plan: `docs/superpowers/plans/2026-08-07-monitor-add-item.md`
 
 ---
 
-## Plan 11 — Tap-to-Add Seragam di POS, Review, dan Monitor ✅ IMPLEMENTED (2026-08-07, pending manual browser verification)
+## Plan 11 — Tap-to-Add Seragam di POS, Review, dan Monitor ✅ COMPLETE (shipped 2026-08-08)
 
 Spec: `docs/superpowers/specs/2026-08-07-unified-tap-to-add-design.md`
 Plan: `docs/superpowers/plans/2026-08-07-unified-tap-to-add.md`
@@ -224,7 +224,7 @@ Plan: `docs/superpowers/plans/2026-08-07-unified-tap-to-add.md`
 
 ---
 
-## Plan 12 — Nota Customer Otomatis untuk Pesanan Bungkus ✅ IMPLEMENTED (2026-08-07, pending manual browser verification)
+## Plan 12 — Nota Customer Otomatis untuk Pesanan Bungkus ✅ COMPLETE (shipped 2026-08-08)
 
 Spec: `docs/superpowers/specs/2026-08-07-takeaway-auto-customer-receipt-design.md`
 Plan: `docs/superpowers/plans/2026-08-07-takeaway-auto-customer-receipt.md`
@@ -236,7 +236,7 @@ Plan: `docs/superpowers/plans/2026-08-07-takeaway-auto-customer-receipt.md`
 
 ---
 
-## Plan 13 — Bungkus di Monitor + Nota Saat Ditandai Lunas ✅ IMPLEMENTED (2026-08-08, pending manual printer verification)
+## Plan 13 — Bungkus di Monitor + Nota Saat Ditandai Lunas ✅ COMPLETE (shipped 2026-08-08)
 
 Spec: `docs/superpowers/specs/2026-08-08-monitor-takeaway-and-receipt-on-paid-design.md`
 Plan: `docs/superpowers/plans/2026-08-08-monitor-takeaway-and-receipt-on-paid.md`
