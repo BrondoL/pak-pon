@@ -242,4 +242,85 @@ describe('<MonitorBoard /> — lunas & nota', () => {
     expect(screen.queryByText(/meja 5/i)).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.map((c) => String(c[0]))).not.toContain('/api/print/send');
   });
+
+  it('releases the in-flight guard after a failed mark, so a retry works', async () => {
+    let patchShouldFail = true;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/monitor') {
+        return Promise.resolve(new Response(JSON.stringify({ rows: [] }), { status: 200 }));
+      }
+      if (url.startsWith('/api/transactions/') && init?.method === 'PATCH') {
+        const status = patchShouldFail ? 500 : 200;
+        patchShouldFail = false; // percobaan berikutnya sukses
+        return Promise.resolve(new Response(JSON.stringify({}), { status }));
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(
+      <MonitorBoard initialRows={[mkRow()]} menus={[]} printerSettings={DEFAULT_PRINTER_SETTINGS} />,
+    );
+
+    // Percobaan pertama gagal → baris balik muncul.
+    await user.click(screen.getByRole('button', { name: /^lunas$/i }));
+    await user.click(await screen.findByRole('button', { name: /lunas saja/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/meja 5/i)).toBeInTheDocument();
+    });
+
+    // Percobaan kedua harus benar-benar mengirim PATCH lagi. Kalau id-nya
+    // masih nyangkut di inFlight, klik ini tidak melakukan apa-apa dan
+    // jumlah PATCH tetap 1.
+    await user.click(screen.getByRole('button', { name: /^lunas$/i }));
+    await user.click(await screen.findByRole('button', { name: /lunas saja/i }));
+
+    await waitFor(() => {
+      const patchCalls = fetchMock.mock.calls.filter(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'PATCH',
+      );
+      expect(patchCalls).toHaveLength(2);
+    });
+  });
+
+  it('warns about an offline printer agent after a successful mark', async () => {
+    const fetchMock = mockFetch({ printStatus: 503 });
+    vi.stubGlobal('fetch', fetchMock);
+    const warnSpy = vi.spyOn(toast, 'warning');
+    const user = userEvent.setup();
+    render(
+      <MonitorBoard initialRows={[mkRow({ is_takeaway: true })]} menus={[]} printerSettings={DEFAULT_PRINTER_SETTINGS} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /^lunas$/i }));
+    await user.click(await screen.findByRole('button', { name: /lunas \+ nota/i }));
+
+    await waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/agent printer offline/i),
+        expect.anything(),
+      );
+    });
+    // Transaksinya tetap lunas — kartunya tidak balik muncul.
+    expect(screen.queryByText(/meja 5/i)).not.toBeInTheDocument();
+  });
+
+  it('reports a plain print failure without rolling back the paid mark', async () => {
+    const fetchMock = mockFetch({ printStatus: 500 });
+    vi.stubGlobal('fetch', fetchMock);
+    const errorSpy = vi.spyOn(toast, 'error');
+    const user = userEvent.setup();
+    render(
+      <MonitorBoard initialRows={[mkRow({ is_takeaway: true })]} menus={[]} printerSettings={DEFAULT_PRINTER_SETTINGS} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /^lunas$/i }));
+    await user.click(await screen.findByRole('button', { name: /lunas \+ nota/i }));
+
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/gagal kirim nota customer/i));
+    });
+    expect(screen.queryByText(/meja 5/i)).not.toBeInTheDocument();
+  });
 });

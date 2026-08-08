@@ -1,4 +1,4 @@
-import type { AppliedChip } from './menu-chips';
+import { sumChipPriceDeltas, type AppliedChip } from './menu-chips';
 
 export type MenuRef = {
   id: string;
@@ -113,7 +113,7 @@ export function computeReplaceItems(input: {
     const requestedChipsKey = applied_chips.map((c) => c.label).sort().join('|');
     const chipsChanged = existingChipsKey !== requestedChipsKey;
 
-    const chipDeltaSum = applied_chips.reduce((s, c) => s + c.price_delta, 0);
+    const chipDeltaSum = sumChipPriceDeltas(applied_chips);
     const unit_price_snapshot =
       matchedExisting && !chipsChanged
         ? matchedExisting.unit_price_snapshot
@@ -172,7 +172,7 @@ export function buildAppendItemRows(input: {
     if (!menu) {
       throw new Error(`Unknown menu_id: ${req.menu_id}`);
     }
-    const chipDeltaSum = req.applied_chips.reduce((s, c) => s + c.price_delta, 0);
+    const chipDeltaSum = sumChipPriceDeltas(req.applied_chips);
 
     return {
       menu_id: menu.id,
