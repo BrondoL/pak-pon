@@ -32,7 +32,7 @@ function mockFetch() {
               id: 'tx-1', daily_seq: 3, created_at: '2026-08-08T05:00:00.000Z',
               customer_name: null, table_no: null, is_takeaway: body.is_takeaway ?? false,
             },
-            items: [{ id: 'item-1' }],
+            items: [{ id: 'item-1', sort_order: 0 }],
           }),
           { status: 201 },
         ),
@@ -79,7 +79,7 @@ describe('<PosClient /> — cetak saat simpan', () => {
     // Menu di fixture berkategori "nasi" — tab aktif default "makanan", jadi
     // pindah tab dulu supaya kartu menunya kelihatan.
     await user.click(screen.getByRole('button', { name: /nasi/i }));
-    await user.click(screen.getByRole('button', { name: /nasi putih/i }));
+    await user.click(screen.getByRole('button', { name: /^nasi putih rp 5\.000$/i }));
     await user.click(screen.getByRole('switch'));
     await user.click(screen.getByRole('button', { name: /simpan & cetak/i }));
 
@@ -110,8 +110,8 @@ describe('<PosClient /> — cetak saat simpan', () => {
     render(<PosClient menus={menus} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
 
     await user.click(screen.getByRole('button', { name: /nasi/i }));
-    await user.click(screen.getByRole('button', { name: /nasi putih/i }));
-    await user.click(screen.getByRole('button', { name: /nasi uduk/i }));
+    await user.click(screen.getByRole('button', { name: /^nasi putih rp 5\.000$/i }));
+    await user.click(screen.getByRole('button', { name: /^nasi uduk rp 6\.000$/i }));
     await user.click(screen.getByRole('button', { name: /simpan & cetak/i }));
 
     await waitFor(() => {

@@ -309,6 +309,7 @@ Plan: `docs/superpowers/plans/2026-08-08-monitor-takeaway-and-receipt-on-paid.md
 - [x] **`pos-client.tsx:115` masih memalsukan UUID** (`?? crypto.randomUUID()`) kalau server mengembalikan baris lebih sedikit dari cart. Id palsu tidak match trigger `mark_items_printed_history`, jadi item tercetak di kertas tapi tercatat permanen belum tercetak. Versi monitor sudah dibereskan; yang ini belum. Risiko rendah karena `POST /api/pos` selalu insert semua item.
 - [x] **`sumChipPriceDeltas` tidak dipakai di dua tempat** yang menghitung ulang manual (`lib/transactions.ts:159`, `computeReplaceItems:116`). Harus disentuh berdua sekaligus — memperbaiki satu saja malah bikin makin tidak konsisten.
 - [x] **Peringatan lint `_localId`** di `components/add-items-modal.tsx` — obatnya `ignoreRestSiblings: true` di konfigurasi ESLint, bukan mengubah bentuk destructuring-nya.
+- [x] **Konvensi `^_` "sengaja tidak dipakai"** sekarang dikonfigurasi repo-wide (`argsIgnorePattern`/`varsIgnorePattern: "^_"` di `eslint.config.mjs`, sejalan dengan `ignoreRestSiblings` di atas). Efek sampingnya: ini juga meredam peringatan lint untuk parameter `_request` yang memang tidak dipakai di `app/api/monitor/route.ts` (wajib ada di signature route handler Next) — sengaja, bukan kebetulan.
 
 ### 📦 Stock management (lightweight, bukan full inventory)
 
