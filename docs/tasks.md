@@ -236,6 +236,18 @@ Plan: `docs/superpowers/plans/2026-08-07-takeaway-auto-customer-receipt.md`
 
 ---
 
+## Plan 13 — Bungkus di Monitor + Nota Saat Ditandai Lunas ✅ IMPLEMENTED (2026-08-08, pending manual printer verification)
+
+Spec: `docs/superpowers/specs/2026-08-08-monitor-takeaway-and-receipt-on-paid-design.md`
+Plan: `docs/superpowers/plans/2026-08-08-monitor-takeaway-and-receipt-on-paid.md`
+
+- Pesanan bungkus (takeaway) kini muncul di papan `/monitor` dengan badge BUNGKUS, untuk kasir bisa menandai lunas pesanan bungkus juga.
+- Nota customer tidak lagi tercetak otomatis saat simpan. Kini dicetak saat tombol Lunas di kartu monitor dipilih, dengan dua aksi: "Lunas saja" (dine-in) atau "Lunas + nota" (bungkus).
+- Penjaga ketuk ganda via `useRef<Set<string>>` di `components/monitor-board.tsx` cegah dua ketukan cepat menghasilkan dua nota.
+- Perilaku dialog & double-tap guard sudah ditutup test komponen di `components/monitor-board.test.tsx`. Verifikasi manual tetap butuh printer sungguhan untuk memastikan kertas yang benar-benar keluar dari printer.
+
+---
+
 ## Backlog (belum dijadwalkan)
 
 ### 🍽️ POS / Order entry

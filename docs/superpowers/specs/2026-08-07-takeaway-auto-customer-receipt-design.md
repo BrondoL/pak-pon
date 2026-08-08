@@ -1,7 +1,7 @@
 # Nota Customer Otomatis untuk Pesanan Bungkus — Design Spec
 
 **Tanggal:** 2026-08-07
-**Status:** Implemented 2026-08-07, pending manual browser verification — plan: `docs/superpowers/plans/2026-08-07-takeaway-auto-customer-receipt.md`
+**Status:** Sebagian digantikan 2026-08-08 — aturan "cetak saat pertama kali confirmed" dicabut, diganti "cetak saat ditandai lunas" di `docs/superpowers/specs/2026-08-08-monitor-takeaway-and-receipt-on-paid-design.md`. Helper `dispatchCustomerReceiptJob` dan perbaikan `applied_chips` di kartu cetak ulang tetap berlaku.
 
 ## Masalah
 
