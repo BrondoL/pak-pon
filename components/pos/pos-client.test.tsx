@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { PosClient } from './pos-client';
 import type { MenuOption } from '@/components/nota-item-modal';
 import { DEFAULT_PRINTER_SETTINGS } from '@/lib/printer-settings';
@@ -12,6 +13,7 @@ vi.mock('next/navigation', () => ({
 
 const menus: MenuOption[] = [
   { id: 'menu-nasi', name: 'Nasi Putih', category: 'nasi', price: 5000, chips: [] },
+  { id: 'menu-nasi-uduk', name: 'Nasi Uduk', category: 'nasi', price: 6000, chips: [] },
 ];
 
 function mockFetch() {
@@ -31,6 +33,29 @@ function mockFetch() {
               customer_name: null, table_no: null, is_takeaway: body.is_takeaway ?? false,
             },
             items: [{ id: 'item-1' }],
+          }),
+          { status: 201 },
+        ),
+      );
+    }
+    return Promise.resolve(new Response('{}', { status: 201 }));
+  });
+}
+
+// Simulasi server yang cuma insert sebagian item (kirim 2, balik 1) — jalur
+// yang harus dijaga supaya id palsu ga pernah masuk item_ids print job.
+function mockFetchShortResponse() {
+  return vi.fn<typeof fetch>((input) => {
+    const url = String(input);
+    if (url === '/api/pos') {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            transaction: {
+              id: 'tx-1', daily_seq: 3, created_at: '2026-08-08T05:00:00.000Z',
+              customer_name: null, table_no: null, is_takeaway: false,
+            },
+            items: [{ id: 'item-1', sort_order: 0 }],
           }),
           { status: 201 },
         ),
@@ -75,5 +100,33 @@ describe('<PosClient /> — cetak saat simpan', () => {
       .map((c) => JSON.parse((c[1] as RequestInit).body as string));
     expect(printBodies.some((b) => b.target === 'customer')).toBe(false);
     expect(printBodies.some((b) => b.target === 'dapur')).toBe(true);
+  });
+
+  it('does not fabricate a print id when the server returns fewer items than the cart', async () => {
+    const fetchMock = mockFetchShortResponse();
+    vi.stubGlobal('fetch', fetchMock);
+    const warnSpy = vi.spyOn(toast, 'warning');
+    const user = userEvent.setup();
+    render(<PosClient menus={menus} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
+
+    await user.click(screen.getByRole('button', { name: /nasi/i }));
+    await user.click(screen.getByRole('button', { name: /nasi putih/i }));
+    await user.click(screen.getByRole('button', { name: /nasi uduk/i }));
+    await user.click(screen.getByRole('button', { name: /simpan & cetak/i }));
+
+    await waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/jumlah item yang tersimpan tidak sesuai/i),
+        expect.anything(),
+      );
+    });
+
+    // Load-bearing: item_ids yang dikirim ke tiket dapur harus PERSIS satu id
+    // asli dari server — bukan dua (cart), dan bukan id fabrikasi.
+    const printBodies = fetchMock.mock.calls
+      .filter((c) => String(c[0]) === '/api/print/send')
+      .map((c) => JSON.parse((c[1] as RequestInit).body as string));
+    const dapurBody = printBodies.find((b) => b.target === 'dapur');
+    expect(dapurBody.item_ids).toEqual(['item-1']);
   });
 });

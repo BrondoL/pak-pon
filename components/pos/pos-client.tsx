@@ -110,18 +110,21 @@ export function PosClient({
       }
       const data = await res.json() as {
         transaction: { id: string; daily_seq: number | null; created_at: string; customer_name: string | null; table_no: string | null; is_takeaway: boolean };
-        items: Array<{ id: string }>;
+        items: Array<{ id: string; sort_order: number }>;
       };
 
+      // Cocokkan cart ke baris hasil insert lewat sort_order (server assign
+      // berurutan mengikuti urutan kiriman), bukan asumsi urutan array response.
+      const created = [...data.items].sort((a, b) => a.sort_order - b.sort_order);
       // Jangan fabrikasi id kalau response lebih pendek dari cart — id palsu
       // tidak match trigger DB (`id = ANY(item_ids)`), jadi itemnya tercetak
       // di kertas tapi tercatat permanen belum tercetak. Pasangkan positional
       // hanya sepanjang baris yang benar-benar dikembalikan server.
-      const pairCount = Math.min(data.items.length, cart.length);
+      const pairCount = Math.min(created.length, cart.length);
       const cartWithIds: Array<DraftRow & { id: string }> = cart
         .slice(0, pairCount)
-        .map((it, idx) => ({ ...it, id: data.items[idx].id }));
-      if (data.items.length !== cart.length) {
+        .map((it, idx) => ({ ...it, id: created[idx].id }));
+      if (created.length !== cart.length) {
         toast.warning(
           'Jumlah item yang tersimpan tidak sesuai dengan yang dikirim. Cek detail transaksi.',
           { duration: 10000 },
