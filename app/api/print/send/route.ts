@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, after, type NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { newEvent, tagStatus } from '@/lib/logger';
@@ -95,20 +95,27 @@ export async function POST(request: NextRequest) {
     }
     evt.set('inserted_pending', true);
 
-    // Fire-and-forget FCM push. Cleanup invalid tokens on the side.
-    pushPrintJob({
-      tokens: targets.map((t) => t.fcm_token),
-      job: {
-        id: job_id,
-        tx_id: payload.tx_id,
-        target: payload.target,
-        trigger: payload.trigger,
-        item_ids: payload.item_ids,
-        bytes_b64: payload.bytes_b64,
-      },
-    }).then(
-      async (r) => {
-        console.log(`[fcm] push ok=${r.ok} failed=${r.failed}`);
+    // Push FCM SETELAH respons terkirim, tapi lewat `after()` — BUKAN promise
+    // menggantung. Di serverless, kerja yang belum selesai saat respons
+    // dikembalikan boleh dimatikan begitu instance-nya dibekukan; kalau itu
+    // kejadian, pesannya tidak pernah terkirim sama sekali dan job baru
+    // tercetak saat poller 60 detik menyapunya. `after()` menahan invocation
+    // sampai callback-nya selesai. Cookies/headers tetap boleh dipakai di
+    // dalamnya untuk Route Handler, jadi klien `supabase` di atas aman.
+    after(async () => {
+      try {
+        const r = await pushPrintJob({
+          tokens: targets.map((t) => t.fcm_token),
+          job: {
+            id: job_id,
+            tx_id: payload.tx_id,
+            target: payload.target,
+            trigger: payload.trigger,
+            item_ids: payload.item_ids,
+            bytes_b64: payload.bytes_b64,
+          },
+        });
+        console.log(`[fcm] push job=${job_id} ok=${r.ok} failed=${r.failed}`);
         if (r.invalidTokens.length > 0) {
           await supabase
             .from('agent_heartbeats')
@@ -116,9 +123,10 @@ export async function POST(request: NextRequest) {
             .in('fcm_token', r.invalidTokens);
           console.log(`[fcm] cleared ${r.invalidTokens.length} stale token(s)`);
         }
-      },
-      (e) => console.warn('[fcm] push error', e),
-    );
+      } catch (e) {
+        console.warn(`[fcm] push job=${job_id} error`, e);
+      }
+    });
 
     tagStatus(evt, 200);
     return NextResponse.json({
