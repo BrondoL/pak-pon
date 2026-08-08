@@ -148,7 +148,7 @@ export function MonitorBoard({
       ) : filtered.length === 0 ? (
         <Card variant="paper" className="px-6 py-10 text-center">
           <p className="text-sm text-coal-soft">
-            Tidak ada pesanan cocok dengan &quot;{query.trim()}&quot;.
+            Tidak ada pesanan cocok dengan “{query.trim()}”.
           </p>
           <Button variant="secondary" size="sm" className="mt-3" onClick={() => setQuery('')}>
             Hapus pencarian
