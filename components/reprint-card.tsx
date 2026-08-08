@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { renderKitchenTicket, renderCustomerReceipt, uint8ToBase64 } from '@/lib/escpos';
+import { renderKitchenTicket, uint8ToBase64 } from '@/lib/escpos';
+import { dispatchCustomerReceiptJob } from '@/lib/print-dispatch';
 import type { PrinterSettings } from '@/lib/printer-settings';
 
 export type MenuCategory = 'makanan' | 'nasi' | 'minuman';
-export type PrinterTarget = 'dapur' | 'minuman' | 'customer';
+export type PrinterTarget = 'dapur' | 'minuman';
 
 export type TransactionItemForPrint = {
   id: string;
@@ -15,6 +16,7 @@ export type TransactionItemForPrint = {
   unit_price_snapshot: number;
   qty: number;
   notes: string | null;
+  applied_chips: Array<{ label: string; price_delta: number }>;
   printed_dapur_at: string | null;
   printed_minuman_at: string | null;
 };
@@ -28,10 +30,7 @@ type TxBase = {
   is_takeaway: boolean;
 };
 
-type Trigger =
-  | 'reprint'
-  | 'reprint_additional'
-  | 'customer';
+type Trigger = 'reprint' | 'reprint_additional';
 
 function isKitchenItem(it: TransactionItemForPrint): boolean {
   return it.menu_category === 'makanan' || it.menu_category === 'nasi';
@@ -44,27 +43,23 @@ async function submitJob(args: {
   trigger: Trigger;
   printerSettings: PrinterSettings;
 }): Promise<{ ok: boolean; error?: string }> {
-  const ticketInput = {
-    daily_seq: args.tx.daily_seq ?? 0,
-    created_at: new Date(args.tx.created_at),
-    customer_name: args.tx.customer_name,
-    table_no: args.tx.table_no,
-    is_takeaway: args.tx.is_takeaway,
-    items: args.items.map((i) => ({
-      qty: i.qty,
-      name: i.menu_name_snapshot,
-      unit_price: i.unit_price_snapshot,
-      note: i.notes,
-    })),
-  };
-
-  const bytes =
-    args.target === 'customer'
-      ? renderCustomerReceipt(ticketInput, args.printerSettings)
-      : renderKitchenTicket(ticketInput, args.printerSettings);
-
-  const item_ids =
-    args.target === 'customer' ? null : args.items.map((i) => i.id);
+  const bytes = renderKitchenTicket(
+    {
+      daily_seq: args.tx.daily_seq ?? 0,
+      created_at: new Date(args.tx.created_at),
+      customer_name: args.tx.customer_name,
+      table_no: args.tx.table_no,
+      is_takeaway: args.tx.is_takeaway,
+      items: args.items.map((i) => ({
+        qty: i.qty,
+        name: i.menu_name_snapshot,
+        unit_price: i.unit_price_snapshot,
+        note: i.notes,
+        applied_chips: i.applied_chips,
+      })),
+    },
+    args.printerSettings,
+  );
 
   try {
     const res = await fetch('/api/print/send', {
@@ -74,7 +69,7 @@ async function submitJob(args: {
         tx_id: args.tx.id,
         target: args.target,
         trigger: args.trigger,
-        item_ids,
+        item_ids: args.items.map((i) => i.id),
         bytes_b64: uint8ToBase64(bytes),
       }),
     });
@@ -249,19 +244,19 @@ export function ReprintCard({
 
   async function fireCustomer() {
     setSubmitting('customer');
-    const result = await submitJob({
+    // Lewat helper bersama supaya nota cetak ulang identik dengan nota otomatis
+    // yang keluar untuk pesanan bungkus. item_ids null diurus di dalam helper.
+    const result = await dispatchCustomerReceiptJob({
       tx: transaction,
-      target: 'customer',
-      items, // all items, customer receipt shows everything with prices
-      trigger: 'customer',
+      items, // seluruh item — nota customer menampilkan semuanya beserta harga
       printerSettings,
     });
     setSubmitting(null);
     if (result.ok) toast.success('Cetak nota customer dikirim ke agent');
-    else if (result.error === 'agent_offline') {
+    else if (result.offline) {
       toast.warning('Agent printer offline', { description: 'Nyalakan agent di Android dulu, lalu coba lagi.', duration: 8000 });
     } else {
-      toast.error(`Gagal kirim job customer: ${result.error}`);
+      toast.error('Gagal kirim job customer');
     }
   }
 

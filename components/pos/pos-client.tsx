@@ -15,21 +15,14 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { formatRp } from '@/lib/currency';
-import { dispatchKitchenPrintJob, type PrintTarget } from '@/lib/print-dispatch';
+import {
+  dispatchKitchenPrintJob, splitItemsByPrintTarget,
+  type PrintTarget,
+} from '@/lib/print-dispatch';
 import { PosMenuPicker } from './pos-menu-picker';
-import { PosItemConfigModal, type PosCartItemDraft } from './pos-item-config-modal';
-
-type CartRow = PosCartItemDraft & { _localId: string };
-
-function splitByTarget<T extends { category: PosCartItemDraft['category'] }>(cart: T[]) {
-  const dapur: T[] = [];
-  const minuman: T[] = [];
-  for (const it of cart) {
-    if (it.category === 'minuman') minuman.push(it);
-    else dapur.push(it);
-  }
-  return { dapur, minuman };
-}
+import { PosItemConfigModal } from './pos-item-config-modal';
+import { addOrIncrementDraft, needsChipConfig, MAX_QTY } from '@/lib/cart-draft';
+import type { DraftRow, PosCartItemDraft } from '@/lib/cart-draft';
 
 export function PosClient({
   menus,
@@ -41,7 +34,7 @@ export function PosClient({
   const router = useRouter();
   const [pickingMenu, setPickingMenu] = useState<MenuOption | null>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [cart, setCart] = useState<CartRow[]>([]);
+  const [cart, setCart] = useState<DraftRow[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [tableNo, setTableNo] = useState('');
   const [isTakeaway, setIsTakeaway] = useState(false);
@@ -120,11 +113,11 @@ export function PosClient({
         items: Array<{ id: string }>;
       };
 
-      const cartWithIds: Array<CartRow & { id: string }> = cart.map((it, idx) => ({
+      const cartWithIds: Array<DraftRow & { id: string }> = cart.map((it, idx) => ({
         ...it,
         id: data.items[idx]?.id ?? crypto.randomUUID(),
       }));
-      const split = splitByTarget(cartWithIds);
+      const split = splitItemsByPrintTarget(cartWithIds);
       const jobs: Promise<{ target: PrintTarget; ok: boolean; offline: boolean }>[] = [];
       if (split.dapur.length > 0) {
         jobs.push(dispatchKitchenPrintJob({ tx: data.transaction, target: 'dapur', items: split.dapur, trigger: 'auto', printerSettings })
@@ -163,7 +156,20 @@ export function PosClient({
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <PosMenuPicker menus={menus} onMenuTap={(m) => { setEditingIdx(null); setPickingMenu(m); }} />
+        <PosMenuPicker
+          menus={menus}
+          onMenuTap={(m) => {
+            setEditingIdx(null);
+            // Menu bergrup mutex (mis. Ayam goreng: Dada/Paha) tetap buka modal
+            // konfigurasi — bagiannya harus diputuskan, bukan didiamkan. Menu lain
+            // langsung masuk cart qty 1, tap lagi qty naik.
+            if (needsChipConfig(m)) {
+              setPickingMenu(m);
+              return;
+            }
+            setCart((prev) => addOrIncrementDraft(prev, m, crypto.randomUUID()));
+          }}
+        />
 
         <div className="space-y-4 pb-24 lg:pb-0">
           <Card variant="paper" className="p-5">
@@ -245,8 +251,8 @@ export function PosClient({
                       <Button
                         size="icon"
                         variant="ghost"
-                        onClick={() => handleQtyChange(idx, Math.min(99, it.qty + 1))}
-                        disabled={it.qty >= 99}
+                        onClick={() => handleQtyChange(idx, Math.min(MAX_QTY, it.qty + 1))}
+                        disabled={it.qty >= MAX_QTY}
                         aria-label={`Tambah jumlah ${it.menu_name_snapshot}`}
                         className="rounded-l-none text-lg leading-none"
                       >

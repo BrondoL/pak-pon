@@ -198,6 +198,56 @@ Plan: `docs/superpowers/plans/2026-07-23-scan-image-retention.md`
 
 ---
 
+## Plan 10 — Tambah Item dari Card Monitor ✅ COMPLETE (shipped 2026-08-08)
+
+Spec: `docs/superpowers/specs/2026-08-07-monitor-add-item-design.md`
+Plan: `docs/superpowers/plans/2026-08-07-monitor-add-item.md`
+
+- Route `/monitor` — tombol `+ Item` di setiap card meja belum bayar. Modal picker menu + daftar draft multi-item, tap menu bisa langsung naik qty (jika baris tanpa chip) atau bikin baris baru (jika sudah ada chip). Simpan sekali → `POST /api/transactions/[id]/items` (append-only, tidak `PATCH`), server `INSERT` saja sehingga `printed_*_at` item lama utuh & tidak ada read-modify-write race antar device. Auto-dispatch kitchen print hanya untuk item baru (`trigger: 'auto_additional'`).
+- Helper murni `lib/transactions.ts::buildAppendItemRows` + test. Shared helpers `lib/menus-server.ts::fetchActiveMenusWithChips` + `lib/print-dispatch.ts::splitItemsByPrintTarget` dipake juga di `/pos`. Modal tidak perlu fetch saat dibuka (menus + printerSettings di-SSR dari `monitor/page.tsx`).
+- Error handling: gagal simpan (jaringan/500) → modal tetap terbuka + draft utuh. Sukses tapi agent offline (503) → tutup + toast peringatan. 404/409 → tutup + refresh. `chip_labels` invalid (400) → toast error, modal tetap terbuka.
+
+---
+
+## Plan 11 — Tap-to-Add Seragam di POS, Review, dan Monitor ✅ COMPLETE (shipped 2026-08-08)
+
+Spec: `docs/superpowers/specs/2026-08-07-unified-tap-to-add-design.md`
+Plan: `docs/superpowers/plans/2026-08-07-unified-tap-to-add.md`
+
+- **Satu perilaku di tiga halaman**: tap menu = item masuk daftar qty 1, tap lagi = qty naik, tapi baris yg sudah punya chip/catatan tidak ikut naik (tap bikin baris baru). Aturan murni di `lib/cart-draft.ts` (`addOrIncrementDraft`, `needsChipConfig`) + test `lib/cart-draft.test.ts` (10 test).
+- **Pengecualian mutex_group**: menu dengan chip bergrup (produksi: cuma Ayam goreng — Dada/Paha) tetap buka `PosItemConfigModal` saat di-tap; batal di modal = tidak ada baris yg ditambah. Tujuannya keseragaman & memastikan pilihan wajib dicatat.
+- **Shared modal `components/add-items-modal.tsx`** (baru, diangkat dari `MonitorAddItemModal`): grid menu + draft list + confirm button. Tidak tahu soal menyimpan — parent inject `onConfirm` callback. Dipakai `MonitorAddItemModal` (simpan ke API + cetak) dan `nota-review-form` (simpan ke state lokal). `PosClient` **tidak** pakai modal ini — cuma share `lib/cart-draft.ts` untuk aturan tap yang sama, tap menu langsung update cart tanpa modal.
+- **`MonitorAddItemModal` menyusut** ke logika simpan+cetak. Seluruh error handling (400/401/404/409/503), kunci `submitLock`, urutan `saved=true` sebelum `res.json()` **tidak berubah** — termasuk modal tetap terbuka + draft utuh kalau simpan gagal.
+- **`/pos` (`PosClient.onMenuTap`)**:  needsChipConfig → buka `PosItemConfigModal` (sekarang). Sebaliknya → `addOrIncrementDraft()` langsung ke cart. ✏️ baris tetap buka `PosItemConfigModal`.
+- **Review (`nota-review-form`)**:  "+ Tambah item" → `AddItemsModal`. `onConfirm` map draft → `NotaItem` (qty, notes, applied_chips baru; `id=null` → item baru). ✏️ baris lama tetap lewat `NotaItemModal` (bisa ganti menu + hapus).
+- **Cetak tidak berubah**: item baru tetap `auto_additional` (tidak ada modal "Cetak ulang"). `computeReplaceItems`, `detectModalContext`, `dispatchKitchenPrintJob` tetap.
+
+---
+
+## Plan 12 — Nota Customer Otomatis untuk Pesanan Bungkus ✅ COMPLETE (shipped 2026-08-08)
+
+Spec: `docs/superpowers/specs/2026-08-07-takeaway-auto-customer-receipt-design.md`
+Plan: `docs/superpowers/plans/2026-08-07-takeaway-auto-customer-receipt.md`
+
+- Nota customer tercetak otomatis saat transaksi bungkus pertama kali menjadi `confirmed` (simpan `/pos` atau review OCR saat `wasConfirmedBefore=false`), barengan tiket dapur. Edit setelah confirmed atau toggle bungkus belakangan tidak memicu cetak ulang — kasir pakai tombol manual di halaman detail.
+- `dispatchCustomerReceiptJob` di `lib/print-dispatch.ts` (helper baru, sharing private `buildTicketInput`/`postPrintJob` dengan `dispatchKitchenPrintJob`). Kirim `item_ids: null` sehingga trigger `mark_items_printed_history` tidak menyala — cegah item ditandai tercetak ke dapur kalau nota customer saja yang dikirim.
+- Semua jalur nota customer (otomatis + cetak ulang manual) lewat helper bersama. Cetak ulang nota customer kini identik dengan nota otomatis. Bug lama duplikasi chip labels ketika cetak ulang sekarang fixed — dapur dan customer nota keduanya mendapat chip labels lengkap.
+- Perilaku "kapan tercetak" (saat `isTakeaway && pertama kali confirmed`) hidup di komponen React, belum ada test otomatis — hanya bisa diverifikasi manual dengan printer sungguhan.
+
+---
+
+## Plan 13 — Bungkus di Monitor + Nota Saat Ditandai Lunas ✅ COMPLETE (shipped 2026-08-08)
+
+Spec: `docs/superpowers/specs/2026-08-08-monitor-takeaway-and-receipt-on-paid-design.md`
+Plan: `docs/superpowers/plans/2026-08-08-monitor-takeaway-and-receipt-on-paid.md`
+
+- Pesanan bungkus (takeaway) kini muncul di papan `/monitor` dengan badge BUNGKUS, untuk kasir bisa menandai lunas pesanan bungkus juga.
+- Nota customer tidak lagi tercetak otomatis saat simpan. Kini dicetak saat tombol Lunas di kartu monitor dipilih — dua aksi "Lunas saja" dan "Lunas + nota" sama-sama selalu tersedia di semua jenis pesanan, cuma tombol yang disorot yang ikut jenis pesanan (bungkus → "Lunas + nota", dine-in → "Lunas saja").
+- Penjaga ketuk ganda via `useRef<Set<string>>` di `components/monitor-board.tsx` cegah dua ketukan cepat menghasilkan dua nota.
+- Perilaku dialog & double-tap guard sudah ditutup test komponen di `components/monitor-board.test.tsx`. Verifikasi manual tetap butuh printer sungguhan untuk memastikan kertas yang benar-benar keluar dari printer.
+
+---
+
 ## Backlog (belum dijadwalkan)
 
 ### 🍽️ POS / Order entry
@@ -245,6 +295,9 @@ Plan: `docs/superpowers/plans/2026-07-23-scan-image-retention.md`
 
 ### 🪵 Observability
 - [ ] **Remote log sink** — `lib/logger.ts` sudah wide-event tapi cuma console.log. Ke Axiom/Logflare/Datadog supaya bisa debug saat issue di production.
+
+### 🧪 Testing
+- [ ] **Component test harness (testing-library + msw) untuk `MonitorAddItemModal.handleConfirm`** — enam perilaku hardened di sana (double-tap lock via `submitLock`, urutan `saved=true` sebelum `res.json()` yang cegah dobel-insert, empat cabang status HTTP 400/401/404/409, pencocokan `sort_order` tanpa fabrikasi UUID, tiga cabang hasil print, dan cabang `catch` berdasar `saved`) sekarang cuma dijaga komentar, tanpa test otomatis. File ini sudah ditulis ulang dua kali. Khususnya urutan `saved = true` sebelum `await res.json()` — kalau ada yang mindahin baris itu di refactor berikutnya, tidak ada test yang bakal gagal.
 
 ### 📦 Stock management (lightweight, bukan full inventory)
 

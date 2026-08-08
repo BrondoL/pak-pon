@@ -26,6 +26,7 @@ function mkItem(
     unit_price_snapshot: 10000,
     qty: 1,
     notes: null,
+    applied_chips: [],
     printed_dapur_at: null,
     printed_minuman_at: null,
     ...override,

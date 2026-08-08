@@ -19,8 +19,12 @@ import {
 import { formatRp } from '@/lib/currency';
 import { NotaItemRow, type NotaItem } from './nota-item-row';
 import { NotaItemModal, type MenuOption } from './nota-item-modal';
+import { AddItemsModal } from '@/components/add-items-modal';
+import type { PosCartItemDraft } from '@/lib/cart-draft';
 import { ZoomableNotaImage } from './zoomable-nota-image';
-import { dispatchKitchenPrintJob, type PrintTarget, type PrintTrigger } from '@/lib/print-dispatch';
+import {
+  dispatchKitchenPrintJob, type PrintTarget, type PrintTrigger,
+} from '@/lib/print-dispatch';
 import { detectThousandsMissing } from '@/lib/total-parser';
 import type { PrinterSettings } from '@/lib/printer-settings';
 
@@ -131,7 +135,7 @@ export function NotaReviewForm({
   const [tableNo, setTableNo] = useState<string>(transaction.table_no ?? '');
   const [isTakeaway, setIsTakeaway] = useState<boolean>(transaction.is_takeaway);
   const [editing, setEditing] = useState<NotaItem | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [addingItems, setAddingItems] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [handwrittenTotal, setHandwrittenTotal] = useState<number | null>(transaction.handwritten_total);
@@ -172,7 +176,29 @@ export function NotaReviewForm({
       return [...prev, { ...item, sort_order: nextSort }];
     });
     setEditing(null);
-    setAdding(false);
+  }
+
+  /**
+   * Item dari AddItemsModal masuk sebagai item BARU (tanpa `id` DB), jadi
+   * detectModalContext tetap menggolongkannya sebagai newItems — modal
+   * "Cetak ulang ke dapur" tidak muncul dan cetaknya tetap auto_additional.
+   */
+  function appendItems(drafts: PosCartItemDraft[]) {
+    setItems((prev) => [
+      ...prev,
+      ...drafts.map((d, idx) => ({
+        _localId: crypto.randomUUID(),
+        menu_id: d.menu_id,
+        menu_name_snapshot: d.menu_name_snapshot,
+        unit_price_snapshot: d.unit_price_snapshot,
+        qty: d.qty,
+        notes: d.notes,
+        applied_chips: d.applied_chips,
+        sort_order: prev.length + idx,
+        confidence: null,
+      })),
+    ]);
+    setAddingItems(false);
   }
 
   function removeItem(localId: string) {
@@ -395,7 +421,17 @@ export function NotaReviewForm({
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      {/* Dua kolom cuma kalau kolom kiri ada isinya (foto nota / placeholder
+          foto terhapus). Transaksi POS ga punya dua-duanya — kalau grid-nya
+          tetap 2 kolom, form jatuh ke track 5fr dan cuma kepakai ~42% lebar
+          layar, sisanya kosong. Lihat kondisi render kolom kiri di bawah. */}
+      <div
+        className={
+          scanUrl || scanPurged
+            ? 'grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]'
+            : 'grid gap-6'
+        }
+      >
         {scanUrl && (
           <div className="lg:sticky lg:top-4 lg:self-start">
             <Card variant="paper" className="overflow-hidden">
@@ -527,7 +563,7 @@ export function NotaReviewForm({
             </div>
           </Card>
 
-          <Button variant="secondary" onClick={() => setAdding(true)} className="w-full">
+          <Button variant="outline" onClick={() => setAddingItems(true)} className="w-full">
             + Tambah item
           </Button>
 
@@ -559,16 +595,25 @@ export function NotaReviewForm({
         </div>
       </div>
 
-      {(editing || adding) && (
+      {/* Edit item lama: modal lengkap (ganti menu, hapus). Sengaja tetap
+          NotaItemModal — kebutuhannya beda dari sekadar menambah. */}
+      {editing && (
         <NotaItemModal
-          initial={editing ?? undefined}
+          initial={editing}
           menus={menus}
           onSave={upsertItem}
-          onClose={() => {
-            setEditing(null);
-            setAdding(false);
-          }}
-          onDelete={editing ? () => removeItem(editing._localId) : undefined}
+          onClose={() => setEditing(null)}
+          onDelete={() => removeItem(editing._localId)}
+        />
+      )}
+
+      {addingItems && (
+        <AddItemsModal
+          title="Tambah item"
+          menus={menus}
+          confirmLabel={(count) => (count === 0 ? '+ Tambah item' : `+ Tambah ${count} item`)}
+          onCancel={() => setAddingItems(false)}
+          onConfirm={appendItems}
         />
       )}
 
