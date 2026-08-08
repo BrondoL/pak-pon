@@ -17,6 +17,7 @@
 
 import net from 'node:net';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const PORT = parseInt(process.argv[2] || '9100', 10);
@@ -47,9 +48,38 @@ const server = net.createServer((socket) => {
   socket.on('error', (err) => console.error(`[${LABEL}] socket error:`, err.message));
 });
 
+/**
+ * Semua alamat IPv4 non-internal, satu entri per antarmuka.
+ *
+ * Sengaja TIDAK cuma mengambil yang pertama (seperti `next dev`): begitu ada
+ * VPN atau bridge Docker, "yang pertama" bisa alamat yang tidak dijangkau
+ * tablet, dan salah ketik IP di Settings agent gejalanya cuma job gagal
+ * dengan EHOSTUNREACH — jauh dari penyebabnya.
+ */
+function networkAddresses() {
+  const out = [];
+  for (const [iface, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const a of addrs ?? []) {
+      if (a.family === 'IPv4' && !a.internal) out.push({ iface, address: a.address });
+    }
+  }
+  return out;
+}
+
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[${LABEL}] listening on 0.0.0.0:${PORT}`);
-  console.log(`[${LABEL}] output dir: ${OUT_DIR}`);
+  const nets = networkAddresses();
+  console.log(`[${LABEL}] emulator printer siap`);
+  console.log(`  - Local:    127.0.0.1:${PORT}`);
+  if (nets.length === 0) {
+    // Tanpa alamat LAN, tablet tidak punya jalan ke sini sama sekali.
+    console.log('  - Network:  (tidak ada IPv4 non-internal — tablet tidak akan bisa menjangkau emulator ini)');
+  } else {
+    for (const [i, n] of nets.entries()) {
+      const hint = i === 0 ? '← isi ini di Settings agent' : '';
+      console.log(`  - Network:  ${n.address}:${PORT}   ${hint} (${n.iface})`);
+    }
+  }
+  console.log(`  - Output:   ${OUT_DIR}`);
 });
 
 process.on('SIGINT', () => {
