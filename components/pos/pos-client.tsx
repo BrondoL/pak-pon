@@ -178,9 +178,10 @@ export function PosClient({
             // langsung masuk cart qty 1, tap lagi qty naik.
             if (needsChipConfig(m)) {
               setPickingMenu(m);
-              return;
+              return false;
             }
             setCart((prev) => addOrIncrementDraft(prev, m, crypto.randomUUID()));
+            return true;
           }}
         />
 

@@ -52,13 +52,14 @@ export function AddItemsModal({
    * dulu — bagiannya harus diputuskan, bukan didiamkan. Menu lain langsung
    * masuk daftar.
    */
-  function handleMenuTap(menu: MenuOption) {
+  function handleMenuTap(menu: MenuOption): boolean {
     if (needsChipConfig(menu)) {
       setEditingLocalId(null);
       setPickingMenu(menu);
-      return;
+      return false;
     }
     setRows((prev) => addOrIncrementDraft(prev, menu, crypto.randomUUID()));
+    return true;
   }
 
   function handleQtyChange(localId: string, nextQty: number) {

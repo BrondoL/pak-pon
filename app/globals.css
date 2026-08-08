@@ -166,6 +166,21 @@ h1, h2, h3 {
   border-radius: inherit;
 }
 
+/* Umpan balik tap di kartu menu — nyala seketika setelah baris mendarat di
+   daftar, lalu memudar lewat `transition-colors` milik kartunya.
+   Sengaja BUKAN @keyframes: blok prefers-reduced-motion di bawah memangkas
+   animation-duration jadi 0.01ms, dan sinyal ini fungsional, bukan hiasan.
+   Di bawah reduced-motion warnanya muncul & hilang seketika tanpa memudar —
+   itu perilaku yang diinginkan.
+   `:hover` ditulis eksplisit supaya `hover:bg-cream` milik kartu tidak menang
+   saat kursor kebetulan berada di atasnya. */
+.tap-flash,
+.tap-flash:hover {
+  background-color: var(--color-mustard-soft);
+  border-color: var(--color-gold-dark);
+  transition: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal-children > * { animation: none; opacity: 1; }
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }

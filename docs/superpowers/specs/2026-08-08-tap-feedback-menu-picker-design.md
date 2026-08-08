@@ -1,7 +1,7 @@
 # Umpan Balik Tap di Kartu Menu — Design Spec
 
 **Tanggal:** 2026-08-08
-**Status:** Draft
+**Status:** Shipped 2026-08-08 — plan: `docs/superpowers/plans/2026-08-08-tap-feedback-menu-picker.md`
 **Terkait:** `docs/superpowers/specs/2026-08-07-unified-tap-to-add-design.md` (perilaku tap-to-add yang jadi dasar)
 
 ## Masalah
@@ -140,8 +140,8 @@ Kontrak nilai balik di kedua parent diuji di berkas yang sudah ada (`components/
 
 ## Risiko
 
-| Risiko | Penanganan |
-|---|---|
-| `hover:bg-cream` menang atas `.tap-flash` di perangkat berpenunjuk | tulis `.tap-flash:hover` eksplisit; verifikasi manual di browser |
-| Warna `mustard-faint` kurang kontras di atas `paper-soft` | dua-duanya sudah ada di `@theme`; cek langsung, ganti ke `cream` kalau terlalu tipis |
-| Kilatan terasa mengganggu saat tap beruntun cepat | durasi pendek (400ms tahan + 500ms pudar) dan hanya warna, tanpa gerak |
+| Risiko | Penanganan | Hasil |
+|---|---|---|
+| `hover:bg-cream` menang atas `.tap-flash` di perangkat berpenunjuk | tulis `.tap-flash:hover` eksplisit | **Tertutup.** Diperiksa di CSS hasil build: `hover:bg-cream` ada di dalam `@layer utilities` (byte 13066–83830), `.tap-flash` di 87281 — di luar semua layer. CSS tanpa layer selalu menang atas CSS berlayer, jadi tidak bergantung pada kekhususan sama sekali. |
+| Warna kilatan kurang kontras di atas `paper-soft` | ukur rasio kontras, naikkan kalau tipis | **Terjadi, sudah diperbaiki.** `mustard-faint` cuma 1,11:1 terhadap kartu — praktis tak terlihat. Rencana cadangan `cream` ternyata sama saja (1,13:1). Diganti isi `mustard-soft` (**1,71:1**) + tepi `gold-dark` (**1,78:1** terhadap `clay-soft`), dua isyarat terpisah. Nama menu tetap 10,44:1 di atas kilatan. |
+| Kilatan terasa mengganggu saat tap beruntun cepat | durasi pendek (400ms tahan + 500ms pudar) dan hanya warna, tanpa gerak | Perlu dinilai owner saat dipakai. |
