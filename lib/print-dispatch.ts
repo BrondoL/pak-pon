@@ -120,9 +120,9 @@ export async function dispatchKitchenPrintJob(args: {
 
 /**
  * Render nota customer (format lengkap dengan harga + footer) dan kirim ke
- * `/api/print/send`. Dipakai cetak otomatis pesanan bungkus (`pos-client`,
- * `nota-review-form`) dan tombol cetak ulang manual (`reprint-card`) — satu
- * jalur, supaya nota otomatis dan nota cetak ulang ga pernah beda isi.
+ * `/api/print/send`. Dipakai tombol Lunas di papan monitor (`monitor-board`)
+ * dan tombol cetak ulang manual (`reprint-card`) — satu jalur, supaya nota
+ * dari tombol Lunas dan nota cetak ulang ga pernah beda isi.
  *
  * `item_ids` SELALU null. Trigger Postgres `mark_items_printed_history` cuma
  * nyala kalau item_ids terisi; kalau job customer ikut mengirim daftar id,

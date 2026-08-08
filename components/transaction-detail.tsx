@@ -357,8 +357,8 @@ export function TransactionDetail({
                     </AlertDialogTitle>
                     <AlertDialogDescription>
                       {isPaid
-                        ? 'Transaksi akan kembali muncul di monitor sebagai belum bayar (jika masih hari ini & dine-in).'
-                        : 'Transaksi akan hilang dari monitor meja belum bayar.'}
+                        ? 'Transaksi akan kembali muncul di monitor sebagai belum bayar (jika masih hari ini).'
+                        : 'Transaksi akan hilang dari monitor pesanan belum bayar.'}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

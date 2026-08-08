@@ -30,7 +30,7 @@ const tiles = [
   {
     href: '/monitor',
     title: 'Monitor',
-    subtitle: 'Meja belum bayar',
+    subtitle: 'Pesanan belum bayar',
     accent: 'mustard',
     glyph: (
       <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
