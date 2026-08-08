@@ -140,6 +140,28 @@ describe('<ReprintCard />', () => {
       expect(body.item_ids?.sort()).toEqual([a.id, b.id].sort());
     });
 
+    it('carries chip labels into the kitchen ticket bytes', async () => {
+      const fetchMock = mockFetchOk();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      const user = userEvent.setup();
+      const items = [
+        mkItem({
+          menu_name_snapshot: 'Ayam goreng',
+          menu_category: 'makanan',
+          applied_chips: [{ label: 'Dada', price_delta: 0 }],
+        }),
+      ];
+      render(<ReprintCard transaction={txBase} items={items} printerSettings={DEFAULT_PRINTER_SETTINGS} />);
+
+      await user.click(screen.getByRole('button', { name: /cetak ulang dapur/i }));
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const body = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);
+      // bytes_b64 = ESC/POS. Label chip harus muncul sebagai teks di dalamnya.
+      const decoded = atob(body.bytes_b64);
+      expect(decoded).toContain('Dada');
+    });
+
     it('Keduanya POSTs 2 jobs', async () => {
       const fetchMock = mockFetchOk();
       global.fetch = fetchMock as unknown as typeof fetch;
