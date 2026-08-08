@@ -113,10 +113,20 @@ export function PosClient({
         items: Array<{ id: string }>;
       };
 
-      const cartWithIds: Array<DraftRow & { id: string }> = cart.map((it, idx) => ({
-        ...it,
-        id: data.items[idx]?.id ?? crypto.randomUUID(),
-      }));
+      // Jangan fabrikasi id kalau response lebih pendek dari cart — id palsu
+      // tidak match trigger DB (`id = ANY(item_ids)`), jadi itemnya tercetak
+      // di kertas tapi tercatat permanen belum tercetak. Pasangkan positional
+      // hanya sepanjang baris yang benar-benar dikembalikan server.
+      const pairCount = Math.min(data.items.length, cart.length);
+      const cartWithIds: Array<DraftRow & { id: string }> = cart
+        .slice(0, pairCount)
+        .map((it, idx) => ({ ...it, id: data.items[idx].id }));
+      if (data.items.length !== cart.length) {
+        toast.warning(
+          'Jumlah item yang tersimpan tidak sesuai dengan yang dikirim. Cek detail transaksi.',
+          { duration: 10000 },
+        );
+      }
       const split = splitItemsByPrintTarget(cartWithIds);
       const jobs: Promise<{ target: PrintTarget; ok: boolean; offline: boolean }>[] = [];
       if (split.dapur.length > 0) {
