@@ -13,6 +13,17 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      // Rest-destructuring adalah cara idiomatik membuang field (lihat
+      // components/add-items-modal.tsx). Variabelnya terhapus saat kompilasi;
+      // memaksa bentuk lain cuma bikin kodenya lebih jelek.
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { ignoreRestSiblings: true, argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;
