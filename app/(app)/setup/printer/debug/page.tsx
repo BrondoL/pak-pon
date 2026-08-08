@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { computeJobDuration, formatDuration } from '@/lib/print-duration';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -23,6 +24,7 @@ type Job = {
   status: 'pending' | 'printing' | 'done' | 'failed';
   failure_reason: string | null;
   created_at: string;
+  printing_at: string | null;
   done_at: string | null;
   failed_at: string | null;
   customer_name: string | null;
@@ -38,6 +40,28 @@ function formatTxLabel(j: Job): string {
   if (j.table_no) parts.push(`Meja ${j.table_no}`);
   if (j.customer_name) parts.push(j.customer_name);
   return parts.length > 0 ? parts.join(' · ') : '-';
+}
+
+/**
+ * Durasi job + pecahan ruasnya. "kirim" = sampai tablet mengklaim job,
+ * "cetak" = tablet menyambung ke printer sampai selesai. Sengaja bukan
+ * istilah teknis — owner ikut membaca halaman ini.
+ */
+function DurationView({ job }: { job: Job }) {
+  const d = computeJobDuration(job);
+  if (!d) return <span className="text-coal-soft">—</span>;
+  return (
+    <div>
+      <div className={d.isSlow ? 'font-medium text-brick' : 'text-coal'}>
+        {formatDuration(d.totalMs)}
+      </div>
+      {d.sendMs !== null && d.printMs !== null && (
+        <div className="text-[10px] text-coal-soft">
+          kirim {formatDuration(d.sendMs)} · cetak {formatDuration(d.printMs)}
+        </div>
+      )}
+    </div>
+  );
 }
 
 type DisplayState = 'online' | 'stale' | 'offline';
@@ -285,6 +309,10 @@ export default function PrinterDebugPage() {
                       Agent: <span className="text-coal">{j.agent_label ?? '-'}</span>
                     </span>
                   </div>
+                  <div className="mt-1 flex items-baseline gap-1 text-coal-soft">
+                    <span>Durasi:</span>
+                    <DurationView job={j} />
+                  </div>
                   {j.failure_reason && (
                     <div className="mt-1 break-words text-coal-soft">
                       Reason: <span className="text-coal">{j.failure_reason}</span>
@@ -303,6 +331,7 @@ export default function PrinterDebugPage() {
                     <th className="p-2 text-left text-coal">Trigger</th>
                     <th className="p-2 text-left text-coal">Agent</th>
                     <th className="p-2 text-left text-coal">Status</th>
+                    <th className="p-2 text-left text-coal">Durasi</th>
                     <th className="p-2 text-left text-coal">Reason</th>
                   </tr>
                 </thead>
@@ -323,6 +352,7 @@ export default function PrinterDebugPage() {
                           {j.status}
                         </span>
                       </td>
+                      <td className="p-2"><DurationView job={j} /></td>
                       <td className="p-2 text-coal-soft">{j.failure_reason ?? '-'}</td>
                     </tr>
                   ))}
