@@ -1,7 +1,7 @@
 # Durasi Job Cetak di Halaman Debug — Design Spec
 
 **Tanggal:** 2026-08-08
-**Status:** Draft
+**Status:** Shipped 2026-08-08 — plan: `docs/superpowers/plans/2026-08-08-print-job-duration-debug.md`
 **Terkait:** migrasi `0039_print_history_printing_at.sql` (kolom yang dibaca fitur ini)
 
 ## Masalah
