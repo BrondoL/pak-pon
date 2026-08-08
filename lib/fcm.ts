@@ -56,6 +56,20 @@ export interface PushAgentResult {
   invalidTokens: string[];
 }
 
+/**
+ * Umur pesan FCM. Disamakan dengan jendela cron print-sweep (5 menit): lewat
+ * itu baris `pending` sudah ditandai `failed`, sehingga FCM yang datang
+ * terlambat tidak bisa lagi mengklaim (filter `status='pending'` di
+ * `PrintHistoryRepository.claim()`) dan tidak ada kertas yang keluar.
+ *
+ * Sebelumnya 60 detik, dipasang supaya nota basi tidak tiba-tiba tercetak.
+ * Alasan itu sudah usang sejak claim-before-print: perlindungannya sekarang
+ * dipegang klaim atomik, bukan TTL. Yang tersisa cuma kerugiannya — gangguan
+ * pengiriman sesaat bikin pesan DIBUANG FCM, dan job baru tercetak saat
+ * poller 60 detik menyapunya.
+ */
+const FCM_TTL_MS = 5 * 60 * 1000;
+
 const INVALID_FCM_ERROR_CODES = new Set([
   'messaging/registration-token-not-registered',
   'messaging/invalid-registration-token',
@@ -91,7 +105,7 @@ export async function pushPrintJob(args: PushAgentArgs): Promise<PushAgentResult
     data,
     android: {
       priority: 'high',
-      ttl: 60 * 1000, // 1 minute — agent online via heartbeat; expire stale notif
+      ttl: FCM_TTL_MS,
     },
   });
 
