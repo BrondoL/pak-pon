@@ -25,10 +25,10 @@ export default async function MonitorPage() {
           Monitor
         </p>
         <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight text-coal md:text-4xl">
-          Meja <span className="italic">belum bayar</span>
+          Pesanan <span className="italic">belum bayar</span>
         </h1>
         <p className="mt-2 text-sm text-coal-soft">
-          Diperbarui otomatis tiap 15 detik. Tandai lunas saat meja sudah bayar.
+          Dine-in dan bungkus. Diperbarui otomatis tiap 15 detik. Tandai lunas saat pesanan sudah dibayar.
         </p>
       </div>
 

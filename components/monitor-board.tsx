@@ -104,10 +104,10 @@ export function MonitorBoard({
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <p className="text-sm text-coal-soft">
           {rows.length === 0 ? (
-            'Tidak ada meja belum bayar'
+            'Tidak ada pesanan belum bayar'
           ) : (
             <>
-              <span className="font-display text-lg text-coal">{rows.length}</span> meja belum bayar
+              <span className="font-display text-lg text-coal">{rows.length}</span> pesanan belum bayar
               {' · '}total <span className="font-medium text-coal">{formatRp(total)}</span>
             </>
           )}
@@ -142,13 +142,13 @@ export function MonitorBoard({
 
       {rows.length === 0 ? (
         <Card variant="paper" className="px-6 py-14 text-center">
-          <p className="font-display text-xl italic text-coal">Semua meja sudah bayar 🎉</p>
-          <p className="mt-2 text-sm text-coal-soft">Belum ada tagihan meja yang tertunda hari ini.</p>
+          <p className="font-display text-xl italic text-coal">Semua pesanan sudah bayar 🎉</p>
+          <p className="mt-2 text-sm text-coal-soft">Belum ada pesanan yang belum dibayar hari ini.</p>
         </Card>
       ) : filtered.length === 0 ? (
         <Card variant="paper" className="px-6 py-10 text-center">
           <p className="text-sm text-coal-soft">
-            Tidak ada meja cocok dengan “{query.trim()}”.
+            Tidak ada pesanan cocok dengan &quot;{query.trim()}&quot;.
           </p>
           <Button variant="secondary" size="sm" className="mt-3" onClick={() => setQuery('')}>
             Hapus pencarian
@@ -164,8 +164,15 @@ export function MonitorBoard({
                 className="min-w-0 text-left"
               >
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-display text-2xl leading-none text-coal">
-                    {row.table_no ? `Meja ${row.table_no}` : 'Tanpa meja'}
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="truncate font-display text-2xl leading-none text-coal">
+                      {row.table_no ? `Meja ${row.table_no}` : 'Tanpa meja'}
+                    </span>
+                    {row.is_takeaway && (
+                      <span className="shrink-0 rounded-full border border-gold/40 bg-gold-faint px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gold-dark">
+                        Bungkus
+                      </span>
+                    )}
                   </span>
                   <span className="shrink-0 text-xs text-clay">{formatTimeWIB(row.created_at)}</span>
                 </div>
