@@ -32,7 +32,7 @@ export type JobDuration = {
  */
 function diffMs(from: string, to: string): number {
   const ms = new Date(to).getTime() - new Date(from).getTime();
-  return Number.isNaN(ms) ? NaN : Math.max(0, ms);
+  return Math.max(0, ms);
 }
 
 /**
@@ -59,8 +59,8 @@ export function computeJobDuration(job: PrintJobTimestamps): JobDuration | null 
 
   return {
     totalMs,
-    sendMs: sendMs !== null && Number.isFinite(sendMs) ? sendMs : null,
-    printMs: printMs !== null && Number.isFinite(printMs) ? printMs : null,
+    sendMs: Number.isFinite(sendMs) ? sendMs : null,
+    printMs: Number.isFinite(printMs) ? printMs : null,
     isSlow: totalMs >= SLOW_THRESHOLD_MS,
   };
 }

@@ -96,6 +96,20 @@ describe('computeJobDuration', () => {
     const d = computeJobDuration(job({ status: 'done', done_at: at(-400) }))!;
     expect(d.totalMs).toBe(0);
   });
+
+  it('meng-clamp tiap ruas sendiri-sendiri, bukan cuma totalnya', () => {
+    // printing_at (jam Postgres) lebih belakang dari done_at (jam tablet yang
+    // mundur) — ruas cetak negatif, totalnya masih positif.
+    const d = computeJobDuration(
+      job({ status: 'done', printing_at: at(900), done_at: at(800) }),
+    )!;
+    expect(d.totalMs).toBe(800);
+    expect(d.sendMs).toBe(900);
+    expect(d.printMs).toBe(0);
+    // Sengaja: begitu ada ruas yang ter-clamp, sendMs + printMs TIDAK lagi
+    // sama dengan totalMs. Lihat spec bagian "Ketelitian angka".
+    expect(d.sendMs! + d.printMs!).not.toBe(d.totalMs);
+  });
 });
 
 describe('formatDuration', () => {
