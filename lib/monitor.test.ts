@@ -22,6 +22,7 @@ describe('mapMonitorRow', () => {
     created_at: '2026-07-21T05:30:00.000Z',
     customer_name: 'Budi',
     table_no: '5',
+    is_takeaway: false,
     transaction_items: [
       { qty: 2, unit_price_snapshot: 15000 },
       { qty: 1, unit_price_snapshot: 8000 },
@@ -34,6 +35,7 @@ describe('mapMonitorRow', () => {
       created_at: '2026-07-21T05:30:00.000Z',
       customer_name: 'Budi',
       table_no: '5',
+      is_takeaway: false,
       total: 38000,
       item_count: 2,
     });
@@ -43,6 +45,32 @@ describe('mapMonitorRow', () => {
     const r = mapMonitorRow({ ...raw, transaction_items: null });
     expect(r.total).toBe(0);
     expect(r.item_count).toBe(0);
+  });
+});
+
+describe('mapMonitorRow — is_takeaway', () => {
+  const base = {
+    id: 'tx-1',
+    created_at: '2026-08-08T05:00:00.000Z',
+    customer_name: 'Budi',
+    table_no: '5',
+    transaction_items: [{ qty: 2, unit_price_snapshot: 10000 }],
+  };
+
+  it('carries is_takeaway true through unchanged', () => {
+    const row = mapMonitorRow({ ...base, is_takeaway: true } as MonitorRawRow);
+    expect(row.is_takeaway).toBe(true);
+  });
+
+  it('carries is_takeaway false through unchanged', () => {
+    const row = mapMonitorRow({ ...base, is_takeaway: false } as MonitorRawRow);
+    expect(row.is_takeaway).toBe(false);
+  });
+
+  it('still computes total and item_count alongside the flag', () => {
+    const row = mapMonitorRow({ ...base, is_takeaway: true } as MonitorRawRow);
+    expect(row.total).toBe(20000);
+    expect(row.item_count).toBe(1);
   });
 });
 

@@ -6,6 +6,7 @@ export type MonitorRawRow = {
   created_at: string;
   customer_name: string | null;
   table_no: string | null;
+  is_takeaway: boolean;
   transaction_items: MonitorItemRow[] | null;
 };
 
@@ -14,6 +15,7 @@ export type MonitorRow = {
   created_at: string;
   customer_name: string | null;
   table_no: string | null;
+  is_takeaway: boolean;
   total: number;
   item_count: number;
 };
@@ -29,6 +31,7 @@ export function mapMonitorRow(raw: MonitorRawRow): MonitorRow {
     created_at: raw.created_at,
     customer_name: raw.customer_name,
     table_no: raw.table_no,
+    is_takeaway: raw.is_takeaway,
     total: computeItemsTotal(items),
     item_count: items.length,
   };
