@@ -15,16 +15,20 @@ const menus: MenuOption[] = [
 ];
 
 function mockFetch() {
-  return vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
-    void _init;
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === '/api/pos') {
+      // Gema is_takeaway dari body request, bukan hardcode — kalau switchnya
+      // rusak (ga pernah update state), body kirim false dan respons ini
+      // ikut bilang false, jadi test benar-benar gantung ke switch, bukan
+      // cuma ke fixture mock.
+      const body = JSON.parse((init?.body as string) ?? '{}') as { is_takeaway?: boolean };
       return Promise.resolve(
         new Response(
           JSON.stringify({
             transaction: {
               id: 'tx-1', daily_seq: 3, created_at: '2026-08-08T05:00:00.000Z',
-              customer_name: null, table_no: null, is_takeaway: true,
+              customer_name: null, table_no: null, is_takeaway: body.is_takeaway ?? false,
             },
             items: [{ id: 'item-1' }],
           }),
@@ -57,6 +61,13 @@ describe('<PosClient /> — cetak saat simpan', () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.map((c) => String(c[0]))).toContain('/api/pos');
     });
+
+    // Tanpa cek ini, test tetap lulus meski switch bungkus ga pernah nyala —
+    // mock cuma gema apa yang dikirim, jadi kalau body-nya salah, ini yang
+    // ketahuan duluan, bukan gejala di bawahnya yang membingungkan.
+    const posCall = fetchMock.mock.calls.find((c) => String(c[0]) === '/api/pos')!;
+    const posBody = JSON.parse((posCall[1] as RequestInit).body as string);
+    expect(posBody.is_takeaway).toBe(true);
 
     // Tiket dapur boleh keluar; nota customer TIDAK.
     const printBodies = fetchMock.mock.calls
