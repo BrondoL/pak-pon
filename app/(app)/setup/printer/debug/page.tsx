@@ -45,22 +45,42 @@ function formatTxLabel(j: Job): string {
 }
 
 /**
- * Durasi job + pecahan ruasnya. "kirim" = sampai tablet mengklaim job,
- * "cetak" = tablet menyambung ke printer sampai selesai. Sengaja bukan
- * istilah teknis — owner ikut membaca halaman ini.
+ * Durasi job + pecahan ruasnya.
+ * - `fcm`   = pesan berjalan dari server ke tablet
+ * - `agent` = tablet memproses (cek sesi + klaim ke Supabase)
+ * - `cetak` = socket ke printer sampai selesai
+ *
+ * Badge `poll` berarti FCM TIDAK pernah sampai dan job dipungut poller 60
+ * detik — kehadirannya sendiri adalah gejala, bukan sekadar info. Untuk baris
+ * itu ruas `fcm` tidak ditampilkan: tidak ada perjalanan yang bisa diukur.
  */
 function DurationView({ job }: { job: Job }) {
   const d = computeJobDuration(job);
   if (!d) return <span className="text-coal-soft">—</span>;
+
+  const parts: string[] = [];
+  if (d.claimedVia !== 'poll' && d.deliverMs !== null) {
+    parts.push(`fcm ${formatDuration(d.deliverMs)}`);
+  }
+  if (d.agentMs !== null) parts.push(`agent ${formatDuration(d.agentMs)}`);
+  // Baris lama (belum punya kolom klaim) tetap tampil seperti sebelumnya.
+  if (d.agentMs === null && d.sendMs !== null) parts.push(`kirim ${formatDuration(d.sendMs)}`);
+  if (d.printMs !== null) parts.push(`cetak ${formatDuration(d.printMs)}`);
+
   return (
     <div>
-      <div className={d.isSlow ? 'font-medium text-brick' : 'text-coal'}>
-        {formatDuration(d.totalMs)}
+      <div className="flex items-baseline gap-1">
+        <span className={d.isSlow ? 'font-medium text-brick' : 'text-coal'}>
+          {formatDuration(d.totalMs)}
+        </span>
+        {d.claimedVia === 'poll' && (
+          <span className="rounded-full bg-brick/15 px-1.5 text-[10px] font-medium uppercase tracking-wide text-brick">
+            poll
+          </span>
+        )}
       </div>
-      {d.sendMs !== null && d.printMs !== null && (
-        <div className="text-[10px] text-coal-soft">
-          kirim {formatDuration(d.sendMs)} · cetak {formatDuration(d.printMs)}
-        </div>
+      {parts.length > 0 && (
+        <div className="text-[10px] text-coal-soft">{parts.join(' · ')}</div>
       )}
     </div>
   );
