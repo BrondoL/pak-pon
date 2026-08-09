@@ -27,7 +27,7 @@ type Job = {
   printing_at: string | null;
   done_at: string | null;
   failed_at: string | null;
-  claimed_via: 'fcm' | 'poll' | null;
+  claimed_via: 'fcm' | 'poll' | 'manual' | null;
   receive_to_claim_ms: number | null;
   customer_name: string | null;
   table_no: string | null;
@@ -53,6 +53,10 @@ function formatTxLabel(j: Job): string {
  * Badge `poll` berarti FCM TIDAK pernah sampai dan job dipungut poller 60
  * detik — kehadirannya sendiri adalah gejala, bukan sekadar info. Untuk baris
  * itu ruas `fcm` tidak ditampilkan: tidak ada perjalanan yang bisa diukur.
+ *
+ * Badge `manual` berarti kasir/owner menekan tombol retry di tab History
+ * agent app — sengaja, bukan gejala kehilangan FCM, jadi warnanya netral
+ * (bukan warna `poll`) supaya tidak dibaca sebagai masalah.
  */
 function DurationView({ job }: { job: Job }) {
   const d = computeJobDuration(job);
@@ -79,6 +83,11 @@ function DurationView({ job }: { job: Job }) {
         {d.claimedVia === 'poll' && (
           <span className="rounded-full bg-brick/15 px-1.5 text-[10px] font-medium uppercase tracking-wide text-brick">
             poll
+          </span>
+        )}
+        {d.claimedVia === 'manual' && (
+          <span className="rounded-full bg-clay-mist px-1.5 text-[10px] font-medium uppercase tracking-wide text-coal-soft">
+            manual
           </span>
         )}
       </div>

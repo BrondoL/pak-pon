@@ -153,6 +153,24 @@ describe('computeJobDuration', () => {
     expect(d.deliverMs).toBeNull();
   });
 
+  it('baris retry manual tetap menghitung agentMs/deliverMs seperti biasa', () => {
+    // claimed_via = 'manual' cuma beda arti (retry sengaja, bukan FCM
+    // hilang) — rumusnya sama sekali tidak berubah, cuma diteruskan.
+    const d = computeJobDuration(
+      job({
+        status: 'done',
+        printing_at: at(1000),
+        done_at: at(1400),
+        claimed_via: 'manual',
+        receive_to_claim_ms: 200,
+      }),
+    )!;
+    expect(d.sendMs).toBe(1000);
+    expect(d.agentMs).toBe(200);
+    expect(d.deliverMs).toBe(800);
+    expect(d.claimedVia).toBe('manual');
+  });
+
   it('meneruskan claimed_via poll apa adanya', () => {
     const d = computeJobDuration(
       job({ printing_at: at(60000), done_at: at(60200), claimed_via: 'poll', receive_to_claim_ms: 400 }),

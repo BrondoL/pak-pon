@@ -6,7 +6,7 @@ export const SLOW_THRESHOLD_MS = 5000;
 
 export type PrintJobStatus = 'pending' | 'printing' | 'done' | 'failed';
 
-export type ClaimedVia = 'fcm' | 'poll';
+export type ClaimedVia = 'fcm' | 'poll' | 'manual';
 
 export type PrintJobTimestamps = {
   status: PrintJobStatus;
