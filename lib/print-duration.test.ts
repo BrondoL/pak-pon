@@ -159,6 +159,9 @@ describe('computeJobDuration', () => {
     )!;
     expect(d.claimedVia).toBe('poll');
     expect(d.agentMs).toBe(400);
+    // deliverMs TETAP dihitung untuk baris poll — yang memutuskan
+    // menyembunyikannya adalah UI, bukan fungsi ini.
+    expect(d.deliverMs).toBe(59600);
   });
 });
 

@@ -59,7 +59,10 @@ function DurationView({ job }: { job: Job }) {
   if (!d) return <span className="text-coal-soft">—</span>;
 
   const parts: string[] = [];
-  if (d.claimedVia !== 'poll' && d.deliverMs !== null) {
+  // Guard positif: fcm segment hanya valid untuk baris FCM-klaim, bukan
+  // "semua yang bukan poll". Baris lama (`claimed_via = null`) tetap tidak
+  // mencapai branch ini karena `deliverMs = null`.
+  if (d.claimedVia === 'fcm' && d.deliverMs !== null) {
     parts.push(`fcm ${formatDuration(d.deliverMs)}`);
   }
   if (d.agentMs !== null) parts.push(`agent ${formatDuration(d.agentMs)}`);
