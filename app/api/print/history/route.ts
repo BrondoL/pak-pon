@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('print_history')
-      .select('id, tx_id, agent_label, target, trigger, status, failure_reason, created_at, printing_at, done_at, failed_at, transactions(customer_name, table_no, daily_seq)')
+      .select('id, tx_id, agent_label, target, trigger, status, failure_reason, created_at, printing_at, claimed_via, receive_to_claim_ms, done_at, failed_at, transactions(customer_name, table_no, daily_seq)')
       .order('created_at', { ascending: false })
       .limit(limit);
     if (statusFilter === 'pending' || statusFilter === 'done' || statusFilter === 'failed') {
@@ -47,6 +47,8 @@ export async function GET(request: NextRequest) {
       failure_reason: string | null;
       created_at: string;
       printing_at: string | null;
+      claimed_via: 'fcm' | 'poll' | null;
+      receive_to_claim_ms: number | null;
       done_at: string | null;
       failed_at: string | null;
       transactions: { customer_name: string | null; table_no: string | null; daily_seq: number | null } | null;
@@ -65,6 +67,8 @@ export async function GET(request: NextRequest) {
         failure_reason: r.failure_reason,
         created_at: r.created_at,
         printing_at: r.printing_at,
+        claimed_via: r.claimed_via,
+        receive_to_claim_ms: r.receive_to_claim_ms,
         done_at: r.done_at,
         failed_at: r.failed_at,
         customer_name: tx?.customer_name,
