@@ -21,6 +21,8 @@ function job(over: Partial<PrintJobTimestamps> = {}): PrintJobTimestamps {
     printing_at: null,
     done_at: null,
     failed_at: null,
+    claimed_via: null,
+    receive_to_claim_ms: null,
     ...over,
   };
 }
@@ -109,6 +111,54 @@ describe('computeJobDuration', () => {
     // Sengaja: begitu ada ruas yang ter-clamp, sendMs + printMs TIDAK lagi
     // sama dengan totalMs. Lihat spec bagian "Ketelitian angka".
     expect(d.sendMs! + d.printMs!).not.toBe(d.totalMs);
+  });
+
+  it('memecah ruas kirim jadi fcm dan agent', () => {
+    const d = computeJobDuration(
+      job({
+        status: 'done',
+        printing_at: at(2000),
+        done_at: at(2200),
+        claimed_via: 'fcm',
+        receive_to_claim_ms: 300,
+      }),
+    )!;
+    expect(d.sendMs).toBe(2000);
+    expect(d.agentMs).toBe(300);
+    expect(d.deliverMs).toBe(1700);
+    expect(d.claimedVia).toBe('fcm');
+  });
+
+  it('meng-clamp deliverMs ke 0 kalau agentMs melebihi sendMs', () => {
+    // Bisa terjadi: sendMs dari jam Postgres, agentMs dari jam monotonik
+    // tablet. Pembulatan & jitter bikin agentMs sesekali sedikit lebih besar.
+    const d = computeJobDuration(
+      job({ printing_at: at(500), done_at: at(700), receive_to_claim_ms: 900 }),
+    )!;
+    expect(d.deliverMs).toBe(0);
+  });
+
+  it('baris lama tanpa kolom klaim: agentMs & deliverMs null', () => {
+    const d = computeJobDuration(job({ printing_at: at(900), done_at: at(1200) }))!;
+    expect(d.sendMs).toBe(900);
+    expect(d.agentMs).toBeNull();
+    expect(d.deliverMs).toBeNull();
+    expect(d.claimedVia).toBeNull();
+  });
+
+  it('deliverMs null kalau printing_at tidak ada meski receive_to_claim_ms ada', () => {
+    const d = computeJobDuration(job({ done_at: at(1200), receive_to_claim_ms: 300 }))!;
+    expect(d.sendMs).toBeNull();
+    expect(d.agentMs).toBe(300);
+    expect(d.deliverMs).toBeNull();
+  });
+
+  it('meneruskan claimed_via poll apa adanya', () => {
+    const d = computeJobDuration(
+      job({ printing_at: at(60000), done_at: at(60200), claimed_via: 'poll', receive_to_claim_ms: 400 }),
+    )!;
+    expect(d.claimedVia).toBe('poll');
+    expect(d.agentMs).toBe(400);
   });
 });
 

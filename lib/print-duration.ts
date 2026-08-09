@@ -6,12 +6,16 @@ export const SLOW_THRESHOLD_MS = 5000;
 
 export type PrintJobStatus = 'pending' | 'printing' | 'done' | 'failed';
 
+export type ClaimedVia = 'fcm' | 'poll';
+
 export type PrintJobTimestamps = {
   status: PrintJobStatus;
   created_at: string;
   printing_at: string | null;
   done_at: string | null;
   failed_at: string | null;
+  claimed_via: ClaimedVia | null;
+  receive_to_claim_ms: number | null;
 };
 
 export type JobDuration = {
@@ -20,6 +24,11 @@ export type JobDuration = {
   sendMs: number | null;
   /** printing_at → akhir. null kalau printing_at tidak ada. */
   printMs: number | null;
+  /** receive_to_claim_ms — lama agent memproses sebelum klaim mendarat. */
+  agentMs: number | null;
+  /** sendMs − agentMs, clamp 0. null kalau salah satunya tidak ada. */
+  deliverMs: number | null;
+  claimedVia: ClaimedVia | null;
   /** totalMs >= SLOW_THRESHOLD_MS. Dihitung dari total, bukan per ruas. */
   isSlow: boolean;
 };
@@ -54,13 +63,28 @@ export function computeJobDuration(job: PrintJobTimestamps): JobDuration | null 
   const totalMs = diffMs(job.created_at, endedAt);
   if (!Number.isFinite(totalMs)) return null;
 
-  const sendMs = job.printing_at ? diffMs(job.created_at, job.printing_at) : null;
+  const rawSendMs = job.printing_at ? diffMs(job.created_at, job.printing_at) : null;
+  const sendMs = rawSendMs !== null && Number.isFinite(rawSendMs) ? rawSendMs : null;
   const printMs = job.printing_at ? diffMs(job.printing_at, endedAt) : null;
+
+  const agentMs =
+    job.receive_to_claim_ms !== null && Number.isFinite(job.receive_to_claim_ms)
+      ? Math.max(0, job.receive_to_claim_ms)
+      : null;
+
+  // Sisa waktu setelah pemrosesan agent dikeluarkan = perjalanan FCM.
+  // Dua sumber waktu berbeda (Postgres vs jam monotonik tablet), jadi
+  // selisihnya bisa sedikit negatif karena pembulatan — clamp ke 0.
+  const deliverMs =
+    sendMs !== null && agentMs !== null ? Math.max(0, sendMs - agentMs) : null;
 
   return {
     totalMs,
-    sendMs: Number.isFinite(sendMs) ? sendMs : null,
+    sendMs,
     printMs: Number.isFinite(printMs) ? printMs : null,
+    agentMs,
+    deliverMs,
+    claimedVia: job.claimed_via,
     isSlow: totalMs >= SLOW_THRESHOLD_MS,
   };
 }

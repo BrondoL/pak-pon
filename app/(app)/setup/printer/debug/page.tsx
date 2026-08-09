@@ -27,6 +27,8 @@ type Job = {
   printing_at: string | null;
   done_at: string | null;
   failed_at: string | null;
+  claimed_via: 'fcm' | 'poll' | null;
+  receive_to_claim_ms: number | null;
   customer_name: string | null;
   table_no: string | null;
   daily_seq: number | null;
