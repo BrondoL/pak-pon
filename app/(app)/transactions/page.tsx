@@ -5,8 +5,8 @@ import { currentBusinessDate, parseYmd, businessDayRange } from '@/lib/date';
 import { Card } from '@/components/ui/card';
 import { DateFilter } from '@/components/date-filter';
 import { TransactionList, type TxRow } from '@/components/transaction-list';
-import { formatRp } from '@/lib/currency';
 import { mapTransactionSource } from '@/lib/transactions';
+import { MoneyValue, MoneyToggle, MoneyVisibilityProvider } from '@/components/money-visibility';
 
 export const dynamic = 'force-dynamic';
 
@@ -142,49 +142,52 @@ export default async function TransactionsPage({
         </Link>
       </div>
 
-      <Card variant="paper" className="grid grid-cols-2 divide-x divide-clay-soft/60 px-6 py-5 sm:grid-cols-4">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Total pemasukan</div>
-          <div className="mt-1 font-display text-2xl tracking-tight text-coal">
-            {formatRp(summaryTotal)}
+      <MoneyVisibilityProvider>
+        <Card variant="paper" className="grid grid-cols-2 divide-x divide-clay-soft/60 px-6 py-5 sm:grid-cols-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Total pemasukan</div>
+            <div className="mt-1 flex items-center gap-2 font-display text-2xl tracking-tight text-coal">
+              <MoneyValue amount={summaryTotal} />
+              <MoneyToggle />
+            </div>
+            <div className="text-[11px] text-clay">dari {summaryConfirmed} transaksi confirmed</div>
           </div>
-          <div className="text-[11px] text-clay">dari {summaryConfirmed} transaksi confirmed</div>
-        </div>
-        <div className="pl-6">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Total transaksi</div>
-          <div className="mt-1 font-display text-2xl text-coal">{totalMatching}</div>
-          <div className="text-[11px] text-clay">{summaryConfirmed} confirmed · {summaryPending} draft</div>
-        </div>
-        <div className="mt-4 pl-0 sm:mt-0 sm:pl-6">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Rata-rata/tx</div>
-          <div className="mt-1 font-display text-2xl text-coal">
-            {summaryConfirmed > 0 ? formatRp(Math.round(summaryTotal / summaryConfirmed)) : '—'}
+          <div className="pl-6">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Total transaksi</div>
+            <div className="mt-1 font-display text-2xl text-coal">{totalMatching}</div>
+            <div className="text-[11px] text-clay">{summaryConfirmed} confirmed · {summaryPending} draft</div>
           </div>
-          <div className="text-[11px] text-clay">dari yang confirmed</div>
-        </div>
-        <div className="mt-4 pl-6 sm:mt-0">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Tampil di halaman</div>
-          <div className="mt-1 font-display text-2xl text-coal">
-            {items.length}
-            <span className="text-sm text-clay">/{count ?? 0}</span>
+          <div className="mt-4 pl-0 sm:mt-0 sm:pl-6">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Rata-rata/tx</div>
+            <div className="mt-1 font-display text-2xl text-coal">
+              <MoneyValue amount={summaryConfirmed > 0 ? Math.round(summaryTotal / summaryConfirmed) : null} />
+            </div>
+            <div className="text-[11px] text-clay">dari yang confirmed</div>
           </div>
-          <div className="text-[11px] text-clay">halaman {page}</div>
-        </div>
-      </Card>
+          <div className="mt-4 pl-6 sm:mt-0">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Tampil di halaman</div>
+            <div className="mt-1 font-display text-2xl text-coal">
+              {items.length}
+              <span className="text-sm text-clay">/{count ?? 0}</span>
+            </div>
+            <div className="text-[11px] text-clay">halaman {page}</div>
+          </div>
+        </Card>
+      </MoneyVisibilityProvider>
 
       <Suspense>
-        <DateFilter />
-      </Suspense>
+          <DateFilter />
+        </Suspense>
 
-      <Suspense>
-        <TransactionList
-          items={items}
-          page={page}
-          pageSize={PAGE_SIZE}
-          totalCount={count ?? 0}
-          hasActiveFilter={hasActiveFilter}
-        />
-      </Suspense>
+        <Suspense>
+          <TransactionList
+            items={items}
+            page={page}
+            pageSize={PAGE_SIZE}
+            totalCount={count ?? 0}
+            hasActiveFilter={hasActiveFilter}
+          />
+        </Suspense>
     </div>
   );
 }

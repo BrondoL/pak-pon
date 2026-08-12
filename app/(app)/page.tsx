@@ -5,7 +5,7 @@ import { HomeTiles } from '@/components/home-tiles';
 import { PrinterStatusBanner } from '@/components/printer-status-banner';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { currentBusinessDate, businessDayRange } from '@/lib/date';
-import { formatRp } from '@/lib/currency';
+import { MoneyValue, MoneyToggle, MoneyVisibilityProvider } from '@/components/money-visibility';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,13 +84,15 @@ export default async function HomePage() {
             </Link>
           </div>
         ) : (
-          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Pemasukan</div>
-              <div className="mt-1 font-display text-2xl tracking-tight text-coal md:text-3xl">
-                {formatRp(todayTotal)}
+          <MoneyVisibilityProvider>
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Pemasukan</div>
+                <div className="mt-1 flex items-center gap-2 font-display text-2xl tracking-tight text-coal md:text-3xl">
+                  <MoneyValue amount={todayTotal} />
+                  <MoneyToggle />
+                </div>
               </div>
-            </div>
             <div>
               <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Transaksi</div>
               <div className="mt-1 font-display text-2xl text-coal md:text-3xl">
@@ -113,7 +115,8 @@ export default async function HomePage() {
                 <div className="mt-1 font-display text-2xl text-coal/40 md:text-3xl">0</div>
               )}
             </div>
-          </div>
+            </div>
+            </MoneyVisibilityProvider>
         )}
       </Card>
 
