@@ -21,6 +21,9 @@ export default async function TransactionPage({
   const actor = await getCurrentActor();
   const canEdit = can(actor, 'transactions.edit');
   const canDelete = can(actor, 'transactions.delete');
+  // Tandai/batalkan lunas memakai kunci yang sama dengan /monitor — lihat
+  // pemisahan dua kunci di PATCH /api/transactions/[id].
+  const canMarkPaid = can(actor, 'monitor.use');
 
   const { id } = await params;
   const supabase = await getSupabaseServer();
@@ -104,6 +107,7 @@ export default async function TransactionPage({
       printerSettings={printerSettings}
       canEdit={canEdit}
       canDelete={canDelete}
+      canMarkPaid={canMarkPaid}
     />
   );
 }

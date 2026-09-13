@@ -75,6 +75,7 @@ export function TransactionDetail({
   printerSettings,
   canEdit,
   canDelete,
+  canMarkPaid,
 }: {
   transaction: Transaction;
   items: Item[];
@@ -83,6 +84,8 @@ export function TransactionDetail({
   printerSettings: PrinterSettings;
   canEdit: boolean;
   canDelete: boolean;
+  /** `monitor.use` — kunci yang sama yang dipakai PATCH /api/transactions/[id] untuk body {paid}. */
+  canMarkPaid: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -352,7 +355,7 @@ export function TransactionDetail({
               </Link>
             )}
 
-            {!isDraft && (
+            {!isDraft && canMarkPaid && (
               <AlertDialog open={paidDialogOpen} onOpenChange={setPaidDialogOpen}>
                 <AlertDialogTrigger
                   disabled={pending}

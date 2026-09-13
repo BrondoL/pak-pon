@@ -10,10 +10,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { NavLink, SetupLink } from '@/lib/nav-links';
 
-type NavLink = { href: string; label: string };
-
-export function MobileNav({ links, setupLinks }: { links: NavLink[]; setupLinks: NavLink[] }) {
+export function MobileNav({ links, setupLinks }: { links: NavLink[]; setupLinks: SetupLink[] }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
