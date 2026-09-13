@@ -49,24 +49,19 @@ export async function PATCH(
       return NextResponse.json({ error: updateErr.message }, { status: 500 });
     }
 
-    // Ganti seluruh set izin: hapus semua baris lama, insert daftar baru. Lebih
+    // Ganti seluruh set izin lewat SQL function (migrasi 0045): DELETE + INSERT
+    // jalan dalam SATU transaksi Postgres, jadi tidak ada jendela di mana role
+    // bisa nyangkut tanpa izin sama sekali kalau langkah kedua gagal. Lebih
     // sederhana & bebas kondisi balapan dibanding menghitung selisih; jumlah
     // barisnya belasan.
-    const { error: delErr } = await supabase.from('role_permissions').delete().eq('role_id', id);
-    if (delErr) {
+    const { error: rpcErr } = await supabase.rpc('set_role_permissions', {
+      p_role_id: id,
+      p_keys: payload.permissions,
+    });
+    if (rpcErr) {
       evt.merge({ status: 500 });
-      evt.error(delErr);
-      return NextResponse.json({ error: delErr.message }, { status: 500 });
-    }
-
-    if (payload.permissions.length > 0) {
-      const rows = payload.permissions.map((permission_key) => ({ role_id: id, permission_key }));
-      const { error: insErr } = await supabase.from('role_permissions').insert(rows);
-      if (insErr) {
-        evt.merge({ status: 500 });
-        evt.error(insErr);
-        return NextResponse.json({ error: insErr.message }, { status: 500 });
-      }
+      evt.error(rpcErr);
+      return NextResponse.json({ error: rpcErr.message }, { status: 500 });
     }
 
     const { count } = await supabase
