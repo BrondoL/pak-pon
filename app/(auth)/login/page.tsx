@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useActionState } from 'react';
+import { useActionState } from 'react';
 import Image from 'next/image';
 import { loginAction, type LoginState } from './actions';
 import { Button } from '@/components/ui/button';
@@ -9,12 +9,10 @@ import { Label } from '@/components/ui/label';
 
 const initialState: LoginState = {};
 
-export default function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ reason?: string }>;
-}) {
-  const { reason } = use(searchParams);
+// Akun yang login tapi tidak punya profil aktif TIDAK mendarat di sini — dia
+// dikirim ke `/no-access`, karena `proxy.ts` memantulkan request `/login` yang
+// masih bawa sesi balik ke `/`. Jadi halaman ini tidak perlu membaca alasan apa pun.
+export default function LoginPage() {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
 
   return (
@@ -51,11 +49,6 @@ export default function LoginPage({
 
         {/* Form card — cream surface on navy background for contrast */}
         <div className="rounded-2xl bg-paper-soft p-6 shadow-2xl sm:p-7">
-          {reason === 'no_access' && (
-            <p className="mb-4 rounded-md border border-brick-soft bg-brick-faint px-3 py-2 text-sm text-brick-dark">
-              Akun Anda belum diberi akses, atau sudah dinonaktifkan. Hubungi pemilik warung.
-            </p>
-          )}
           <form action={formAction} className="space-y-4">
             <div>
               <Label htmlFor="email">Email</Label>

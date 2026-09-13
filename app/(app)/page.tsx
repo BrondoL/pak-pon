@@ -21,8 +21,9 @@ type HomeTodayRpc = {
 export default async function HomePage() {
   const actor = await getCurrentActor();
   // Layout sudah redirect kalau actor null; ini cuma menyempitkan tipe untuk TS
-  // (getCurrentActor() di-cache React, jadi ini bukan query kedua).
-  if (!actor) redirect('/login?reason=no_access');
+  // (getCurrentActor() di-cache React, jadi ini bukan query kedua). Tujuannya harus
+  // sama dengan layout — lihat catatan loop redirect di `app/(app)/layout.tsx`.
+  if (!actor) redirect('/no-access');
   const date = currentBusinessDate();
 
   let todayTotal = 0;
@@ -75,12 +76,17 @@ export default async function HomePage() {
             <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
               Ringkasan hari ini
             </p>
-            <Link
-              href="/reports/daily"
-              className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brick hover:text-brick-dark"
-            >
-              Buka closingan →
-            </Link>
+            {/* Kartu ini dijaga transactions.view, tapi tautannya menuju halaman
+                lain yang izinnya beda — tanpa cek ini kasir tanpa izin laporan
+                melihat tautan yang memantulkannya ke /403 saat diklik. */}
+            {can(actor, 'reports.daily.view') && (
+              <Link
+                href="/reports/daily"
+                className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brick hover:text-brick-dark"
+              >
+                Buka closingan →
+              </Link>
+            )}
           </div>
           {confirmedCount === 0 && pendingCount === 0 ? (
             <div className="mt-4 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -93,9 +99,11 @@ export default async function HomePage() {
                   yang baca.
                 </p>
               </div>
-              <Link href="/scan">
-                <Button>📷 Scan nota pertama</Button>
-              </Link>
+              {can(actor, 'scan.use') && (
+                <Link href="/scan">
+                  <Button>📷 Scan nota pertama</Button>
+                </Link>
+              )}
             </div>
           ) : (
             <MoneyVisibilityProvider>

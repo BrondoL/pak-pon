@@ -7,8 +7,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // null = belum login, belum punya profil, atau dinonaktifkan. Semuanya diperlakukan
   // sama: keluar. Akun yang pembuatannya putus di tengah bisa login tapi tidak bisa
   // apa-apa — gagal ke arah aman.
+  //
+  // ⚠️ Tujuannya `/no-access`, JANGAN `/login`: `proxy.ts` memantulkan setiap request
+  // `/login` yang masih bawa sesi balik ke `/`, dan `/` mendarat di sini lagi —
+  // loop redirect sampai browser menyerah. `/no-access` public tapi bukan `/login`,
+  // jadi request dari akun yang masih login lolos apa adanya.
   const actor = await getCurrentActor();
-  if (!actor) redirect('/login?reason=no_access');
+  if (!actor) redirect('/no-access');
 
   return (
     <div className="flex min-h-full flex-1 flex-col">

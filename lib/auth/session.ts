@@ -33,11 +33,37 @@ export const getCurrentActor = cache(async (): Promise<Actor | null> => {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
     .select(PROFILE_SELECT)
     .eq('user_id', user.id)
     .maybeSingle();
+
+  // Dua sebab `data === null` yang HASILNYA SAMA tapi ARTINYA berlawanan:
+  //   (a) tidak ada baris — akun memang belum diberi akses / dinonaktifkan;
+  //   (b) query-nya gagal — DB down, RLS salah, PostgREST error sesaat.
+  // Keduanya sengaja tetap gagal ke arah aman (null = tanpa izin) — akses tidak
+  // boleh diberikan cuma karena pengecekannya error. Tapi keduanya HARUS bisa
+  // dibedakan di log: (a) normal dan diharapkan, (b) insiden yang mengunci SEMUA
+  // orang termasuk owner di luar aplikasi. Tanpa baris ini, keduanya tampil
+  // identik sebagai "user mendarat di /no-access" dan penyebabnya tak terlacak.
+  //
+  // console.error ke stderr, JSON satu baris — konvensi yang sama dengan
+  // lib/logger.ts (stdout-JSON). Sengaja BUKAN wide-event: fungsi ini juga
+  // dipanggil dari server component yang tidak punya RequestEvent.
+  if (error) {
+    console.error(
+      JSON.stringify({
+        event: 'get_current_actor_query_failed',
+        ts: new Date().toISOString(),
+        user_id: user.id,
+        pg_code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      }),
+    );
+  }
 
   return resolveActor((data as ProfileRow | null) ?? null);
 });
