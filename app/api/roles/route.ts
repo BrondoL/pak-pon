@@ -105,6 +105,16 @@ export async function POST(request: NextRequest) {
       const { error: permErr } = await supabase.from('role_permissions').insert(rows);
       if (permErr) {
         // Bersihkan role yatim supaya tidak nyangkut tanpa izin yang benar.
+        //
+        // Sengaja compensating delete, BUKAN `set_role_permissions` seperti di
+        // PATCH /api/roles/[id]. Bedanya bukan gaya: di PATCH, role-nya sudah
+        // dipakai orang, jadi jendela antara DELETE dan INSERT bisa mengunci
+        // kasir yang sedang bekerja — itu butuh atomicity DB. Di sini role-nya
+        // baru lahir sedetik lalu dan `role_id`-nya belum pernah dilihat siapa
+        // pun, jadi kegagalan terburuknya cuma baris role yatim yang langsung
+        // dihapus. Kalau delete ini sendiri gagal, yang tertinggal adalah role
+        // tanpa izin yang tidak dipegang siapa-siapa — owner tinggal menghapusnya
+        // dari /setup/roles.
         await supabase.from('roles').delete().eq('id', createdRole.id);
         evt.merge({ status: 500, rolled_back_role: true });
         evt.error(permErr);

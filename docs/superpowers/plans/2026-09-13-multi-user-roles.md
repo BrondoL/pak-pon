@@ -840,6 +840,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
 ⚠️ `Nav` sekarang menerima prop `actor` — itu dibuat di Task 5. Sampai Task 5 selesai, TypeScript akan mengeluh di baris `<Nav actor={actor} />`. Kerjakan Task 5 sebelum menjalankan `npm run build`.
 
+> ⚠️ **DIBATALKAN pada review akhir branch (2026-09-13).** Step 2 & 3 di bawah/atas ini
+> SALAH dan sudah diperbaiki di kode: redirect ke `/login?reason=no_access` bikin LOOP
+> tak berujung. `proxy.ts` memantulkan setiap request `/login` yang masih bawa sesi balik
+> ke `/`, dan akun yang dinonaktifkan MASIH pegang sesi valid — jadi `/` → `/login` → `/`
+> → … sampai `ERR_TOO_MANY_REDIRECTS`, dan banner `reason === 'no_access'` tidak pernah
+> bisa dirender. Yang benar: redirect ke `/no-access` (`app/(auth)/no-access/page.tsx`,
+> WAJIB di luar route group `(app)`) yang membawa tombol Keluar. Jangan ikuti dua step ini
+> apa adanya.
+
 - [ ] **Step 3: Tampilkan alasan di halaman login**
 
 Di `app/(auth)/login/page.tsx`, baca `searchParams.reason` dan kalau bernilai `no_access`, render pesan di atas form:

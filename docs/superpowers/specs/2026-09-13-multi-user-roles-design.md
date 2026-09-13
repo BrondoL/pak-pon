@@ -72,7 +72,11 @@ Keputusan:
 
 ⚠️ **Jebakan rekursi:** policy di `profiles` yang mengecek "apakah saya superadmin" dengan membaca `profiles` menyebabkan **rekursi tak terhingga** — jebakan klasik Supabase. Pengecekannya lewat fungsi `SECURITY DEFINER` `public.is_superadmin(uuid)` dengan `search_path` dikunci, pola yang sama dengan RPC `report_*` di migrasi 0034.
 
-`report_monthly` ditambahi penjagaan izin di dalam fungsinya sehingga menolak pemanggil yang tidak punya `reports.monthly.view` — angka omzet bulanan tidak bisa diambil lewat jalur PostgREST langsung.
+`report_monthly` ditambahi penjagaan izin di dalam fungsinya sehingga menolak pemanggil yang tidak punya `reports.monthly.view`. Penjagaan itu menutup **jalur `report_monthly` saja** — agregator telanjangnya (`report_monthly_data`) sudah di-REVOKE dari `authenticated` (migrasi 0043) dan dari `anon` (migrasi 0044).
+
+⚠️ **Itu bukan berarti angka omzet bulanan mustahil diambil lewat PostgREST.** Tiga RPC laporan lain — `report_daily`, `report_home_today`, dan `report_transactions_summary` (migrasi 0034) — semuanya `SECURITY INVOKER`, tetap `GRANT`-ed ke `authenticated`, dan menerima `(p_start, p_end)` sembarang tanpa batas rentang. Kasir yang login tanpa `reports.monthly.view` masih bisa POST `rpc/report_daily` dengan rentang sebulan penuh dan mendapat totalnya. Route aplikasinya sendiri aman — `GET /api/reports/daily` menjepit rentangnya ke satu hari buku — tapi pagar itu ada di route handler, bukan di DB.
+
+Ini **bukan** celah baru: ia berada di dalam perimeter "Risiko yang diterima" di bawah, yang sudah mengakui baris mentah `transactions` memang terbaca lewat PostgREST oleh siapa pun yang login. Siapa yang bisa membaca barisnya bisa menjumlahkannya sendiri; ketiga RPC itu cuma membuatnya lebih nyaman. Sengaja tidak dijaga — memagari ketiganya berarti menyentuh jalur laporan yang stabil demi menutup sesuatu yang tetap terbuka lewat `select=*` biasa. Yang dijaga DB betulan hanyalah jalur `report_monthly`.
 
 ## Katalog izin
 
