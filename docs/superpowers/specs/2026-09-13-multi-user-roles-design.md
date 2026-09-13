@@ -96,6 +96,12 @@ Keputusan:
 
 Ringkasan pemasukan di home dijaga `transactions.view`, bukan izin sendiri — angkanya sama dengan yang muncul di laporan harian, jadi izin terpisah cuma memberi rasa aman palsu.
 
+**Halaman yang tidak butuh izin:** `/` (home) dan `/403` terbuka untuk siapa pun yang punya profil aktif — home cuma menyaring isinya (ubin & ringkasan nominal) sesuai izin. Tanpa ini, kasir yang login mendarat langsung di 403 dan tidak punya tempat berpijak.
+
+**`/reports` (halaman indeks)** terbuka bagi pemegang `reports.daily.view` **atau** `reports.monthly.view`, dan cuma menampilkan kartu yang boleh dibuka. Ini satu-satunya aturan majemuk di sistem, dan sengaja dibatasi pada halaman indeks yang memang tidak memuat angka apa pun sendiri — `/reports/daily` dan `/reports/monthly` tetap dijaga satu kunci masing-masing.
+
+**`/menu` dengan `menu.view` tanpa `menu.manage`** tampil baca-saja: daftar menu + harga terlihat, tombol tambah/ubah/hapus tidak dirender, dan route `POST/PATCH/DELETE /api/menus` tetap menolak 403 kalau ditembak langsung.
+
 ## Gerbang izin
 
 `lib/auth/session.ts`:
