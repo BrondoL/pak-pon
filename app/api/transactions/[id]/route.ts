@@ -146,7 +146,7 @@ export async function PATCH(
       patch_set_paid: parsed.data.paid !== undefined ? parsed.data.paid : null,
     });
 
-    const headerStatus = await applyHeaderUpdate(supabase, id, parsed.data, evt);
+    const headerStatus = await applyHeaderUpdate(supabase, id, parsed.data, evt, g.actor.userId);
     if (headerStatus.kind === 'error') return headerStatus.response;
 
     if (parsed.data.items !== undefined) {
@@ -190,7 +190,8 @@ async function applyHeaderUpdate(
   supabase: SupabaseLike,
   id: string,
   patch: z.infer<typeof PatchSchema>,
-  evt: RequestEvent
+  evt: RequestEvent,
+  actorUserId: string
 ): Promise<StepResult> {
   const headerUpdate: Record<string, unknown> = {};
   if (patch.status !== undefined) {
@@ -241,6 +242,10 @@ async function applyHeaderUpdate(
         const dailySeqToSet = computeNextDailySeq(existingSeqs);
         headerUpdate.daily_seq = dailySeqToSet;
         evt.set('daily_seq_assigned', dailySeqToSet);
+
+        // Nota hasil OCR dibuat oleh /api/scan sebagai draft; yang bertanggung jawab
+        // adalah orang yang mengonfirmasinya, bukan yang memotret.
+        headerUpdate.created_by = actorUserId;
       }
     }
   }

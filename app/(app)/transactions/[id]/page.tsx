@@ -27,11 +27,24 @@ export default async function TransactionPage({
 
   const { data: tx } = await supabase
     .from('transactions')
-    .select('id, status, handwritten_total, customer_name, table_no, is_takeaway, created_at, scan_image_path, scan_image_purged_at, daily_seq, paid_at')
+    .select('id, status, handwritten_total, customer_name, table_no, is_takeaway, created_at, scan_image_path, scan_image_purged_at, daily_seq, paid_at, created_by')
     .eq('id', id)
     .is('deleted_at', null)
     .single();
   if (!tx) notFound();
+
+  // RLS `profiles_read` cuma izinkan baca baris sendiri atau semua baris kalau
+  // superadmin — kasir yang buka transaksi rekannya dapat null di sini, dan
+  // baris "Diinput oleh" tidak dirender. Itu perilaku yang diterima, bukan bug.
+  let createdByName: string | null = null;
+  if (tx.created_by) {
+    const { data: creator } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('user_id', tx.created_by)
+      .maybeSingle();
+    createdByName = creator?.display_name ?? null;
+  }
 
   const { data: items } = await supabase
     .from('transaction_items')
@@ -63,6 +76,7 @@ export default async function TransactionPage({
         created_at: tx.created_at,
         daily_seq: tx.daily_seq ?? null,
         paid_at: tx.paid_at ?? null,
+        created_by_name: createdByName,
       }}
       items={(items ?? []).map((it) => {
         const rawMenus = (it as { menus?: unknown }).menus;

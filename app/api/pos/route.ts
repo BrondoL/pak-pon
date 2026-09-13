@@ -146,6 +146,7 @@ export async function POST(request: NextRequest) {
         is_takeaway: payload.is_takeaway,
         confirmed_at: now.toISOString(),
         daily_seq: dailySeq,
+        created_by: g.actor.userId,
         scan_image_path: null,
         handwritten_total: null,
       })

@@ -44,6 +44,7 @@ type Transaction = {
   created_at: string;
   daily_seq?: number | null;
   paid_at?: string | null;
+  created_by_name?: string | null;
 };
 
 const WIB = 'Asia/Jakarta';
@@ -183,6 +184,9 @@ export function TransactionDetail({
               </>
             )}
           </div>
+          {transaction.created_by_name && (
+            <p className="mt-1 text-xs text-clay">Diinput oleh: {transaction.created_by_name}</p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {transaction.is_takeaway && (
