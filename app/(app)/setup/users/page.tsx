@@ -65,10 +65,17 @@ export default async function UsersPage() {
   const roles: RoleOption[] = (roleData ?? []).map((r) => ({ id: r.id, name: r.name }));
 
   return (
-    <div className="mx-auto max-w-4xl p-4 space-y-6">
-      <div>
-        <h1 className="font-display text-2xl text-coal">Akun &amp; Pengguna</h1>
-        <p className="mt-1 text-sm text-coal-soft">
+    /* Tanpa mx-auto/max-w/p sendiri: app/(app)/layout.tsx sudah memberi lebar dan
+       padding halaman. Membungkus ulang di sini bikin padding dobel di HP. */
+    <div className="space-y-6 md:space-y-8">
+      <div className="max-w-2xl">
+        <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
+          Setup
+        </p>
+        <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight text-coal md:text-4xl">
+          Akun &amp; <span className="italic">Pengguna</span>
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-coal-soft">
           Buat akun kasir baru, atur role-nya, dan nonaktifkan akun yang sudah tidak dipakai.
         </p>
       </div>

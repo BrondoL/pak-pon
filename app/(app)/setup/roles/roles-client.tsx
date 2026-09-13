@@ -164,20 +164,26 @@ export function RolesClient({ initialRoles }: { initialRoles: RoleRow[] }) {
         dicentang di sini.
       </p>
 
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg text-coal">Daftar role</h2>
-        <Button onClick={openCreate}>+ Tambah role</Button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-display text-lg text-coal">
+          Daftar role{' '}
+          <span className="font-body text-sm font-normal text-clay">({roles.length})</span>
+        </h2>
+        <Button onClick={openCreate} className="max-sm:w-full">+ Tambah role</Button>
       </div>
 
       {roles.length === 0 ? (
-        <Card variant="paper" className="px-4 py-8 text-center text-sm text-clay">
-          Belum ada role.
+        <Card variant="paper" className="px-6 py-12 text-center">
+          <p className="font-display text-xl italic text-coal">Belum ada role.</p>
+          <p className="mt-2 text-sm text-coal-soft">
+            Buat role dulu, lalu tugaskan ke akun kasir di halaman Akun &amp; Pengguna.
+          </p>
         </Card>
       ) : (
         <div className="space-y-3">
           {roles.map((role) => (
             <Card key={role.id} variant="paper" className="px-4 py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <p className="font-display text-base text-coal">{role.name}</p>
                   {role.description && (
@@ -187,7 +193,7 @@ export function RolesClient({ initialRoles }: { initialRoles: RoleRow[] }) {
                     {role.permissions.length} izin · {role.user_count} pemakai
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2 border-t border-clay-soft/60 pt-3 sm:border-0 sm:pt-0">
                   <Button variant="secondary" size="sm" onClick={() => openEdit(role)}>
                     ✏️ Ubah
                   </Button>
@@ -275,29 +281,56 @@ export function RolesClient({ initialRoles }: { initialRoles: RoleRow[] }) {
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-clay">
                 Izin
               </p>
-              {GROUPS.map((g) => (
-                <fieldset key={g} className="rounded-lg border border-clay-soft p-3">
-                  <legend className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-clay">
-                    {g}
-                  </legend>
-                  {PERMISSIONS.filter((p) => p.group === g).map((p) => (
-                    <label key={p.key} className="flex items-start gap-3 py-2">
-                      <Switch
-                        checked={selected.has(p.key)}
-                        onCheckedChange={(v: boolean) => toggle(p.key, v)}
-                      />
-                      <span>
-                        <span className="block text-sm font-medium text-coal">{p.label}</span>
-                        <span className="block text-xs text-clay">{p.hint}</span>
+              {GROUPS.map((g) => {
+                const inGroup = PERMISSIONS.filter((p) => p.group === g);
+                const ticked = inGroup.filter((p) => selected.has(p.key)).length;
+                return (
+                  <fieldset key={g} className="rounded-lg border border-clay-soft bg-paper-soft p-3">
+                    {/* Hitungan per kelompok: sekali lihat ketahuan "Laporan 1/2" —
+                        tanpa ini owner harus menghitung centang satu per satu. */}
+                    <legend className="flex items-baseline gap-2 px-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-clay">
+                        {g}
                       </span>
-                    </label>
-                  ))}
-                </fieldset>
-              ))}
+                      <span
+                        className={
+                          ticked === 0
+                            ? 'font-body text-[11px] tabular-nums text-clay-soft'
+                            : 'font-body text-[11px] font-semibold tabular-nums text-gold-dark'
+                        }
+                      >
+                        {ticked}/{inGroup.length}
+                      </span>
+                    </legend>
+                    <div className="divide-y divide-clay-soft/50">
+                      {inGroup.map((p) => (
+                        // Baris penuh jadi target sentuh, switch di kanan — di HP
+                        // switch kecil di kiri teks panjang sulit dikenai jempol.
+                        <label
+                          key={p.key}
+                          className="flex cursor-pointer items-start justify-between gap-4 py-2.5"
+                        >
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium text-coal">{p.label}</span>
+                            <span className="block text-xs leading-relaxed text-clay">{p.hint}</span>
+                          </span>
+                          <Switch
+                            className="mt-0.5 shrink-0"
+                            checked={selected.has(p.key)}
+                            onCheckedChange={(v: boolean) => toggle(p.key, v)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                );
+              })}
             </div>
           </div>
 
-          <DialogFooter>
+          {/* Menempel di bawah: dengan 13 izin dalam 5 kelompok, di HP tombol Simpan
+              berada jauh di ujung gulungan kalau ikut mengalir bersama isinya. */}
+          <DialogFooter className="sticky bottom-0 -mx-4 -mb-4 mt-2 border-t border-clay-soft/60 bg-popover px-4 py-3">
             <Button variant="outline" onClick={() => setFormOpen(false)} disabled={submitting}>
               Batal
             </Button>

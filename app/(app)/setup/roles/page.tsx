@@ -40,10 +40,15 @@ export default async function RolesPage() {
   }));
 
   return (
-    <div className="mx-auto max-w-3xl p-4 space-y-6">
-      <div>
-        <h1 className="font-display text-2xl text-coal">Role &amp; Izin</h1>
-        <p className="mt-1 text-sm text-coal-soft">
+    <div className="space-y-6 md:space-y-8">
+      <div className="max-w-2xl">
+        <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
+          Setup
+        </p>
+        <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight text-coal md:text-4xl">
+          Role &amp; <span className="italic">Izin</span>
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-coal-soft">
           Atur role yang bisa dipakai akun, dan izin apa saja yang dipegang tiap role.
         </p>
       </div>
