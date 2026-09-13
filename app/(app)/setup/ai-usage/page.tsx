@@ -9,6 +9,7 @@ import { estimateCostIdr } from '@/lib/pricing';
 import { SummaryCard } from './summary-card';
 import { AiUsageChart } from './ai-usage-chart';
 import { AiUsageTable } from './ai-usage-table';
+import { requirePermission } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,8 @@ function monthLabel(ymd: string): string {
 }
 
 export default async function AiUsagePage() {
+  await requirePermission('setup.ai_usage');
+
   const supabase = await getSupabaseServer();
   const today = currentBusinessDate();
   const thirtyDaysAgo = subtractDays(today, 29);

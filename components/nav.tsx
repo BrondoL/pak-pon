@@ -2,17 +2,12 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { SetupMenu } from './setup-menu';
 import { MobileNav } from './mobile-nav';
+import { visibleNavLinks, visibleSetupLinks } from '@/lib/nav-links';
+import type { Actor } from '@/lib/permissions';
 
-const links = [
-  { href: '/scan',         label: 'Scan' },
-  { href: '/pos',          label: 'POS' },
-  { href: '/monitor',      label: 'Monitor' },
-  { href: '/transactions', label: 'History' },
-  { href: '/reports',      label: 'Laporan' },
-  { href: '/menu',         label: 'Menu' },
-];
-
-export function Nav() {
+export function Nav({ actor }: { actor: Actor }) {
+  const links = visibleNavLinks(actor);
+  const setupLinks = visibleSetupLinks(actor);
   return (
     <header className="surface-night border-b-2 border-gold/30">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-3 sm:gap-4 sm:px-4">
@@ -44,7 +39,7 @@ export function Nav() {
 
         {/* Mobile: collapse everything into a hamburger so nothing overflows off-screen */}
         <div className="sm:hidden">
-          <MobileNav links={links} />
+          <MobileNav links={links} setupLinks={setupLinks} />
         </div>
 
         <nav className="hidden items-center gap-0.5 text-xs sm:flex sm:text-sm">
@@ -58,7 +53,7 @@ export function Nav() {
             </Link>
           ))}
 
-          <SetupMenu />
+          <SetupMenu links={setupLinks} />
 
           <form action="/api/auth/signout" method="post" className="ml-0.5 sm:ml-1">
             <button

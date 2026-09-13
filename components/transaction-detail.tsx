@@ -44,6 +44,7 @@ type Transaction = {
   created_at: string;
   daily_seq?: number | null;
   paid_at?: string | null;
+  created_by_name?: string | null;
 };
 
 const WIB = 'Asia/Jakarta';
@@ -72,12 +73,19 @@ export function TransactionDetail({
   scanUrl,
   scanPurged,
   printerSettings,
+  canEdit,
+  canDelete,
+  canMarkPaid,
 }: {
   transaction: Transaction;
   items: Item[];
   scanUrl: string | null;
   scanPurged: boolean;
   printerSettings: PrinterSettings;
+  canEdit: boolean;
+  canDelete: boolean;
+  /** `monitor.use` — kunci yang sama yang dipakai PATCH /api/transactions/[id] untuk body {paid}. */
+  canMarkPaid: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -179,6 +187,9 @@ export function TransactionDetail({
               </>
             )}
           </div>
+          {transaction.created_by_name && (
+            <p className="mt-1 text-xs text-clay">Diinput oleh: {transaction.created_by_name}</p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {transaction.is_takeaway && (
@@ -336,13 +347,15 @@ export function TransactionDetail({
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={`/transactions/${transaction.id}/review`} className="flex-1 sm:flex-none">
-              <Button disabled={pending} className="w-full sm:w-auto">
-                ✏️ {isDraft ? 'Lanjutkan edit' : 'Edit transaksi'}
-              </Button>
-            </Link>
+            {canEdit && (
+              <Link href={`/transactions/${transaction.id}/review`} className="flex-1 sm:flex-none">
+                <Button disabled={pending} className="w-full sm:w-auto">
+                  ✏️ {isDraft ? 'Lanjutkan edit' : 'Edit transaksi'}
+                </Button>
+              </Link>
+            )}
 
-            {!isDraft && (
+            {!isDraft && canMarkPaid && (
               <AlertDialog open={paidDialogOpen} onOpenChange={setPaidDialogOpen}>
                 <AlertDialogTrigger
                   disabled={pending}
@@ -371,33 +384,35 @@ export function TransactionDetail({
               </AlertDialog>
             )}
 
-            <AlertDialog>
-              <AlertDialogTrigger
-                disabled={pending}
-                className="ml-auto text-brick-dark hover:bg-brick-faint"
-                render={<Button variant="ghost" />}
-              >
-                🗑️ Hapus
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Hapus transaksi ini?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Transaksi disimpan sebagai soft-delete selama 7 hari. Setelah itu cron menghapus permanen (termasuk foto nota).
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={pending}>Batal</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleDelete}
-                    disabled={pending}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    {pending ? 'Menghapus…' : 'Ya, hapus'}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            {canDelete && (
+              <AlertDialog>
+                <AlertDialogTrigger
+                  disabled={pending}
+                  className="ml-auto text-brick-dark hover:bg-brick-faint"
+                  render={<Button variant="ghost" />}
+                >
+                  🗑️ Hapus
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Hapus transaksi ini?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Transaksi disimpan sebagai soft-delete selama 7 hari. Setelah itu cron menghapus permanen (termasuk foto nota).
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={pending}>Batal</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      disabled={pending}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {pending ? 'Menghapus…' : 'Ya, hapus'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         </div>
       </div>

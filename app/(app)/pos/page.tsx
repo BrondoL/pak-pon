@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { requirePermission } from '@/lib/auth/session';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { getPrinterSettings } from '@/lib/printer-settings-server';
 import { fetchActiveMenusWithChips } from '@/lib/menus-server';
@@ -7,9 +7,9 @@ import { PosClient } from '@/components/pos/pos-client';
 export const dynamic = 'force-dynamic';
 
 export default async function PosPage() {
+  await requirePermission('pos.use');
+
   const supabase = await getSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
 
   const [menus, printerSettings] = await Promise.all([
     fetchActiveMenusWithChips(supabase),

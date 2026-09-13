@@ -1,9 +1,14 @@
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { MenuListClient } from './menu-list-client';
+import { requirePermission } from '@/lib/auth/session';
+import { can } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
 export default async function MenuPage() {
+  const actor = await requirePermission('menu.view');
+  const canManage = can(actor, 'menu.manage');
+
   const supabase = await getSupabaseServer();
   const { data, error } = await supabase
     .from('menus')
@@ -30,5 +35,5 @@ export default async function MenuPage() {
     ...m,
     chips: [...(m.chips ?? [])].sort((a, b) => a.sort_order - b.sort_order),
   }));
-  return <MenuListClient initialMenus={menus} />;
+  return <MenuListClient initialMenus={menus} canManage={canManage} />;
 }

@@ -1,0 +1,29 @@
+-- 0044_report_monthly_data_revoke_anon.sql
+-- Menutup celah yang lolos dari migrasi 0043: REVOKE di sana cuma menyasar
+-- role `authenticated`, padahal `ALTER FUNCTION ... RENAME` MEWARISI ACL objek
+-- lama apa adanya. Fungsi asli `report_monthly` (migrasi 0034_report_rpcs.sql)
+-- cuma pernah REVOKE dari `PUBLIC` — dan REVOKE dari `PUBLIC` TIDAK mencabut
+-- grant per-role yang sudah ditempel default privileges Supabase (`anon` dan
+-- `service_role` dapat EXECUTE otomatis saat fungsi dibuat). Akibatnya setelah
+-- rename di 0043, `report_monthly_data` mewarisi ACL lama
+-- `{postgres=X/postgres,anon=X/postgres,service_role=X/postgres}` — `anon` masih
+-- bisa EXECUTE. PostgREST otomatis mengekspos fungsi apa pun yang role pemanggil
+-- punya EXECUTE-nya di `/rpc/<name>`, jadi pemanggil TANPA login sama sekali
+-- (cuma publishable key) bisa panggil `rpc/report_monthly_data` langsung dan
+-- menjalankan agregator tanpa penjagaan izin sebagai role `anon`.
+--
+-- Hari ini itu tidak bocor data cuma karena kebetulan: `report_monthly_data`
+-- SECURITY INVOKER, dan satu-satunya RLS policy di `transactions`
+-- (`auth_all_transactions`) cuma berlaku untuk role `authenticated`, jadi query
+-- sebagai `anon` pulang nol baris. Itu backstop kebetulan dari RLS, bukan
+-- pagar yang dimaksud (grant fungsi) — migrasi ini menutup pagar yang
+-- sebenarnya supaya tidak bergantung pada kebetulan itu.
+--
+-- REVOKE dari PUBLIC dan anon saja. `service_role` sengaja TIDAK disentuh:
+-- itu secret key sisi server yang sudah melewati RLS di mana-mana, jadi
+-- mencabutnya tidak menambah keamanan tapi berisiko mematahkan cron job atau
+-- skrip admin yang mungkin memanggilnya. Owner (`postgres`) tetap punya EXECUTE
+-- implisit terlepas dari REVOKE ini, jadi wrapper SECURITY DEFINER di
+-- report_monthly tetap jalan seperti biasa.
+REVOKE EXECUTE ON FUNCTION report_monthly_data(timestamptz, timestamptz, int) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION report_monthly_data(timestamptz, timestamptz, int) FROM anon;

@@ -6,6 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { labelFrom } from '@/lib/select-labels';
+
+// Select.Value di base-ui mencetak nilai mentah kalau tidak diberi fungsi label —
+// tanpa peta ini yang tampil "pending_review" / "yes", bukan teks Indonesianya.
+const STATUS_LABELS = { all: 'Semua', confirmed: 'Confirmed', pending_review: 'Pending Review' };
+const TAKEAWAY_LABELS = { all: 'Semua', yes: 'Bungkus', no: 'Makan sini' };
 import { currentBusinessDate } from '@/lib/date';
 
 const SEARCH_DEBOUNCE_MS = 400;
@@ -105,7 +111,7 @@ export function DateFilter() {
           <Label htmlFor="status">Status</Label>
           <Select value={status || 'all'} onValueChange={(v) => update('status', v === 'all' ? '' : String(v))}>
             <SelectTrigger id="status" className="mt-2 w-full">
-              <SelectValue placeholder="Semua" />
+              <SelectValue>{(v) => labelFrom(STATUS_LABELS, v as string | null, 'Semua')}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Semua</SelectItem>
@@ -118,7 +124,7 @@ export function DateFilter() {
           <Label htmlFor="takeaway">Bungkus</Label>
           <Select value={takeaway || 'all'} onValueChange={(v) => update('takeaway', v === 'all' ? '' : String(v))}>
             <SelectTrigger id="takeaway" className="mt-2 w-full">
-              <SelectValue placeholder="Semua" />
+              <SelectValue>{(v) => labelFrom(TAKEAWAY_LABELS, v as string | null, 'Semua')}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Semua</SelectItem>

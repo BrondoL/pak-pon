@@ -9,6 +9,9 @@ import { Label } from '@/components/ui/label';
 
 const initialState: LoginState = {};
 
+// Akun yang login tapi tidak punya profil aktif TIDAK mendarat di sini — dia
+// dikirim ke `/no-access`, karena `proxy.ts` memantulkan request `/login` yang
+// masih bawa sesi balik ke `/`. Jadi halaman ini tidak perlu membaca alasan apa pun.
 export default function LoginPage() {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
 

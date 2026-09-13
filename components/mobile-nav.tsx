@@ -10,10 +10,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { NavLink, SetupLink } from '@/lib/nav-links';
 
-type NavLink = { href: string; label: string };
-
-export function MobileNav({ links }: { links: NavLink[] }) {
+export function MobileNav({ links, setupLinks }: { links: NavLink[]; setupLinks: SetupLink[] }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -43,16 +42,19 @@ export function MobileNav({ links }: { links: NavLink[] }) {
           </DropdownMenuItem>
         ))}
 
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Setup</DropdownMenuLabel>
-          <DropdownMenuItem render={<Link href="/setup/printer/settings" />}>
-            Setting Printer
-          </DropdownMenuItem>
-          <DropdownMenuItem render={<Link href="/setup/ai-usage" />}>
-            AI Usage
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
+        {setupLinks.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Setup</DropdownMenuLabel>
+              {setupLinks.map((l) => (
+                <DropdownMenuItem key={l.href} render={<Link href={l.href} />}>
+                  {l.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </>
+        )}
 
         <DropdownMenuSeparator />
         <form action="/api/auth/signout" method="post">

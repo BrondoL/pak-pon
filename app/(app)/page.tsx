@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { HomeTiles } from '@/components/home-tiles';
@@ -6,6 +7,8 @@ import { PrinterStatusBanner } from '@/components/printer-status-banner';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { currentBusinessDate, businessDayRange } from '@/lib/date';
 import { MoneyValue, MoneyToggle, MoneyVisibilityProvider } from '@/components/money-visibility';
+import { getCurrentActor } from '@/lib/auth/session';
+import { can } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,22 +19,33 @@ type HomeTodayRpc = {
 };
 
 export default async function HomePage() {
-  const supabase = await getSupabaseServer();
+  const actor = await getCurrentActor();
+  // Layout sudah redirect kalau actor null; ini cuma menyempitkan tipe untuk TS
+  // (getCurrentActor() di-cache React, jadi ini bukan query kedua). Tujuannya harus
+  // sama dengan layout — lihat catatan loop redirect di `app/(app)/layout.tsx`.
+  if (!actor) redirect('/no-access');
   const date = currentBusinessDate();
-  const { start, end } = businessDayRange(date);
 
-  const { data } = await supabase.rpc('report_home_today', {
-    p_start: start,
-    p_end: end,
-  });
-  const stats = (data as HomeTodayRpc | null) ?? {
-    confirmed_total: 0,
-    confirmed_count: 0,
-    pending_count: 0,
-  };
-  const todayTotal = stats.confirmed_total;
-  const confirmedCount = stats.confirmed_count;
-  const pendingCount = stats.pending_count;
+  let todayTotal = 0;
+  let confirmedCount = 0;
+  let pendingCount = 0;
+
+  if (can(actor, 'transactions.view')) {
+    const supabase = await getSupabaseServer();
+    const { start, end } = businessDayRange(date);
+    const { data } = await supabase.rpc('report_home_today', {
+      p_start: start,
+      p_end: end,
+    });
+    const stats = (data as HomeTodayRpc | null) ?? {
+      confirmed_total: 0,
+      confirmed_count: 0,
+      pending_count: 0,
+    };
+    todayTotal = stats.confirmed_total;
+    confirmedCount = stats.confirmed_count;
+    pendingCount = stats.pending_count;
+  }
 
   const dateLabel = new Date(`${date}T12:00:00+07:00`).toLocaleDateString('id-ID', {
     timeZone: 'Asia/Jakarta',
@@ -42,7 +56,7 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8 md:space-y-10">
-      <PrinterStatusBanner />
+      <PrinterStatusBanner canManagePrinter={can(actor, 'setup.printer')} />
       <div className="max-w-2xl">
         <p className="font-body text-[11px] font-medium uppercase tracking-[0.22em] text-clay">
           Shift · {dateLabel}
@@ -56,71 +70,80 @@ export default async function HomePage() {
         </p>
       </div>
 
-      <Card variant="paper" className="px-5 py-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
-            Ringkasan hari ini
-          </p>
-          <Link
-            href="/reports/daily"
-            className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brick hover:text-brick-dark"
-          >
-            Buka closingan →
-          </Link>
-        </div>
-        {confirmedCount === 0 && pendingCount === 0 ? (
-          <div className="mt-4 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="font-display text-xl italic leading-snug text-coal">
-                Belum ada transaksi hari ini.
-              </p>
-              <p className="mt-1 text-sm text-coal-soft">
-                Mulai shift dengan foto nota pertama — tinggal scan, sistem
-                yang baca.
-              </p>
-            </div>
-            <Link href="/scan">
-              <Button>📷 Scan nota pertama</Button>
-            </Link>
+      {can(actor, 'transactions.view') && (
+        <Card variant="paper" className="px-5 py-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="font-body text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
+              Ringkasan hari ini
+            </p>
+            {/* Kartu ini dijaga transactions.view, tapi tautannya menuju halaman
+                lain yang izinnya beda — tanpa cek ini kasir tanpa izin laporan
+                melihat tautan yang memantulkannya ke /403 saat diklik. */}
+            {can(actor, 'reports.daily.view') && (
+              <Link
+                href="/reports/daily"
+                className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brick hover:text-brick-dark"
+              >
+                Buka closingan →
+              </Link>
+            )}
           </div>
-        ) : (
-          <MoneyVisibilityProvider>
-            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {confirmedCount === 0 && pendingCount === 0 ? (
+            <div className="mt-4 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Pemasukan</div>
-                <div className="mt-1 flex items-center gap-2 font-display text-2xl tracking-tight text-coal md:text-3xl">
-                  <MoneyValue amount={todayTotal} />
-                  <MoneyToggle />
-                </div>
+                <p className="font-display text-xl italic leading-snug text-coal">
+                  Belum ada transaksi hari ini.
+                </p>
+                <p className="mt-1 text-sm text-coal-soft">
+                  Mulai shift dengan foto nota pertama — tinggal scan, sistem
+                  yang baca.
+                </p>
               </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Transaksi</div>
-              <div className="mt-1 font-display text-2xl text-coal md:text-3xl">
-                {confirmedCount}
-              </div>
-            </div>
-            <div className="col-span-2 sm:col-span-1">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Draft pending</div>
-              {pendingCount > 0 ? (
-                <Link
-                  href={`/transactions?date_from=${date}&date_to=${date}&status=pending_review`}
-                  className="mt-1 inline-flex items-baseline gap-2 font-display text-2xl text-mustard md:text-3xl hover:text-mustard/80"
-                >
-                  {pendingCount}
-                  <span className="text-xs uppercase tracking-wide text-coal-soft">
-                    perlu konfirmasi →
-                  </span>
+              {can(actor, 'scan.use') && (
+                <Link href="/scan">
+                  <Button>📷 Scan nota pertama</Button>
                 </Link>
-              ) : (
-                <div className="mt-1 font-display text-2xl text-coal/40 md:text-3xl">0</div>
               )}
             </div>
-            </div>
-            </MoneyVisibilityProvider>
-        )}
-      </Card>
+          ) : (
+            <MoneyVisibilityProvider>
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Pemasukan</div>
+                  <div className="mt-1 flex items-center gap-2 font-display text-2xl tracking-tight text-coal md:text-3xl">
+                    <MoneyValue amount={todayTotal} />
+                    <MoneyToggle />
+                  </div>
+                </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Transaksi</div>
+                <div className="mt-1 font-display text-2xl text-coal md:text-3xl">
+                  {confirmedCount}
+                </div>
+              </div>
+              <div className="col-span-2 sm:col-span-1">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-clay">Draft pending</div>
+                {pendingCount > 0 ? (
+                  <Link
+                    href={`/transactions?date_from=${date}&date_to=${date}&status=pending_review`}
+                    className="mt-1 inline-flex items-baseline gap-2 font-display text-2xl text-mustard md:text-3xl hover:text-mustard/80"
+                  >
+                    {pendingCount}
+                    <span className="text-xs uppercase tracking-wide text-coal-soft">
+                      perlu konfirmasi →
+                    </span>
+                  </Link>
+                ) : (
+                  <div className="mt-1 font-display text-2xl text-coal/40 md:text-3xl">0</div>
+                )}
+              </div>
+              </div>
+              </MoneyVisibilityProvider>
+          )}
+        </Card>
+      )}
 
-      <HomeTiles />
+      <HomeTiles actor={actor} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { guard } from '@/lib/auth/session';
 import { scanNota, type ScanMeta } from '@/lib/gemini';
 import { newEvent, tagStatus } from '@/lib/logger';
 import { recordUsageDaily } from '@/lib/ai-usage';
@@ -15,12 +16,8 @@ export async function POST(request: NextRequest) {
   let ocrMeta: ScanMeta | undefined;
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'scan.use');
+    if (!g.ok) return g.response;
 
     const formData = await request.formData();
     const image = formData.get('image');

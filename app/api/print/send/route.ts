@@ -1,6 +1,7 @@
 import { NextResponse, after, type NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { guard } from '@/lib/auth/session';
 import { newEvent, tagStatus } from '@/lib/logger';
 import { pushPrintJob } from '@/lib/fcm';
 import { PrintSendSchema } from './_schema';
@@ -17,12 +18,8 @@ export async function POST(request: NextRequest) {
   const evt = newEvent('POST /api/print/send');
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'print.send');
+    if (!g.ok) return g.response;
 
     const body = await request.json();
     const parsed = PrintSendSchema.safeParse(body);

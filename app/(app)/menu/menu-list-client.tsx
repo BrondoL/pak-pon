@@ -39,7 +39,13 @@ const CATEGORY_LABEL: Record<Menu['category'], string> = {
   minuman: 'Minuman',
 };
 
-export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
+export function MenuListClient({
+  initialMenus,
+  canManage,
+}: {
+  initialMenus: Menu[];
+  canManage: boolean;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState<Partial<MenuFormValues> | null>(null);
   const [pending, startTransition] = useTransition();
@@ -107,33 +113,37 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
             Sumber kebenaran harga & nama menu. Dipakai OCR untuk mencocokkan item dari nota.
           </p>
         </div>
-        <Button onClick={() => setEditing({ category: 'makanan', sort_order: 0, chips: [] })}>
-          + Menu baru
-        </Button>
+        {canManage && (
+          <Button onClick={() => setEditing({ category: 'makanan', sort_order: 0, chips: [] })}>
+            + Menu baru
+          </Button>
+        )}
       </div>
 
-      <Dialog
-        open={editing !== null}
-        onOpenChange={(open) => { if (!open) setEditing(null); }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {editing?.id ? 'Edit menu' : 'Menu baru'}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              Form untuk {editing?.id ? 'mengubah' : 'menambah'} menu master.
-            </DialogDescription>
-          </DialogHeader>
-          {editing && (
-            <MenuForm
-              initial={editing}
-              onSaved={refresh}
-              onCancel={() => setEditing(null)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {canManage && (
+        <Dialog
+          open={editing !== null}
+          onOpenChange={(open) => { if (!open) setEditing(null); }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {editing?.id ? 'Edit menu' : 'Menu baru'}
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Form untuk {editing?.id ? 'mengubah' : 'menambah'} menu master.
+              </DialogDescription>
+            </DialogHeader>
+            {editing && (
+              <MenuForm
+                initial={editing}
+                onSaved={refresh}
+                onCancel={() => setEditing(null)}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
 
       {mutationError && (
         <p
@@ -153,11 +163,13 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
             Tambah menu pertama biar OCR bisa mencocokkan item nota — mulai
             dari yang paling sering dijual.
           </p>
-          <div className="mt-6">
-            <Button onClick={() => setEditing({ category: 'makanan', sort_order: 0, chips: [] })}>
-              + Tambah menu pertama
-            </Button>
-          </div>
+          {canManage && (
+            <div className="mt-6">
+              <Button onClick={() => setEditing({ category: 'makanan', sort_order: 0, chips: [] })}>
+                + Tambah menu pertama
+              </Button>
+            </div>
+          )}
         </Card>
       )}
 
@@ -216,7 +228,7 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
                       </div>
 
                       {/* Inline confirmation — replaces window.confirm() */}
-                      {isConfirming ? (
+                      {canManage && (isConfirming ? (
                         <div className="flex items-center gap-2">
                           <span className="hidden text-xs italic text-coal-soft sm:inline">
                             Yakin nonaktifkan?
@@ -277,7 +289,7 @@ export function MenuListClient({ initialMenus }: { initialMenus: Menu[] }) {
                             </Button>
                           )}
                         </div>
-                      )}
+                      ))}
                     </li>
                   );
                 })}

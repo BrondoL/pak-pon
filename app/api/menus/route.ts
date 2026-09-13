@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { guard } from '@/lib/auth/session';
 import { newEvent, tagStatus } from '@/lib/logger';
 import { CreateMenuSchema } from './_schemas';
 
@@ -7,12 +8,8 @@ export async function GET(request: NextRequest) {
   const evt = newEvent('GET /api/menus');
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'menu.view');
+    if (!g.ok) return g.response;
 
     const includeInactive = request.nextUrl.searchParams.get('include_inactive') === '1';
     evt.set('include_inactive', includeInactive);
@@ -58,12 +55,8 @@ export async function POST(request: NextRequest) {
   const evt = newEvent('POST /api/menus');
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'menu.manage');
+    if (!g.ok) return g.response;
 
     const body = await request.json();
     const parsed = CreateMenuSchema.safeParse(body);

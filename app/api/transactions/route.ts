@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { guard } from '@/lib/auth/session';
 import { newEvent, tagStatus } from '@/lib/logger';
 import { currentBusinessDate, parseYmd, businessDayRange } from '@/lib/date';
 
@@ -18,12 +19,8 @@ export async function GET(request: NextRequest) {
   const evt = newEvent('GET /api/transactions');
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'transactions.view');
+    if (!g.ok) return g.response;
 
     const sp = Object.fromEntries(request.nextUrl.searchParams);
     const parsed = QuerySchema.safeParse(sp);

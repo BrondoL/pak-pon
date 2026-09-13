@@ -11,6 +11,8 @@ import { newEvent, tagStatus, type RequestEvent } from '@/lib/logger';
 import { computeNextDailySeq } from '@/lib/daily-seq';
 import { businessDate, businessDayRange } from '@/lib/date';
 import { buildPaidUpdate } from '@/lib/monitor';
+import { guard } from '@/lib/auth/session';
+import type { PermissionKey } from '@/lib/permissions';
 
 const STORAGE_BUCKET = 'notas';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -46,12 +48,8 @@ export async function GET(
   const evt = newEvent('GET /api/transactions/[id]', { tx_id: id });
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'transactions.view');
+    if (!g.ok) return g.response;
 
     const { data: tx, error: txError } = await supabase
       .from('transactions')
@@ -112,12 +110,6 @@ export async function PATCH(
   const evt = newEvent('PATCH /api/transactions/[id]', { tx_id: id });
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
 
     const body = await request.json();
     const parsed = PatchSchema.safeParse(body);
@@ -126,6 +118,24 @@ export async function PATCH(
       evt.merge({ reject_reason: 'invalid_body', zod_issues: parsed.error.issues });
       return NextResponse.json({ error: 'invalid_body', details: parsed.error.flatten() }, { status: 400 });
     }
+
+    // Body yang HANYA berisi {paid} adalah aksi tandai-lunas dari /monitor.
+    // Selebihnya (status, items, customer_name, table_no, is_takeaway) adalah
+    // penyuntingan transaksi dari halaman review.
+    //
+    // Dicek dari `parsed.data` (hasil Zod), bukan body mentah: tidak ada field
+    // top-level di PatchSchema yang punya `.default()` (defaultnya cuma di
+    // dalam elemen array `items`, mis. `notes`/`chip_labels`/`sort_order`),
+    // jadi Object.keys(parsed.data) di level atas persis mencerminkan field
+    // yang benar-benar dikirim klien — aman dipakai, tanpa polusi default.
+    const keys = Object.keys(parsed.data);
+    const paidOnly = keys.length > 0 && keys.every((k) => k === 'paid');
+    const needed: PermissionKey = paidOnly ? 'monitor.use' : 'transactions.edit';
+
+    const g = await guard(evt, needed);
+    if (!g.ok) return g.response;
+    evt.set('patch_intent', paidOnly ? 'mark_paid' : 'edit');
+
     evt.merge({
       patch_status: parsed.data.status ?? null,
       patch_items_count: parsed.data.items?.length ?? null,
@@ -136,7 +146,7 @@ export async function PATCH(
       patch_set_paid: parsed.data.paid !== undefined ? parsed.data.paid : null,
     });
 
-    const headerStatus = await applyHeaderUpdate(supabase, id, parsed.data, evt);
+    const headerStatus = await applyHeaderUpdate(supabase, id, parsed.data, evt, g.actor.userId);
     if (headerStatus.kind === 'error') return headerStatus.response;
 
     if (parsed.data.items !== undefined) {
@@ -180,7 +190,8 @@ async function applyHeaderUpdate(
   supabase: SupabaseLike,
   id: string,
   patch: z.infer<typeof PatchSchema>,
-  evt: RequestEvent
+  evt: RequestEvent,
+  actorUserId: string
 ): Promise<StepResult> {
   const headerUpdate: Record<string, unknown> = {};
   if (patch.status !== undefined) {
@@ -231,6 +242,10 @@ async function applyHeaderUpdate(
         const dailySeqToSet = computeNextDailySeq(existingSeqs);
         headerUpdate.daily_seq = dailySeqToSet;
         evt.set('daily_seq_assigned', dailySeqToSet);
+
+        // Nota hasil OCR dibuat oleh /api/scan sebagai draft; yang bertanggung jawab
+        // adalah orang yang mengonfirmasinya, bukan yang memotret.
+        headerUpdate.created_by = actorUserId;
       }
     }
   }
@@ -395,12 +410,8 @@ export async function DELETE(
   const evt = newEvent('DELETE /api/transactions/[id]', { tx_id: id });
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'transactions.delete');
+    if (!g.ok) return g.response;
 
     const { error } = await supabase
       .from('transactions')
