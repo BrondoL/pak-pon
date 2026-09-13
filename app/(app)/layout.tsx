@@ -1,12 +1,14 @@
 import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
 import { Toaster } from '@/components/ui/sonner';
-import { getSupabaseServer } from '@/lib/supabase/server';
+import { getCurrentActor } from '@/lib/auth/session';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await getSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  // null = belum login, belum punya profil, atau dinonaktifkan. Semuanya diperlakukan
+  // sama: keluar. Akun yang pembuatannya putus di tengah bisa login tapi tidak bisa
+  // apa-apa — gagal ke arah aman.
+  const actor = await getCurrentActor();
+  if (!actor) redirect('/login?reason=no_access');
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
