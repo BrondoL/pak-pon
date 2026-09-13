@@ -7,16 +7,19 @@ export const CreateUserSchema = z.object({
   email: z.string().email().max(160),
   password,
   display_name: displayName,
-  // guid() bukan uuid(): uuid() zod v4 strict soal nibble varian RFC4122, menolak
-  // UUID fixture test (mis. '1111...') yang dipakai luas di test suite ini.
-  role_id: z.string().guid().nullable().default(null),
+  // uuid() (bukan guid()): zod v4 uuid() strict soal nibble versi/varian RFC4122 —
+  // role_id produksi selalu dari Postgres gen_random_uuid() (v4), jadi ini selalu
+  // lolos untuk data nyata. Fixture test HARUS UUID v4 asli (nibble versi '4',
+  // nibble varian salah satu 8/9/a/b), bukan string all-1s — kalau tergoda ganti
+  // ke guid() lagi karena test gagal, perbaiki fixture-nya, bukan longgarkan cek ini.
+  role_id: z.string().uuid().nullable().default(null),
   is_superadmin: z.boolean().default(false),
 });
 
 export const UpdateUserSchema = z
   .object({
     display_name: displayName.optional(),
-    role_id: z.string().guid().nullable().optional(),
+    role_id: z.string().uuid().nullable().optional(),
     is_active: z.boolean().optional(),
     is_superadmin: z.boolean().optional(),
     password: password.optional(),
