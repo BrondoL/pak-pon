@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { guard } from '@/lib/auth/session';
 import { newEvent, tagStatus } from '@/lib/logger';
 import { UpdateMenuSchema } from '../_schemas';
 
@@ -14,12 +15,8 @@ export async function PATCH(
   const evt = newEvent('PATCH /api/menus/[id]', { menu_id: id });
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'menu.manage');
+    if (!g.ok) return g.response;
 
     const body = await request.json();
     const parsed = UpdateMenuSchema.safeParse(body);
@@ -112,12 +109,8 @@ export async function DELETE(
   const evt = newEvent('DELETE /api/menus/[id]', { menu_id: id });
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'menu.manage');
+    if (!g.ok) return g.response;
 
     // .select().single() forces PostgREST to return the row (or PGRST116 if missing),
     // so we know whether the row actually existed.

@@ -1,6 +1,10 @@
+import { requirePermission } from '@/lib/auth/session';
+
 const APK_URL = process.env.NEXT_PUBLIC_PRINT_AGENT_APK_URL ?? '';
 
-export default function SetupPrinterPage() {
+export default async function SetupPrinterPage() {
+  await requirePermission('setup.printer');
+
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-6">
       <h1 className="text-2xl font-semibold text-coal">Setup Print Agent</h1>

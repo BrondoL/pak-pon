@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { getPrinterSettings } from '@/lib/printer-settings-server';
 import { TransactionDetail } from '@/components/transaction-detail';
+import { requirePermission, getCurrentActor } from '@/lib/auth/session';
+import { can } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +15,13 @@ export default async function TransactionPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requirePermission('transactions.view');
+  // getCurrentActor() is cache()'d in the same request — the requirePermission
+  // call above already fetched it, so this is not a second query.
+  const actor = await getCurrentActor();
+  const canEdit = can(actor, 'transactions.edit');
+  const canDelete = can(actor, 'transactions.delete');
+
   const { id } = await params;
   const supabase = await getSupabaseServer();
 
@@ -79,6 +88,8 @@ export default async function TransactionPage({
       scanUrl={scanUrl}
       scanPurged={scanPurged}
       printerSettings={printerSettings}
+      canEdit={canEdit}
+      canDelete={canDelete}
     />
   );
 }

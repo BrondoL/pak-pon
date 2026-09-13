@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { guard } from '@/lib/auth/session';
 import { newEvent, tagStatus } from '@/lib/logger';
 
 const NOT_FOUND_CODE = 'PGRST116';
@@ -12,12 +13,8 @@ export async function POST(
   const evt = newEvent('POST /api/transactions/[id]/restore', { tx_id: id });
   try {
     const supabase = await getSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      tagStatus(evt, 401);
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    evt.set('user_id', user.id);
+    const g = await guard(evt, 'transactions.delete');
+    if (!g.ok) return g.response;
 
     // Only restore rows that are actually soft-deleted. The `.not('deleted_at', 'is', null)`
     // guard means restoring an already-live row returns 404 (no-op) instead of a stealth update.

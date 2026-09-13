@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { requirePermission } from '@/lib/auth/session';
 import { currentBusinessDate, parseYmd, businessDayRange } from '@/lib/date';
 import { Card } from '@/components/ui/card';
 import { DateFilter } from '@/components/date-filter';
@@ -40,6 +41,8 @@ export default async function TransactionsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requirePermission('transactions.view');
+
   const sp = await searchParams;
   const supabase = await getSupabaseServer();
 

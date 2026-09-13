@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { currentBusinessDate, parseYmd, businessDayRange } from '@/lib/date';
 import { DailySummary } from '@/components/daily-summary';
+import { requirePermission } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,8 @@ export default async function DailyReportPage({
 }: {
   searchParams: Promise<{ date?: string }>;
 }) {
+  await requirePermission('reports.daily.view');
+
   const sp = await searchParams;
   const date = (sp.date && parseYmd(sp.date)) ?? currentBusinessDate();
   const supabase = await getSupabaseServer();

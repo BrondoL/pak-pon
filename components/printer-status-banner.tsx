@@ -16,7 +16,11 @@ type Agent = {
   online: boolean;
 };
 
-export function PrinterStatusBanner() {
+export function PrinterStatusBanner({
+  canManagePrinter = false,
+}: {
+  canManagePrinter?: boolean;
+}) {
   const [agents, setAgents] = useState<Agent[] | null>(null);
 
   useEffect(() => {
@@ -53,12 +57,14 @@ export function PrinterStatusBanner() {
       >
         <div className="flex items-center justify-between gap-2">
           <span>Belum ada primary agent. Print tidak akan jalan.</span>
-          <Link
-            href="/setup/printer/debug"
-            className="rounded bg-brick px-3 py-1 text-xs font-medium text-white"
-          >
-            Pilih Primary
-          </Link>
+          {canManagePrinter && (
+            <Link
+              href="/setup/printer/debug"
+              className="rounded bg-brick px-3 py-1 text-xs font-medium text-white"
+            >
+              Pilih Primary
+            </Link>
+          )}
         </div>
       </div>
     );
@@ -79,12 +85,14 @@ export function PrinterStatusBanner() {
           <span>
             Primary ({primary.agent_label}) kemungkinan di-background. Cek HP kalau cetak ngga jalan.
           </span>
-          <Link
-            href="/setup/printer/debug"
-            className="rounded border border-mustard/60 px-3 py-1 text-xs font-medium text-coal"
-          >
-            Detail
-          </Link>
+          {canManagePrinter && (
+            <Link
+              href="/setup/printer/debug"
+              className="rounded border border-mustard/60 px-3 py-1 text-xs font-medium text-coal"
+            >
+              Detail
+            </Link>
+          )}
         </div>
       </div>
     );
@@ -98,12 +106,14 @@ export function PrinterStatusBanner() {
     >
       <div className="flex items-center justify-between gap-2">
         <span>Primary ({primary.agent_label}) belum jalan. Pencet Start di device.</span>
-        <Link
-          href="/setup/printer"
-          className="rounded bg-brick px-3 py-1 text-xs font-medium text-white"
-        >
-          Setup
-        </Link>
+        {canManagePrinter && (
+          <Link
+            href="/setup/printer"
+            className="rounded bg-brick px-3 py-1 text-xs font-medium text-white"
+          >
+            Setup
+          </Link>
+        )}
       </div>
     </div>
   );

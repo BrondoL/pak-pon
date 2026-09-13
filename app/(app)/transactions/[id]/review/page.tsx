@@ -3,6 +3,7 @@ import { getSupabaseServer } from '@/lib/supabase/server';
 import { getPrinterSettings } from '@/lib/printer-settings-server';
 import { NotaReviewForm } from '@/components/nota-review-form';
 import type { MenuOption } from '@/components/nota-item-modal';
+import { requirePermission } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,8 @@ export default async function ReviewPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requirePermission('transactions.edit');
+
   const { id } = await params;
   const supabase = await getSupabaseServer();
 

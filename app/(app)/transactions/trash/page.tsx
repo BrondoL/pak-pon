@@ -5,6 +5,7 @@ import {
   TransactionTrashRow,
   type TrashRow,
 } from '@/components/transaction-trash-row';
+import { requirePermission } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,8 @@ export default async function TrashPage({
 }: {
   searchParams: Promise<{ page?: string }>;
 }) {
+  await requirePermission('transactions.delete');
+
   const sp = await searchParams;
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
   const supabase = await getSupabaseServer();

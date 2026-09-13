@@ -1,9 +1,11 @@
 import { getPrinterSettings } from '@/lib/printer-settings-server';
 import { PrinterSettingsForm } from './printer-settings-form';
+import { requirePermission } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PrinterSettingsPage() {
+  await requirePermission('setup.printer');
   const settings = await getPrinterSettings();
   return (
     <div className="mx-auto max-w-2xl p-4 space-y-6">

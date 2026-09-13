@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { requirePermission } from '@/lib/auth/session';
 
 const SettingsSchema = z.object({
   paper_width: z.enum(['58mm', '80mm']),
@@ -26,6 +27,10 @@ export async function savePrinterSettings(
   _prev: SettingsState,
   formData: FormData,
 ): Promise<SettingsState> {
+  // Server actions are POST endpoints reachable directly without loading the
+  // page — guarding the page alone is not enough.
+  await requirePermission('setup.printer');
+
   const parsed = SettingsSchema.safeParse({
     paper_width: formData.get('paper_width'),
     feed_lines_before_cut: formData.get('feed_lines_before_cut'),
