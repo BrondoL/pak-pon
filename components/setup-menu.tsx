@@ -7,8 +7,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { SetupLink } from '@/lib/nav-links';
 
-export function SetupMenu() {
+export function SetupMenu({ links }: { links: SetupLink[] }) {
+  if (links.length === 0) return null;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -31,12 +34,11 @@ export function SetupMenu() {
         </svg>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuItem render={<Link href="/setup/printer/settings" />}>
-          Setting Printer
-        </DropdownMenuItem>
-        <DropdownMenuItem render={<Link href="/setup/ai-usage" />}>
-          AI Usage
-        </DropdownMenuItem>
+        {links.map((l) => (
+          <DropdownMenuItem key={l.href} render={<Link href={l.href} />}>
+            {l.label}
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

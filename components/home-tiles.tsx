@@ -1,11 +1,23 @@
 import Link from 'next/link';
+import { allowed } from '@/lib/nav-links';
+import type { Actor, PermissionKey } from '@/lib/permissions';
 
-const tiles = [
+type Tile = {
+  href: string;
+  title: string;
+  subtitle: string;
+  accent: string;
+  permission: PermissionKey | PermissionKey[];
+  glyph: React.ReactNode;
+};
+
+const tiles: Tile[] = [
   {
     href: '/scan',
     title: 'Scan Nota',
     subtitle: 'Foto nota → otomatis tercatat',
     accent: 'brick',
+    permission: 'scan.use',
     glyph: (
       <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
         <rect x="4" y="9" width="24" height="18" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
@@ -20,6 +32,7 @@ const tiles = [
     title: 'Buat Pesanan',
     subtitle: 'Input langsung tanpa nota',
     accent: 'gold',
+    permission: 'pos.use',
     glyph: (
       <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
         <path d="M7 7h18l-2 14a2 2 0 01-2 2H11a2 2 0 01-2-2L7 7z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
@@ -32,6 +45,7 @@ const tiles = [
     title: 'Monitor',
     subtitle: 'Pesanan belum bayar',
     accent: 'mustard',
+    permission: 'monitor.use',
     glyph: (
       <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
         <rect x="4" y="6" width="24" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
@@ -45,6 +59,7 @@ const tiles = [
     title: 'History',
     subtitle: 'Transaksi tersimpan',
     accent: 'coal',
+    permission: 'transactions.view',
     glyph: (
       <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
         <path d="M7 5h14l3 3v19a1 1 0 01-1.5 0L21 25l-2.5 2-2.5-2-2.5 2L11 25l-2.5 2L7 27V5z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
@@ -57,6 +72,7 @@ const tiles = [
     title: 'Laporan',
     subtitle: 'Harian & bulanan',
     accent: 'mustard',
+    permission: ['reports.daily.view', 'reports.monthly.view'],
     glyph: (
       <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
         <path d="M5 27V11M12 27V17M19 27V5M26 27V14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
@@ -68,6 +84,7 @@ const tiles = [
     title: 'Menu Master',
     subtitle: 'Atur menu & harga',
     accent: 'leaf',
+    permission: 'menu.view',
     glyph: (
       <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7" aria-hidden>
         <path d="M8 5h16a2 2 0 012 2v19l-5-3-5 3-5-3-5 3V7a2 2 0 012-2z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
@@ -85,10 +102,11 @@ const accentClasses: Record<string, { bg: string; text: string }> = {
   gold:    { bg: 'bg-gold-faint',    text: 'text-gold' },
 };
 
-export function HomeTiles() {
+export function HomeTiles({ actor }: { actor: Actor }) {
+  const visibleTiles = tiles.filter((t) => allowed(actor, t.permission));
   return (
     <div className="reveal-children grid grid-cols-2 gap-3 md:gap-4">
-      {tiles.map((t) => {
+      {visibleTiles.map((t) => {
         const a = accentClasses[t.accent];
         return (
           <Link
