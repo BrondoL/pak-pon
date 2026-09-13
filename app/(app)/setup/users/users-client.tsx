@@ -101,6 +101,18 @@ export function UsersClient({
     setCreateOpen(true);
   }
 
+  // Satu jalur tutup untuk SEMUA cara dialog ini bisa tertutup — tombol Batal,
+  // Escape, klik di luar (backdrop), dan sesudah sukses simpan — supaya password
+  // yang sempat diketik tidak pernah nyangkut di state kalau ada jalur keempat
+  // di masa depan yang lupa membersihkannya.
+  function closeCreate() {
+    setCreateOpen(false);
+    setDisplayName('');
+    setEmail('');
+    setPassword('');
+    setRoleId(NO_ROLE);
+  }
+
   async function handleCreate() {
     const trimmedName = displayName.trim();
     const trimmedEmail = email.trim();
@@ -139,11 +151,7 @@ export function UsersClient({
         description: `Password: ${password} — catat sekarang, tidak akan ditampilkan lagi.`,
         duration: 30000,
       });
-      setCreateOpen(false);
-      setDisplayName('');
-      setEmail('');
-      setPassword('');
-      setRoleId(NO_ROLE);
+      closeCreate();
       router.refresh();
     } catch {
       toast.error('Gagal membuat akun. Coba lagi.');
@@ -197,14 +205,59 @@ export function UsersClient({
     });
   }
 
-  function handleSuperadminChange(row: UserRow, checked: boolean) {
-    void withBusy(row.user_id, async () => {
+  // Superadmin mengubah apa yang BISA dilakukan sebuah login di seluruh aplikasi —
+  // konsekuensinya lebih besar dari sekadar aktif/nonaktif, jadi selalu lewat
+  // AlertDialog konfirmasi (termasuk untuk baris milik diri sendiri: switch-nya
+  // TIDAK di-disable di sana, karena itu cuma kesopanan UI dan bisa membuat
+  // owner mengira UI-lah yang mencegah dia mendemosi diri sendiri — penjaga
+  // sebenarnya ada di server (409 last_superadmin), dan dialog ini tetap wajib
+  // mengirim PATCH-nya supaya penjaga itu sempat menyala).
+  const [superadminTarget, setSuperadminTarget] = useState<{
+    row: UserRow;
+    nextValue: boolean;
+  } | null>(null);
+  const [superadminBusy, setSuperadminBusy] = useState(false);
+
+  function requestSuperadminChange(row: UserRow, nextValue: boolean) {
+    setSuperadminTarget({ row, nextValue });
+  }
+
+  function superadminDialogCopy(target: { row: UserRow; nextValue: boolean }) {
+    const isSelfRow = target.row.user_id === currentUserId;
+    if (target.nextValue) {
+      return {
+        title: `Jadikan "${target.row.display_name}" superadmin?`,
+        description:
+          'Akun ini akan bisa melakukan apa saja di aplikasi ini, termasuk mengelola akun dan role — dan tidak bisa dibatasi lewat role apa pun.',
+      };
+    }
+    if (isSelfRow) {
+      return {
+        title: 'Cabut superadmin dari akun sendiri?',
+        description:
+          'Begitu disimpan, Anda akan langsung kehilangan akses ke halaman Akun & Pengguna dan Role & Izin.',
+      };
+    }
+    return {
+      title: `Cabut superadmin dari "${target.row.display_name}"?`,
+      description: 'Akun ini akan kehilangan akses ke pengelolaan akun dan role.',
+    };
+  }
+
+  async function confirmSuperadminChange() {
+    if (!superadminTarget) return;
+    const { row, nextValue } = superadminTarget;
+    setSuperadminBusy(true);
+    try {
       await patchUser(
         row.user_id,
-        { is_superadmin: checked },
-        checked ? 'Dijadikan superadmin' : 'Superadmin dicabut',
+        { is_superadmin: nextValue },
+        nextValue ? 'Dijadikan superadmin' : 'Superadmin dicabut',
       );
-    });
+    } finally {
+      setSuperadminBusy(false);
+      setSuperadminTarget(null);
+    }
   }
 
   // ---------- Reset password ----------
@@ -217,6 +270,14 @@ export function UsersClient({
     setResetTarget(row);
   }
 
+  // Satu jalur tutup untuk SEMUA cara dialog ini bisa tertutup — tombol Batal,
+  // Escape, klik di luar (backdrop), dan sesudah sukses reset — supaya password
+  // yang sempat diketik tidak pernah nyangkut di state.
+  function closeReset() {
+    setResetTarget(null);
+    setResetPassword('');
+  }
+
   async function handleResetPassword() {
     if (!resetTarget) return;
     if (resetPassword.length < 8) {
@@ -227,10 +288,11 @@ export function UsersClient({
     try {
       const ok = await patchUser(resetTarget.user_id, { password: resetPassword }, 'Password direset');
       if (ok) {
-        setResetTarget(null);
+        closeReset();
       }
     } finally {
-      // Jangan pernah menyisakan password di state setelah dialog ini selesai.
+      // Jangan pernah menyisakan password di state setelah dialog ini selesai —
+      // termasuk saat gagal dan dialognya tetap terbuka untuk dicoba ulang.
       setResetPassword('');
       setResetBusy(false);
     }
@@ -378,7 +440,7 @@ export function UsersClient({
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={row.is_superadmin}
-                            onCheckedChange={(v: boolean) => handleSuperadminChange(row, v)}
+                            onCheckedChange={(v: boolean) => requestSuperadminChange(row, v)}
                             disabled={busy}
                           />
                           {row.is_superadmin && (
@@ -457,7 +519,12 @@ export function UsersClient({
       )}
 
       {/* Tambah akun */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!open) closeCreate();
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Tambah akun</DialogTitle>
@@ -492,6 +559,9 @@ export function UsersClient({
             </div>
             <div>
               <Label htmlFor="user-password">Password</Label>
+              {/* Sengaja type="text", bukan "password" — owner biasanya membacakan atau
+                  menuliskan tangan password ini untuk diserahkan ke kasir, jadi
+                  menyamarkannya justru menyulitkan alur kerja nyata. */}
               <Input
                 id="user-password"
                 type="text"
@@ -520,7 +590,7 @@ export function UsersClient({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+            <Button variant="outline" onClick={closeCreate} disabled={creating}>
               Batal
             </Button>
             <Button onClick={handleCreate} disabled={creating}>
@@ -534,10 +604,7 @@ export function UsersClient({
       <Dialog
         open={resetTarget !== null}
         onOpenChange={(open) => {
-          if (!open) {
-            setResetTarget(null);
-            setResetPassword('');
-          }
+          if (!open) closeReset();
         }}
       >
         <DialogContent className="sm:max-w-sm">
@@ -550,6 +617,8 @@ export function UsersClient({
 
           <div>
             <Label htmlFor="reset-password">Password baru</Label>
+            {/* Sengaja type="text", bukan "password" — sama seperti dialog Tambah akun:
+                owner butuh membaca/menuliskan tangan password ini untuk kasir. */}
             <Input
               id="reset-password"
               type="text"
@@ -561,11 +630,7 @@ export function UsersClient({
           </div>
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setResetTarget(null)}
-              disabled={resetBusy}
-            >
+            <Button variant="outline" onClick={closeReset} disabled={resetBusy}>
               Batal
             </Button>
             <Button onClick={handleResetPassword} disabled={resetBusy}>
@@ -574,6 +639,31 @@ export function UsersClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Ubah status superadmin — selalu lewat konfirmasi, termasuk baris sendiri. */}
+      <AlertDialog
+        open={superadminTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setSuperadminTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          {superadminTarget && (
+            <AlertDialogHeader>
+              <AlertDialogTitle>{superadminDialogCopy(superadminTarget).title}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {superadminDialogCopy(superadminTarget).description}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={superadminBusy}>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmSuperadminChange} disabled={superadminBusy}>
+              {superadminBusy ? 'Menyimpan…' : 'Ya, lanjutkan'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
