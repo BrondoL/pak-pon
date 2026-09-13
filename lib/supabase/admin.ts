@@ -2,7 +2,13 @@ import { createClient } from '@supabase/supabase-js';
 
 /**
  * Service-role Supabase client. BYPASSES Row-Level Security.
- * USE ONLY in cron jobs and admin scripts. NEVER import from user-facing API routes.
+ *
+ * Boleh dipakai di: cron job, admin script, dan `app/api/users/**` — membuat akun
+ * Supabase Auth memang menuntut service-role key.
+ *
+ * Syarat mutlak di route user-facing: panggilan HARUS berada di belakang
+ * `guardSuperadmin()` dan dicatat di wide-event. Jangan pernah memakainya di
+ * jalur yang bisa dicapai non-superadmin.
  */
 export function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
