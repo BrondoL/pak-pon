@@ -29,9 +29,22 @@ import { PERMISSION_KEYS } from './permissions';
  * fungsi itu sendiri, yang kalau ikut dihitung akan membuat kunci tampak
  * "terjaga" semata-mata karena diuji unit, bukan karena ada pemanggil gerbang
  * nyata di kode aplikasi.
+ *
+ * ⚠️ Jebakan regex: alternasi verb gerbang WAJIB dipagari batas identifier
+ * (`(?<![A-Za-z0-9_$])` di depan). Tanpa itu, `can(`/`guard(` cocok sebagai
+ * akhiran nama fungsi lain — `scan(actor, 'scan.use')` atau
+ * `runScan(actor, 'scan.use')` ikut lolos, padahal `runScan()` bukan gerbang
+ * izin. Ini bukan teori: `runScan(` beneran ada di repo ini dan `scan.use`
+ * beneran kunci asli, cuma kebetulan belum pernah satu pemanggilan — jangan
+ * pernah hapus lookbehind itu untuk "menyederhanakan" regex-nya.
  */
 
-const GATE_CALL = /(guardSuperadmin|guard|requireAnyPermission|requirePermission|canAny|can)\s*\([^)]*['"]KEY['"]/;
+// (?<![A-Za-z0-9_$]) di depan alternasi verb = jaga batas identifier. Tanpa ini
+// "scan(actor, 'scan.use')" atau "runScan(actor, 'scan.use')" ikut cocok cuma
+// karena diakhiri huruf "can"/"guard" — false positive nyata di repo ini:
+// runScan() beneran ada dan scan.use beneran kunci asli, cuma kebetulan belum
+// pernah ketemu di pemanggilan yang sama. Jangan hapus lookbehind ini.
+const GATE_CALL = /(?<![A-Za-z0-9_$])(guardSuperadmin|guard|requireAnyPermission|requirePermission|canAny|can)\s*\([^)]*['"]KEY['"]/;
 
 function filesMentioning(key: string): string[] {
   try {
