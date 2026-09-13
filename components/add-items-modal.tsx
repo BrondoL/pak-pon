@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import { formatRp } from '@/lib/currency';
 import { PosMenuPicker } from '@/components/pos/pos-menu-picker';
 import { PosItemConfigModal } from '@/components/pos/pos-item-config-modal';
@@ -29,6 +30,7 @@ export function AddItemsModal({
   menus,
   confirmLabel,
   submitting = false,
+  footerToggle,
   onCancel,
   onConfirm,
 }: {
@@ -36,6 +38,18 @@ export function AddItemsModal({
   menus: MenuOption[];
   confirmLabel: (count: number, totalAmount: number) => string;
   submitting?: boolean;
+  /**
+   * Saklar opsional di atas baris tombol. State-nya sengaja milik parent —
+   * komponen ini tidak tahu apa arti saklarnya, sama seperti ia tidak tahu
+   * apa arti "simpan". Nama propnya netral karena itu.
+   */
+  footerToggle?: {
+    id: string;
+    label: string;
+    hint?: string;
+    checked: boolean;
+    onChange: (next: boolean) => void;
+  };
   onCancel: () => void;
   onConfirm: (drafts: PosCartItemDraft[]) => void;
 }) {
@@ -174,6 +188,31 @@ export function AddItemsModal({
                   </li>
                 ))}
               </ul>
+            )}
+
+            {footerToggle && (
+              <label
+                htmlFor={footerToggle.id}
+                className={[
+                  'mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-2 transition-colors',
+                  footerToggle.checked
+                    ? 'border-gold/60 bg-gold-faint'
+                    : 'border-clay-soft/60 bg-paper',
+                ].join(' ')}
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-coal">{footerToggle.label}</div>
+                  {footerToggle.hint && (
+                    <p className="mt-0.5 text-xs text-coal-soft">{footerToggle.hint}</p>
+                  )}
+                </div>
+                <Switch
+                  id={footerToggle.id}
+                  checked={footerToggle.checked}
+                  onCheckedChange={footerToggle.onChange}
+                  disabled={submitting}
+                />
+              </label>
             )}
 
             <div className="mt-3 flex gap-2 pb-[max(0px,env(safe-area-inset-bottom))]">

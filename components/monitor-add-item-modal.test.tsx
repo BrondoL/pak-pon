@@ -85,7 +85,17 @@ async function tapMenu(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
 }
 
 function confirmButton() {
-  return screen.getByRole('button', { name: /simpan & cetak/i });
+  // Cocok untuk dua label: "✓ Simpan Rp …" (default, tanpa cetak) dan
+  // "✓ Simpan & Cetak Rp …" (setelah switch cetak dinyalakan).
+  return screen.getByRole('button', { name: /simpan/i });
+}
+
+/**
+ * Nyalakan switch "Cetak tiket dapur". Default-nya MATI, jadi tes yang
+ * memang menguji jalur cetak harus memanggil ini dulu.
+ */
+async function enablePrint(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('switch'));
 }
 
 describe('<MonitorAddItemModal /> — handleConfirm', () => {
@@ -182,6 +192,7 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     );
 
     await tapMenu(user, /ayam goreng/i);
+    await enablePrint(user);
     await user.click(confirmButton());
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -449,6 +460,7 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     // Draft dikirim dalam urutan: Ayam Goreng dulu, lalu Tempe Goreng.
     await tapMenu(user, /ayam goreng/i);
     await tapMenu(user, /tempe goreng/i);
+    await enablePrint(user);
     await user.click(confirmButton());
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -493,6 +505,7 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
 
     await tapMenu(user, /ayam goreng/i);
     await tapMenu(user, /tempe goreng/i);
+    await enablePrint(user);
     await user.click(confirmButton());
 
     await waitFor(() => {
@@ -537,6 +550,7 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     );
 
     await tapMenu(user, /ayam goreng/i);
+    await enablePrint(user);
     await user.click(confirmButton());
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -568,6 +582,7 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     );
 
     await tapMenu(user, /ayam goreng/i);
+    await enablePrint(user);
     await user.click(confirmButton());
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -603,6 +618,7 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     );
 
     await tapMenu(user, /ayam goreng/i);
+    await enablePrint(user);
     await user.click(confirmButton());
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -700,6 +716,7 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     await tapMenu(user, /ayam goreng/i);
     await user.click(screen.getByRole('button', { name: /minuman/i }));
     await tapMenu(user, /es teh/i);
+    await enablePrint(user);
     await user.click(confirmButton());
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -724,6 +741,93 @@ describe('<MonitorAddItemModal /> — handleConfirm', () => {
     expect(dapurBody?.item_ids.some((id) => minumanBody?.item_ids.includes(id))).toBe(false);
 
     expect(successSpy).toHaveBeenCalledWith('2 item ditambahkan, 2 print job dikirim');
+  });
+});
+
+describe('<MonitorAddItemModal /> — opsi cetak', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // Default MATI adalah inti fiturnya: simpan tidak boleh diam-diam mencetak.
+  it('switch mati (default): item tersimpan tanpa satu pun request ke /api/print/send', async () => {
+    const fetchMock = mockFetch({
+      itemsBody: {
+        transaction: txResponse(mkRow()),
+        items: [{ id: 'item-ayam', sort_order: 0 }],
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const successSpy = vi.spyOn(toast, 'success');
+    const onSaved = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <MonitorAddItemModal
+        row={mkRow()}
+        menus={menus}
+        printerSettings={DEFAULT_PRINTER_SETTINGS}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+      />,
+    );
+
+    await tapMenu(user, /ayam goreng/i);
+    await user.click(confirmButton());
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/print/send')).toHaveLength(0);
+    expect(successSpy).toHaveBeenCalledWith('1 item ditambahkan (tanpa cetak)');
+  });
+
+  // Label tombol harus mengumumkan konsekuensinya sebelum ditekan, bukan
+  // sesudah — kasir tidak bisa melihat state switch dari kertas yang tidak keluar.
+  it('label tombol ikut state switch', async () => {
+    vi.stubGlobal('fetch', mockFetch({}));
+    const user = userEvent.setup();
+    render(
+      <MonitorAddItemModal
+        row={mkRow()}
+        menus={menus}
+        printerSettings={DEFAULT_PRINTER_SETTINGS}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    await tapMenu(user, /ayam goreng/i);
+    expect(confirmButton()).not.toHaveTextContent(/cetak/i);
+
+    await enablePrint(user);
+    expect(confirmButton()).toHaveTextContent(/simpan & cetak/i);
+  });
+
+  // Jalur catch "sudah commit" dengan cetak MATI: jangan suruh kasir mengejar
+  // kertas yang memang tidak pernah diminta.
+  it('body 201 gagal diparse tanpa cetak: pesan error bukan soal tiket', async () => {
+    vi.stubGlobal('fetch', mockFetch({ itemsRaw: 'not-json{{{', itemsStatus: 201 }));
+    const successSpy = vi.spyOn(toast, 'success');
+    const errorSpy = vi.spyOn(toast, 'error');
+    const onSaved = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <MonitorAddItemModal
+        row={mkRow()}
+        menus={menus}
+        printerSettings={DEFAULT_PRINTER_SETTINGS}
+        onClose={vi.fn()}
+        onSaved={onSaved}
+      />,
+    );
+
+    await tapMenu(user, /ayam goreng/i);
+    await user.click(confirmButton());
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(successSpy).toHaveBeenCalledWith('Item tersimpan');
+    expect(errorSpy).toHaveBeenCalledWith('Gagal memuat hasil simpan. Cek detail transaksi.');
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      'Gagal cetak tiket. Cetak manual dari detail transaksi.',
+    );
   });
 });
 

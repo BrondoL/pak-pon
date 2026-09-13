@@ -31,6 +31,10 @@ export function MonitorAddItemModal({
   onSaved: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  // Default MATI: item susulan di monitor biasanya sudah diteriakkan ke dapur,
+  // jadi cetak di sini lebih sering jadi kertas sampah. Sengaja tidak
+  // dipersist — tiap modal dibuka, keputusannya diambil ulang.
+  const [printTicket, setPrintTicket] = useState(false);
   // Sync guard: setSubmitting async, tap kedua yang cepat bisa masuk
   // handleConfirm sebelum React commit state-nya.
   const submitLock = useRef(false);
@@ -130,6 +134,14 @@ export function MonitorAddItemModal({
         );
       }
 
+      if (!printTicket) {
+        // Tanpa cetak, printed_*_at item ini tetap NULL — masih bisa dicetak
+        // belakangan lewat "Cetak tambahan" di detail transaksi.
+        toast.success(`${drafts.length} item ditambahkan (tanpa cetak)`);
+        onSaved();
+        return;
+      }
+
       // Hanya item baru yang dicetak. Item lama tidak tersentuh di server, jadi
       // tidak perlu filter printed_*_at seperti di nota-review-form.
       const split = splitItemsByPrintTarget(withIds);
@@ -184,7 +196,14 @@ export function MonitorAddItemModal({
         // insert ke tagihan yang sama), tutup modal & refresh daftar supaya
         // kasir lihat total yang benar, minta cetak manual.
         toast.success('Item tersimpan');
-        toast.error('Gagal cetak tiket. Cetak manual dari detail transaksi.');
+        toast.error(
+          // Lemparan bisa datang sebelum kita sempat tahu mau cetak atau
+          // tidak (mis. body 201 gagal diparse). Jangan kirim kasir mengejar
+          // kertas yang memang tidak pernah diminta.
+          printTicket
+            ? 'Gagal cetak tiket. Cetak manual dari detail transaksi.'
+            : 'Gagal memuat hasil simpan. Cek detail transaksi.',
+        );
         onSaved();
       }
     } finally {
@@ -199,9 +218,20 @@ export function MonitorAddItemModal({
       title={titleFor(row)}
       menus={menus}
       submitting={submitting}
-      confirmLabel={(count, total) =>
-        submitting ? 'Menyimpan…' : `✓ Simpan & Cetak ${count > 0 ? formatRp(total) : ''}`
-      }
+      confirmLabel={(count, total) => {
+        if (submitting) return 'Menyimpan…';
+        const amount = count > 0 ? formatRp(total) : '';
+        return printTicket ? `✓ Simpan & Cetak ${amount}` : `✓ Simpan ${amount}`;
+      }}
+      footerToggle={{
+        id: 'monitor-add-item-print',
+        label: 'Cetak tiket dapur',
+        hint: printTicket
+          ? 'Tiket item baru akan dikirim ke printer.'
+          : 'Item tersimpan tanpa cetak tiket.',
+        checked: printTicket,
+        onChange: setPrintTicket,
+      }}
       onCancel={onClose}
       onConfirm={handleConfirm}
     />
