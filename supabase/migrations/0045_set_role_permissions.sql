@@ -33,3 +33,10 @@ $$;
 -- kecuali fungsi-fungsi itu DEFINER karena harus baca profiles tanpa rekursi).
 REVOKE EXECUTE ON FUNCTION public.set_role_permissions(uuid, text[]) FROM public;
 GRANT EXECUTE ON FUNCTION public.set_role_permissions(uuid, text[]) TO authenticated;
+
+-- ⚠️ DITAMBAHKAN 2026-09-13 (lihat migrasi 0047). Sama seperti 0042: REVOKE dari
+-- PUBLIC tidak mencabut grant per-role `anon` yang ditempel default privileges
+-- Supabase saat fungsi dibuat. Fungsi ini SECURITY INVOKER sehingga panggilan
+-- `anon` mandul dihadang RLS, tapi grant-nya tetap tidak boleh ada — jangan
+-- menyandarkan pagar pada mekanisme kedua.
+REVOKE EXECUTE ON FUNCTION public.set_role_permissions(uuid, text[]) FROM anon;

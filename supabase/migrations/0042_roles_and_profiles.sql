@@ -79,6 +79,18 @@ REVOKE EXECUTE ON FUNCTION public.has_permission(uuid, text) FROM public;
 GRANT EXECUTE ON FUNCTION public.is_superadmin(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.has_permission(uuid, text) TO authenticated;
 
+-- ⚠️ DITAMBAHKAN 2026-09-13 (lihat migrasi 0047 untuk uraian lengkapnya).
+-- REVOKE ... FROM public DI ATAS TIDAK CUKUP. Supabase punya DEFAULT PRIVILEGES
+-- yang memberi `anon` EXECUTE secara PER-ROLE saat fungsi dibuat; REVOKE dari
+-- pseudo-role PUBLIC tidak mencabut grant per-role itu. Tanpa dua baris ini,
+-- kedua fungsi SECURITY DEFINER di atas bisa dipanggil TANPA login lewat
+-- /rest/v1/rpc/... dengan publishable key — oracle izin untuk user_id mana pun.
+-- Dipertahankan di sini (bukan cuma di 0047) supaya instalasi baru dari migrasi
+-- langsung benar dan jebakannya tidak terulang di environment lain.
+-- `service_role` & `authenticated` sengaja tidak disentuh.
+REVOKE EXECUTE ON FUNCTION public.is_superadmin(uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.has_permission(uuid, text) FROM anon;
+
 -- ------------------------------------------------------------
 -- RLS
 -- ------------------------------------------------------------
