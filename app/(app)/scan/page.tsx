@@ -1,3 +1,4 @@
+import { requirePermission } from '@/lib/auth/session';
 import { PhotoUploader } from '@/components/photo-uploader';
 
 const SCAN_TIPS: { icon: string; text: string }[] = [
@@ -9,7 +10,9 @@ const SCAN_TIPS: { icon: string; text: string }[] = [
   { icon: '✨', text: 'Hindari pantulan / silau dari plastik laminating.' },
 ];
 
-export default function ScanPage() {
+export default async function ScanPage() {
+  await requirePermission('scan.use');
+
   return (
     <div className="mx-auto max-w-2xl space-y-8">
       <div>

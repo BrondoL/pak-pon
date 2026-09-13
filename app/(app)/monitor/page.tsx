@@ -1,4 +1,5 @@
 // app/(app)/monitor/page.tsx
+import { requirePermission } from '@/lib/auth/session';
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { fetchUnpaidRows } from '@/lib/monitor-server';
 import { getPrinterSettings } from '@/lib/printer-settings-server';
@@ -8,6 +9,8 @@ import { MonitorBoard } from '@/components/monitor-board';
 export const dynamic = 'force-dynamic';
 
 export default async function MonitorPage() {
+  await requirePermission('monitor.use');
+
   const supabase = await getSupabaseServer();
 
   // menus + printerSettings ikut dirender di server supaya modal "Tambah Item"
