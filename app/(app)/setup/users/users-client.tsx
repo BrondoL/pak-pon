@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { NO_ROLE, roleLabel, type RoleOption } from '@/lib/select-labels';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +36,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
+export type { RoleOption };
+
 export type UserRow = {
   user_id: string;
   email: string;
@@ -45,11 +48,6 @@ export type UserRow = {
   is_active: boolean;
 };
 
-export type RoleOption = { id: string; name: string };
-
-// Sentinel value untuk pilihan "Tanpa role" di <Select> — base-ui Select tidak
-// menerima value string kosong.
-const NO_ROLE = '__none__';
 
 type ApiErrorBody = { error?: string; detail?: string };
 
@@ -424,7 +422,7 @@ export function UsersClient({
                           disabled={busy}
                         >
                           <SelectTrigger className="w-full min-w-32">
-                            <SelectValue placeholder="Tanpa role" />
+                            <SelectValue>{(v) => roleLabel(v as string | null, roles)}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value={NO_ROLE}>Tanpa role</SelectItem>
@@ -575,7 +573,7 @@ export function UsersClient({
               <Label htmlFor="user-role">Role</Label>
               <Select value={roleId} onValueChange={(v) => setRoleId(String(v))}>
                 <SelectTrigger id="user-role" className="mt-2 w-full">
-                  <SelectValue placeholder="Tanpa role" />
+                  <SelectValue>{(v) => roleLabel(v as string | null, roles)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NO_ROLE}>Tanpa role</SelectItem>
