@@ -248,6 +248,20 @@ Plan: `docs/superpowers/plans/2026-08-08-monitor-takeaway-and-receipt-on-paid.md
 
 ---
 
+## Plan 14 — Multi-akun & Role ✅ COMPLETE (shipped 2026-09-13)
+
+Spec: `docs/superpowers/specs/2026-09-13-multi-user-roles-design.md`
+Plan: `docs/superpowers/plans/2026-09-13-multi-user-roles.md`
+
+- Login bersama satu akun diganti multi-akun Supabase Auth + role dinamis buatan owner. Katalog izin (13 kunci) hidup di kode (`lib/permissions.ts`), bukan DB — DB (`roles`, `role_permissions`, `profiles`, migrasi 0042) cuma menyimpan role dan centangan owner.
+- Gerbang izin: `getCurrentActor()`/`requirePermission()`/`guard()` di `lib/auth/session.ts`, dipanggil di tiap server component & route handler yang relevan (Task 6-7). `/setup/users` (Task 9, 12) dan `/setup/roles` (Task 10-11) eksklusif superadmin — manajemen user/role sengaja **bukan** izin biasa, biar tidak bisa dipakai mengangkat diri sendiri.
+- `report_monthly` dibungkus penjaga izin (migrasi 0043) + aggregator lawas `report_monthly_data` di-REVOKE dari `anon`/`PUBLIC` (migrasi 0044, unplanned — `ALTER FUNCTION RENAME` diam-diam mempertahankan ACL lama). `set_role_permissions()` (migrasi 0045, unplanned, SECURITY INVOKER) ganti izin role secara atomik, cegah role kosong kalau insert gagal setelah delete.
+- `transactions.created_by` (migrasi 0046) catat siapa yang mengonfirmasi transaksi.
+- Test anti-izin-hantu (`lib/permissions-usage.test.ts`, Task 14): gagal kalau ada kunci di katalog yang tidak dijaga kode mana pun di `app/`/`lib/`/`components/`. Ketigabelas kunci lolos — tidak ada izin hantu.
+- ⚠️ Sebelum branch ini di-merge, verifikasi klik manual 8-langkah (Task 12 Step 3) wajib diulang dengan build produksi (`npm run build && npm run start`), terutama langkah nonaktifkan akun kasir → sesi aktifnya harus langsung terlempar ke login. Belum dilakukan di Task 14 (butuh sesi Supabase Auth sungguhan, tidak bisa headless).
+
+---
+
 ## Backlog (belum dijadwalkan)
 
 ### 🍽️ POS / Order entry
