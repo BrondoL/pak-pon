@@ -10,6 +10,29 @@ const LAST_SUPERADMIN_RESPONSE = {
   detail: 'Ini superadmin terakhir. Angkat orang lain dulu.',
 } as const;
 
+/**
+ * Apakah kegagalan ini datang dari constraint trigger `profiles_last_superadmin_guard`
+ * (migrasi 0048)?
+ *
+ * Cek JS di bawah menangkap jalur umum, tapi tiga langkahnya (baca → putuskan →
+ * tulis) tidak atomik: dua request bersamaan yang menurunkan dua superadmin
+ * BERBEDA sama-sama lolos cek itu. Trigger DB yang menangkapnya, dan errornya
+ * harus keluar sebagai 409 yang sama supaya kasir/owner tidak melihat 500 misterius.
+ *
+ * Dicocokkan lewat DUA jalan karena dua rute tulis yang berbeda:
+ *   - PATCH menulis `profiles` lewat PostgREST → `error.code` = SQLSTATE ('23514');
+ *   - DELETE menulis lewat GoTrue (`auth.admin.deleteUser`) yang mengandalkan
+ *     ON DELETE CASCADE ke `profiles`. GoTrue membungkus ulang error DB-nya dan
+ *     tidak menjamin SQLSTATE ikut lolos, jadi token `last_superadmin` di teks
+ *     pesan yang jadi sandaran kedua.
+ */
+function isLastSuperadminViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; message?: unknown };
+  if (e.code === '23514') return true;
+  return typeof e.message === 'string' && e.message.includes('last_superadmin');
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -73,6 +96,11 @@ export async function PATCH(
         .update(profilePatch)
         .eq('user_id', id);
       if (updateErr) {
+        // Backstop trigger DB kebobolan cek JS di atas (dua demosi bersamaan).
+        if (isLastSuperadminViolation(updateErr)) {
+          evt.merge({ status: 409, blocked: 'last_superadmin', blocked_by: 'db_trigger' });
+          return NextResponse.json(LAST_SUPERADMIN_RESPONSE, { status: 409 });
+        }
         evt.merge({ status: 500 });
         evt.error(updateErr);
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
@@ -122,6 +150,11 @@ export async function DELETE(
     // Baris profiles ikut terhapus lewat ON DELETE CASCADE — tidak perlu delete manual.
     const { error: delErr } = await admin.auth.admin.deleteUser(id);
     if (delErr) {
+      // Backstop trigger DB kebobolan cek JS di atas (dua penghapusan bersamaan).
+      if (isLastSuperadminViolation(delErr)) {
+        evt.merge({ status: 409, blocked: 'last_superadmin', blocked_by: 'db_trigger' });
+        return NextResponse.json(LAST_SUPERADMIN_RESPONSE, { status: 409 });
+      }
       evt.merge({ status: 500 });
       evt.error(delErr);
       return NextResponse.json({ error: delErr.message }, { status: 500 });
